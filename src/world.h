@@ -21,7 +21,8 @@ typedef struct {
     unsigned char pad2;
     unsigned char pad3;
     unsigned char marked;     // +0x04  set to 1 while a region is walked
-    unsigned char pad5[3];
+    unsigned char blocked;    // +0x05  00405330: 1 when terrain >= 0x30
+    unsigned char pad6[2];
     unsigned cost;            // +0x08  compared with < to find a minimum:
                               //        the routing cost of stepping here
     unsigned value;           // +0x0c  100 at load, later (v >> 1) + 1
