@@ -12,6 +12,7 @@
 
 extern "C" {
 #include "host.h"
+#include "midi.h"
 #include "render.h"
 #include "sim.h"
 #include "state.h"
@@ -230,5 +231,62 @@ EMSCRIPTEN_KEEPALIVE int lm_count(int faction, int what) {
 
 EMSCRIPTEN_KEEPALIVE void *lm_alloc(int size) { return malloc((size_t)size); }
 EMSCRIPTEN_KEEPALIVE void lm_free(void *p) { free(p); }
+
+}   // extern "C"
+
+/* ------------------------------------------------------------------ music */
+
+// The tunes are .MID files in the zip, and there is no synthesiser in a
+// browser, so midi.c makes the sound and the page only moves it to the
+// speakers.  One tune at a time, which is what the original does through MCI.
+namespace {
+float g_audio[4096];
+unsigned char g_tune[0x60000];
+int g_tuneLoaded;
+}   // namespace
+
+extern "C" {
+
+// Names are the ones in the zip: SOUND/LM000.MID and up.  Non-zero when it
+// will play.
+EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop) {
+    char path[64];
+    snprintf(path, sizeof path, "SOUND/LM%03d.MID", number);
+    unsigned got = 0;
+    if (!hostRead(&g_host, path, g_tune, sizeof g_tune, &got)) {
+        g_tuneLoaded = 0;
+        return 0;
+    }
+    g_tuneLoaded = midiLoad(g_tune, got, loop);
+    return g_tuneLoaded;
+}
+
+EMSCRIPTEN_KEEPALIVE void lm_music_stop(void) {
+    midiStop();
+    g_tuneLoaded = 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_music_playing(void) {
+    return g_tuneLoaded && !midiFinished();
+}
+
+// Renders the next block and hands back where it is.  The page asks for as
+// many frames as its audio callback needs; anything over the buffer is
+// clamped to what lm_music_capacity reports.
+EMSCRIPTEN_KEEPALIVE const float *lm_music_render(int frames, int rate) {
+    unsigned want = frames < 0 ? 0u : (unsigned)frames;
+    if (want > sizeof g_audio / sizeof g_audio[0])
+        want = sizeof g_audio / sizeof g_audio[0];
+    if (!g_tuneLoaded) {
+        memset(g_audio, 0, want * sizeof g_audio[0]);
+        return g_audio;
+    }
+    midiRender(g_audio, want, rate > 0 ? (unsigned)rate : 22050u);
+    return g_audio;
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_music_capacity(void) {
+    return (int)(sizeof g_audio / sizeof g_audio[0]);
+}
 
 }   // extern "C"

@@ -79,6 +79,31 @@ createLordMonarch().then((M) => {
         M._lm_step(30);
     }
 
+    // The music: a tune loads out of the zip and renders real samples.
+    M._lm_load_stage(0);
+    expect('a tune loads', M._lm_music_play(0, 1), 1);
+    expect('and reports playing', M._lm_music_playing(), 1);
+    const frames = Math.min(2048, M._lm_music_capacity());
+    let peak = 0, energy = 0, silentBlocks = 0;
+    for (let block = 0; block < 40; block++) {
+        const ptr = M._lm_music_render(frames, 22050);
+        const pcm = new Float32Array(M.HEAPU8.buffer, ptr, frames);
+        let blockPeak = 0;
+        for (let i = 0; i < frames; i++) {
+            const a = Math.abs(pcm[i]);
+            if (a > blockPeak) blockPeak = a;
+            energy += pcm[i] * pcm[i];
+        }
+        if (blockPeak < 1e-6) silentBlocks++;
+        if (blockPeak > peak) peak = blockPeak;
+    }
+    const rms = Math.sqrt(energy / (frames * 40));
+    expect('the music is audible', rms, (v) => v > 0.01);
+    expect('and stays in range', peak, (v) => v > 0 && v <= 1.001);
+    expect('not every block was silent', silentBlocks, (v) => v < 40);
+    M._lm_music_stop();
+    expect('stopping stops it', M._lm_music_playing(), 0);
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

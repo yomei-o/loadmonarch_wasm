@@ -47,6 +47,12 @@ gcc -O2 -o tests/data1_test.exe tests/data1_test.c src/bz.c
 | 矢印 | スクロール |
 | 1 / 2 / 3 | ズーム（8 / 16 / 32px タイル） |
 | Space | 一時停止 |
+| 音楽ボタン | 曲を鳴らす（`.MID` を C 側で合成） |
+
+音は原作の `.MID` をそのまま使います。ブラウザにシンセサイザは無いので、
+`src/midi.c` が MIDI を解析して自前の音源で PCM を作り、ページはそれを
+Web Audio に流すだけです（General MIDI の音色ではなく、音程と長さを再現する
+簡易音源）。`tests/midi_test.exe` が同じ合成結果を WAV に書き出せます。
 
 ```sh
 sh tools/build_wasm.sh          # -> docs/loadmonarch.js + docs/index.html
