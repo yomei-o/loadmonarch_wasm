@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 EMCC="${EMCC:-/c/prog/emsdk/emsdk/upstream/emscripten/emcc}"
 mkdir -p docs
 
-EXPORTS=_lm_open_zip,_lm_message,_lm_width,_lm_height,_lm_stage_name,_lm_stage,_lm_step,_lm_frame,_lm_scroll,_lm_set_zoom,_lm_zoom,_lm_load_stage,_lm_pause,_lm_running,_lm_click,_lm_last_action,_lm_last_col,_lm_last_row,_lm_sweeps,_lm_scenery,_lm_funds,_lm_tax,_lm_losses,_lm_out,_lm_count,_lm_alloc,_lm_free,_lm_music_play,_lm_music_stop,_lm_music_playing,_lm_music_render,_lm_music_capacity
+EXPORTS=_lm_open_zip,_lm_message,_lm_width,_lm_height,_lm_stage_name,_lm_stage,_lm_step,_lm_frame,_lm_scroll,_lm_set_zoom,_lm_zoom,_lm_load_stage,_lm_pause,_lm_running,_lm_click,_lm_last_action,_lm_last_col,_lm_last_row,_lm_sweeps,_lm_scenery,_lm_funds,_lm_tax,_lm_losses,_lm_out,_lm_count,_lm_alloc,_lm_free,_lm_music_play,_lm_music_stop,_lm_music_playing,_lm_music_render,_lm_music_capacity,_lm_set_order,_lm_order,_lm_order_all
 
 sh tools/lowpri.sh "$EMCC" -O2 \
     src/wasm_main.cpp src/world.c src/state.c src/sim.c src/render.c \

@@ -184,6 +184,30 @@ EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
     return g_lastAction;
 }
 
+// DAT_004365e0: the order a unit the player raises will carry.  1 is the
+// plain one (build where you stand); 4 sends it after a neighbour's
+// settlement.  growFromUnit stamps it on, exactly as the original does.
+EMSCRIPTEN_KEEPALIVE void lm_set_order(int order) {
+    g_sim.pendingOrder = order < 0 ? 0u : (unsigned)order;
+}
+EMSCRIPTEN_KEEPALIVE int lm_order(void) { return (int)g_sim.pendingOrder; }
+
+// Gives every unit of the player's faction that order, which is how a country
+// is actually directed - the original routes it through the command window.
+EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
+    int changed = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &g_game.entities[i];
+        if (entity->flags & 0x80) continue;
+        if (entity->faction != g_sim.humanFaction) continue;
+        if (entity->at0d & 0x20) continue;         // leave the leader alone
+        entity->at0d = (unsigned char)(0x10 | (order & 0x0f));
+        entity->at18 = 0x1f0;                     // drop whatever it was doing
+        changed++;
+    }
+    return changed;
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_last_action(void) { return g_lastAction; }
 EMSCRIPTEN_KEEPALIVE int lm_last_col(void) { return (int)g_lastCol; }
 EMSCRIPTEN_KEEPALIVE int lm_last_row(void) { return (int)g_lastRow; }

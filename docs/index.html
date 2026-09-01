@@ -108,6 +108,10 @@
   <button class="zoom on" id="z1" disabled>16px</button>
   <button class="zoom" id="z2" disabled>32px</button>
   <span class="sep"></span>
+  <button id="attack" disabled>全軍 攻撃</button>
+  <button id="hold" disabled>全軍 待機</button>
+  <button id="home" disabled>全軍 帰還</button>
+  <span class="sep"></span>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -138,12 +142,14 @@
        戦闘、ユニットの自律行動までは実行ファイルから移植済み。
        AI の行動選択と経路探索はまだ入っていないので、
        ユニットは生まれた場所の周りで働きます。</p>
-    <p style="color:var(--muted)">クリックでユニットを置けます（資金100）。</p>
+    <p style="color:var(--muted)">クリックでユニットを置けます（資金100）。
+       「全軍」ボタンは自勢力の部隊に命令を出します — 攻撃は隣の集落へ、
+       帰還は自陣へ戻して設置に戻します。</p>
   </aside>
 </main>
-<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / クリック: ユニットを置く / 音楽: ボタンから</footer>
+<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / クリック: ユニットを置く / 全軍ボタン: 命令 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260901085915"></script>
+<script src="loadmonarch.js?v=20260901090031"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -217,7 +223,8 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       drop.classList.add('hide');
-      ['prev', 'next', 'pause', 'music', 'z0', 'z1', 'z2'].forEach(function (id) {
+      ['prev', 'next', 'pause', 'music', 'attack', 'hold', 'home',
+       'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
       canvas.focus();
@@ -276,6 +283,20 @@ createLordMonarch().then(function (M) {
     M._lm_pause(M._lm_running() ? 1 : 0);
     pause.textContent = M._lm_running() ? '一時停止' : '再開';
   };
+
+  // The orders the original routes through its command window: 4 sends a unit
+  // after a neighbour's settlement, 0 holds it, 1 sends it home and back to
+  // building.  New units carry whichever is selected, the way DAT_004365e0
+  // works in the executable.
+  [['attack', 4], ['hold', 0], ['home', 1]].forEach(function (pair) {
+    document.getElementById(pair[0]).onclick = function () {
+      M._lm_set_order(pair[1]);
+      var n = M._lm_order_all(pair[1]);
+      note.textContent = n + ' 部隊に命令';
+      setTimeout(function () { note.textContent = ''; }, 1500);
+      refreshPanel();
+    };
+  });
 
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;

@@ -79,6 +79,16 @@ createLordMonarch().then((M) => {
         M._lm_step(30);
     }
 
+    // Orders: giving the whole army one takes and shows up in their state.
+    M._lm_load_stage(2);                    // B_003, which starts with units
+    for (let i = 0; i < 200; i++) M._lm_step(1);
+    M._lm_set_order(4);
+    expect('the selected order took', M._lm_order(), 4);
+    const ordered = M._lm_order_all(4);
+    expect('some units were given it', ordered, (n) => n > 0);
+    for (let i = 0; i < 200; i++) M._lm_step(1);
+    expect('and the game keeps running', M._lm_sweeps(), (n) => n > 0);
+
     // The music: a tune loads out of the zip and renders real samples.
     M._lm_load_stage(0);
     expect('a tune loads', M._lm_music_play(0, 1), 1);
