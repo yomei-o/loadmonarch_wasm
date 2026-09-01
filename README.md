@@ -8,6 +8,9 @@ Nihon Falcom の「Lord Monarch Online」(DS7E_WIN) を読み解いて、
 
 * `tools/dump_assets.py` — .256/.PAL/.MAP を PNG に出す（形式の実証つき）
 * `tools/ghidra_scripts/DecompileAll.java` — 792関数を C に落とす Ghidra スクリプト
+* `src/world.c` — ステージ（48x48 セル）と背景バンクの読み込み
+* `src/render.c` — 8bit インデックス面への描画（ネイティブと WASM で共通）
+* `src/win32_main.c` — ネイティブの器（ウィンドウ、DIB、BitBlt）
 * `RESUME.md` — 解析結果と次の手順
 
 ## 試す
@@ -29,3 +32,21 @@ gcc -O2 -o tests/map_test.exe tests/map_test.c src/bz.c src/gfx.c
 gcc -O2 -o tests/data1_test.exe tests/data1_test.c src/bz.c
 ./tests/data1_test.exe orig/DS7E_WIN/DATA/DATA1.BZ ui.pgm
 ```
+
+## ネイティブ版
+
+```sh
+# mingw
+gcc -O2 -mwindows -o loadmonarch.exe     src/win32_main.c src/world.c src/render.c src/bz.c src/gfx.c -lgdi32
+# MSVC
+tools/build_msvc.bat
+```
+
+`loadmonarch.exe` に DS7E_WIN ディレクトリを渡す（省略時は `orig/DS7E_WIN` を探す）。
+
+| キー | |
+|---|---|
+| 矢印 | スクロール |
+| 1 / 2 / 3 | ズーム（8 / 16 / 32 px タイル） |
+| PgUp / PgDn | ステージ切替（全15面） |
+| Esc | 終了 |

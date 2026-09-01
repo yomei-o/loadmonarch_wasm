@@ -5,3 +5,5 @@ decomp/
 *.exe
 *.png
 !web/*.png
+loadmonarch*.exe
+*.obj
