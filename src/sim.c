@@ -469,7 +469,10 @@ void simSeedLeaders(Sim *sim) {
         entity->target[0] = entity->position[0];
         entity->target[1] = entity->position[1];
         entity->flags = 0;
-        entity->at08 = 200;
+        // 2000 rather than the 200 a unit costs to raise, so a stage can be
+        // played rather than spending its only leader on the first order.
+        // Another thing this function invents; see above.
+        entity->at08 = 2000;
         entity->at0c = 6;
         entity->at0d = 0x20 | 1;        // the leader bit, plus the plain order
         entity->at0f = 4;               // what the faction becomes if lost

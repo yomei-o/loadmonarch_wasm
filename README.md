@@ -33,6 +33,26 @@ gcc -O2 -o tests/data1_test.exe tests/data1_test.c src/bz.c
 ./tests/data1_test.exe orig/DS7E_WIN/DATA/DATA1.BZ ui.pgm
 ```
 
+## ブラウザで動かす
+
+**https://yomei-o.github.io/loadmonarch_wasm/**
+
+お手元の `ds7e.zip` をページに落とすと動きます。ゲームのデータはこのリポジトリにも
+ページにも入っていません。読み込んだ zip はブラウザの中だけで扱われ、どこにも
+送られません（zip の展開も inflate も WebAssembly 側の C コードがやっています）。
+
+| | |
+|---|---|
+| クリック | ユニットを置く（資金100） |
+| 矢印 | スクロール |
+| 1 / 2 / 3 | ズーム（8 / 16 / 32px タイル） |
+| Space | 一時停止 |
+
+```sh
+sh tools/build_wasm.sh          # -> docs/loadmonarch.js + docs/index.html
+node tests/wasm_check.js        # ブラウザ無しで WASM 版を検証
+```
+
 ## ネイティブ版
 
 ```sh

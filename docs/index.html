@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lord Monarch - a port in progress</title>
+<style>
+  :root {
+    --bg: #10120e;
+    --panel: #1a1d16;
+    --line: #33392a;
+    --ink: #d8dfc8;
+    --muted: #8c9678;
+    --gold: #d8b44a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.55 "Consolas", "Roboto Mono", monospace;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #1e2219, #14170f);
+  }
+  header .brand { color: var(--gold); font-weight: bold; letter-spacing: 2px; }
+  header .brand small { color: var(--muted); letter-spacing: 0; margin-left: 8px; font-weight: normal; }
+  button, label.filebtn {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 5px 11px;
+    font: inherit;
+    cursor: pointer;
+    user-select: none;
+  }
+  button:hover, label.filebtn:hover { border-color: var(--gold); color: var(--gold); }
+  button.on { background: var(--gold); border-color: var(--gold); color: #241d05; }
+  button:disabled { opacity: .4; cursor: default; }
+  .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage { flex: 1; position: relative; min-width: 0; display: grid; place-items: center; background: #070a06; }
+  #view { image-rendering: pixelated; max-width: 100%; max-height: 100%; }
+  #drop {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    text-align: center; padding: 24px;
+    background: rgba(7, 10, 6, .94);
+  }
+  #drop.hide { display: none; }
+  #drop .box {
+    border: 2px dashed var(--line);
+    border-radius: 6px;
+    padding: 32px 40px;
+    max-width: 640px;
+  }
+  #drop.over .box { border-color: var(--gold); }
+  #drop h1 { font-size: 20px; margin: 0 0 6px; color: var(--gold); letter-spacing: 1px; }
+  #drop p { color: var(--muted); margin: 8px 0; }
+  #drop code { color: var(--ink); }
+  aside {
+    width: 300px; flex-shrink: 0;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    padding: 12px;
+    overflow-y: auto;
+  }
+  aside h2 {
+    font-size: 11px; letter-spacing: 2px; color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 4px; margin: 14px 0 8px;
+  }
+  aside h2:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 2px 3px; font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: normal; font-size: 11px; }
+  td.name { text-align: left; }
+  tr.out td { opacity: .45; }
+  .swatch { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1px solid #0006; }
+  footer {
+    padding: 4px 12px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 11px;
+    white-space: nowrap; overflow: hidden;
+  }
+  #note { color: var(--gold); }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">LORD MONARCH<small>移植途中 / a port in progress</small></span>
+  <label class="filebtn">zip を開く<input type="file" id="file" accept=".zip" hidden></label>
+  <span class="sep"></span>
+  <button id="prev" disabled>&lt; 面</button>
+  <span id="stageName">-</span>
+  <button id="next" disabled>面 &gt;</button>
+  <span class="sep"></span>
+  <button class="zoom" id="z0" disabled>8px</button>
+  <button class="zoom on" id="z1" disabled>16px</button>
+  <button class="zoom" id="z2" disabled>32px</button>
+  <span class="sep"></span>
+  <button id="pause" disabled>一時停止</button>
+  <span id="note"></span>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="view" width="640" height="480"></canvas>
+    <div id="drop">
+      <div class="box">
+        <h1>ds7e.zip をここに落としてください</h1>
+        <p>Nihon Falcom の「Lord Monarch Online」を読み込んで動かします。
+           ゲームのデータはこのページには入っていないので、
+           お手元の <code>ds7e.zip</code> が必要です。</p>
+        <p>読み込んだファイルはブラウザの中だけで扱われ、どこにも送られません。</p>
+      </div>
+    </div>
+  </div>
+  <aside>
+    <h2>FACTIONS</h2>
+    <table id="factions">
+      <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>領土</th><th>ユニット</th><th>兵</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h2>WORLD</h2>
+    <table id="world"><tbody></tbody></table>
+    <h2>移植の状況</h2>
+    <p style="color:var(--muted)">地形とタイル、領土の拡大、経済（税と維持費）、
+       戦闘、ユニットの自律行動までは実行ファイルから移植済み。
+       AI の行動選択と経路探索はまだ入っていないので、
+       ユニットは生まれた場所の周りで働きます。</p>
+    <p style="color:var(--muted)">クリックでユニットを置けます（資金100）。</p>
+  </aside>
+</main>
+<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / クリック: ユニットを置く</footer>
+
+<script src="loadmonarch.js?v=20260901081439"></script>
+<script>
+createLordMonarch().then(function (M) {
+  'use strict';
+  var canvas = document.getElementById('view');
+  var ctx = canvas.getContext('2d');
+  var drop = document.getElementById('drop');
+  var note = document.getElementById('note');
+  var loaded = false;
+
+  var W = M._lm_width(), H = M._lm_height();
+  canvas.width = W;
+  canvas.height = H;
+
+  var factionNames = ['緑', '赤', '青', '黄', '中立'];
+  var factionColours = ['#4c9a3a', '#b8402f', '#3a63b8', '#c9a227', '#7a7a7a'];
+
+  function present() {
+    var ptr = M._lm_frame();
+    var img = new ImageData(
+        new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4).slice(), W, H);
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function refreshPanel() {
+    document.getElementById('stageName').textContent =
+        M.UTF8ToString(M._lm_stage_name());
+    var body = document.querySelector('#factions tbody');
+    body.innerHTML = '';
+    for (var f = 0; f < 5; f++) {
+      var tr = document.createElement('tr');
+      if (M._lm_out(f)) tr.className = 'out';
+      var cells = [
+        '<span class="swatch" style="background:' + factionColours[f] +
+            '"></span>' + factionNames[f],
+        M._lm_funds(f), M._lm_tax(f), M._lm_count(f, 1),
+        M._lm_count(f, 0), M._lm_count(f, 3),
+      ];
+      cells.forEach(function (value, i) {
+        var td = document.createElement('td');
+        if (i === 0) { td.className = 'name'; td.innerHTML = value; }
+        else td.textContent = value;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    }
+    var world = document.querySelector('#world tbody');
+    var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
+    world.innerHTML =
+        row('掃引', Math.round(M._lm_sweeps())) +
+        row('背景セット', M._lm_scenery()) +
+        row('最後のクリック', M._lm_last_col() + ',' + M._lm_last_row() + ' ' +
+            (actions[M._lm_last_action()] || '-'));
+  }
+
+  function row(name, value) {
+    return '<tr><td class="name">' + name + '</td><td>' + value + '</td></tr>';
+  }
+
+  /* ------------------------------------------------------- loading a zip */
+  function openZip(file) {
+    file.arrayBuffer().then(function (buffer) {
+      var bytes = new Uint8Array(buffer);
+      var p = M._lm_alloc(bytes.length);
+      M.HEAPU8.set(bytes, p);
+      var stages = M._lm_open_zip(p, bytes.length);
+      M._lm_free(p);
+      if (!stages) {
+        note.textContent = M.UTF8ToString(M._lm_message());
+        return;
+      }
+      note.textContent = '';
+      loaded = true;
+      drop.classList.add('hide');
+      ['prev', 'next', 'pause', 'z0', 'z1', 'z2'].forEach(function (id) {
+        document.getElementById(id).disabled = false;
+      });
+      canvas.focus();
+      present();
+      refreshPanel();
+    });
+  }
+
+  document.getElementById('file').onchange = function (e) {
+    if (e.target.files[0]) openZip(e.target.files[0]);
+    e.target.value = '';
+  };
+  ['dragenter', 'dragover'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      e.preventDefault();
+      drop.classList.add('over');
+      drop.classList.remove('hide');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      e.preventDefault();
+      drop.classList.remove('over');
+      if (loaded) drop.classList.add('hide');
+    });
+  });
+  document.addEventListener('drop', function (e) {
+    var file = e.dataTransfer.files[0];
+    if (file) openZip(file);
+  });
+
+  /* ------------------------------------------------------------- controls */
+  function setZoom(z) {
+    M._lm_set_zoom(z);
+    [0, 1, 2].forEach(function (i) {
+      document.getElementById('z' + i).classList.toggle('on', i === M._lm_zoom());
+    });
+  }
+  [0, 1, 2].forEach(function (i) {
+    document.getElementById('z' + i).onclick = function () { setZoom(i); };
+  });
+  document.getElementById('prev').onclick = function () {
+    M._lm_load_stage(M._lm_stage() - 1);
+    refreshPanel();
+  };
+  document.getElementById('next').onclick = function () {
+    M._lm_load_stage(M._lm_stage() + 1);
+    refreshPanel();
+  };
+  var pause = document.getElementById('pause');
+  pause.onclick = function () {
+    M._lm_pause(M._lm_running() ? 1 : 0);
+    pause.textContent = M._lm_running() ? '一時停止' : '再開';
+  };
+
+  canvas.addEventListener('pointerdown', function (e) {
+    if (!loaded) return;
+    var r = canvas.getBoundingClientRect();
+    var x = Math.floor((e.clientX - r.left) * canvas.width / r.width);
+    var y = Math.floor((e.clientY - r.top) * canvas.height / r.height);
+    M._lm_click(x, y);
+    refreshPanel();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!loaded) return;
+    var moves = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+      ArrowUp: [0, -1], ArrowDown: [0, 1],
+    };
+    if (moves[e.key]) {
+      M._lm_scroll(moves[e.key][0], moves[e.key][1]);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === '1' || e.key === '2' || e.key === '3') {
+      setZoom(e.key.charCodeAt(0) - 49);
+      return;
+    }
+    if (e.key === ' ') { pause.click(); e.preventDefault(); }
+  });
+
+  /* ---------------------------------------------------------------- loop */
+  var lastPanel = 0;
+  function frame(now) {
+    if (loaded) {
+      M._lm_step(1);
+      present();
+      if (now - lastPanel > 250) { refreshPanel(); lastPanel = now; }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>

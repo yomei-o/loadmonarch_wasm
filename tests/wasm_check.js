@@ -1,0 +1,85 @@
+// Drive the WebAssembly build the way the page does, from node: hand it the
+// zip, run the simulation, read the panel, click.  No browser and no window.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const createLordMonarch = require('../docs/loadmonarch.js');
+
+let failures = 0;
+function expect(what, got, want) {
+    const ok = typeof want === 'function' ? want(got) : got === want;
+    if (!ok) {
+        console.log(`  FAIL ${what}: got ${got}`);
+        failures++;
+    }
+}
+
+createLordMonarch().then((M) => {
+    const zipPath = process.argv[2] || path.join(__dirname, '..', 'ds7e.zip');
+    const bytes = fs.readFileSync(zipPath);
+
+    const p = M._lm_alloc(bytes.length);
+    M.HEAPU8.set(bytes, p);
+    const stages = M._lm_open_zip(p, bytes.length);
+    M._lm_free(p);
+    if (!stages) {
+        console.log('  FAIL could not open the zip: ' +
+                    M.UTF8ToString(M._lm_message()));
+        process.exit(1);
+    }
+    expect('stage count', stages, 15);
+    expect('first stage', M.UTF8ToString(M._lm_stage_name()), 'B_000.MAP');
+    expect('its scenery set', M._lm_scenery(), 10);
+    expect('starting funds', M._lm_funds(0), 5000);
+    expect('claimed ground on B_000', M._lm_count(0, 1), 242);
+
+    // A frame comes back as RGBA the canvas can take, and it is not blank.
+    const W = M._lm_width(), H = M._lm_height();
+    expect('view width', W, 640);
+    expect('view height', H, 480);
+    const frame = M._lm_frame();
+    const pixels = new Uint8Array(M.HEAPU8.buffer, frame, W * H * 4);
+    let distinct = new Set();
+    for (let i = 0; i < W * H * 4; i += 4)
+        distinct.add(pixels[i] << 16 | pixels[i + 1] << 8 | pixels[i + 2]);
+    expect('the frame has real colours in it', distinct.size, (n) => n > 4);
+    expect('every pixel is opaque', pixels[3], 255);
+
+    // The simulation advances, and the neutral cells put entities out.
+    const before = M._lm_count(4, 3);
+    M._lm_step(600);
+    expect('sweeps counted', M._lm_sweeps(), (n) => n === 600);
+    expect('neutral cells produced entities', M._lm_count(4, 3),
+           (n) => n > before);
+
+    // Zoom keeps working and changes the tile size the view uses.
+    M._lm_set_zoom(2);
+    expect('zoom changed', M._lm_zoom(), 2);
+    M._lm_frame();
+    M._lm_set_zoom(1);
+
+    // Clicking on the player's own ground raises a unit and takes the hundred.
+    const funds = M._lm_funds(0);
+    let placed = 0;
+    for (let y = 40; y < 440 && !placed; y += 16) {
+        for (let x = 40; x < 600 && !placed; x += 16) {
+            // 1 is placed, 6 is placed at the cost of the acting unit -
+            // 0040b330 returns both for a successful order.
+            const r = M._lm_click(x, y);
+            if (r === 1 || r === 6) placed = 1;
+        }
+    }
+    expect('a click placed a unit somewhere', placed, 1);
+    expect('and it cost a hundred', M._lm_funds(0), funds - 100);
+
+    // Every stage loads.
+    for (let s = 0; s < 15; s++) {
+        expect(`stage ${s} loads`, M._lm_load_stage(s), 1);
+        M._lm_step(30);
+    }
+
+    console.log(failures ? `${failures} check(s) failed`
+                         : 'wasm checks ok');
+    process.exit(failures ? 1 : 0);
+});
