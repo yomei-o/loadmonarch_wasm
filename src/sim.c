@@ -773,6 +773,62 @@ static void stepWalk(Sim *sim, unsigned slot) {
     simAdvanceRoute(state, slot);       // 00401000's closing 00405200
 }
 
+// 00403170's walk.  The same step as the leader's, with one thing more: when
+// the way is blocked it spends a turn of patience from +0x0f, and once that
+// runs out it abandons the route and takes the plain order.  That is why a
+// unit does not stand forever against a wall.
+//
+// The original guards the giving-up with 0041eb60 and 0041a800, neither of
+// which is read; here the counter alone decides.
+static void stepWalkOrdered(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    const unsigned char want = nextDirection(entity);
+
+    if (entity->at0c != want) {
+        entity->at0c = want;
+        entity->at0e = entity->at0c;
+        return;
+    }
+    if (want >= 8) return;
+    const int dx = kStepDx[want], dy = kStepDy[want];
+
+    if (!stepInBounds(col, row, dx, dy)) {
+        entity->at0d = 1;
+        entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+    const unsigned nc = (unsigned)((int)col + dx);
+    const unsigned nr = (unsigned)((int)row + dy);
+    WorldCell *to = &state->world.cells[WORLD_INDEX(nc, nr)];
+
+    // A turn of patience is spent whenever the step does not happen.
+    const int giveUp = --entity->at0f == 0;
+    if (giveUp) {
+        entity->at0f = 1;
+        entity->at0d = 1;
+        entity->at18 = ROUTE_EMPTY;
+    }
+
+    if (to->terrain >= TERRAIN_WALKABLE_MAX) return;
+    if (fightAt(sim, slot, nc, nr)) return;
+    if (mergeAt(sim, slot, nc, nr)) return;
+    if (entity->flags & 0x80) return;
+    if (to->owner < ENTITY_NONE) return;
+    if (raidSettlement(sim, slot, nc, nr)) return;
+    if (giveUp) return;
+
+    // The way is clear: take it, and the patience spent above is returned.
+    entity->at0f++;
+    state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
+    to->owner = (unsigned char)slot;
+    entity->position[0] = (unsigned char)nc;
+    entity->position[1] = (unsigned char)nr;
+    simAdvanceRoute(state, slot);
+}
+
 // 004204f0: the entity cursor, the counterpart of the cell sweep.  It walks
 // 0x3f of the sixty-four entities per call and picks a behaviour by role.
 // Only the leader's walk is ported; the neutral (00402700), plain (00401770)
@@ -804,10 +860,9 @@ void simStepEntities(Sim *sim) {
         }
         if (entity->at0d & 0x10) {
             stepOrderedUnit(sim, slot);                 // 00402bc0
-            // A unit with a route walks it.  The step itself is 00401000's;
-            // which of the ordered arms the original walks from is in
-            // 00403170, which is not read.
-            if (entity->at18 != ROUTE_EMPTY) stepWalk(sim, slot);
+            // A unit with a route walks it, by 00403170's step rather than
+            // the leader's - the difference is the patience counter.
+            if (entity->at18 != ROUTE_EMPTY) stepWalkOrdered(sim, slot);
             continue;
         }
         stepPlainUnit(sim, slot);                       // 00401770
