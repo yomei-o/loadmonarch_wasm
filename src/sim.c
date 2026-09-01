@@ -447,6 +447,51 @@ SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
     return SIM_ACTION_DONE;
 }
 
+// 0040b680: clearing.  A unit works on the cell its target names - terrain
+// 0x30..0x5f is an obstacle, and 0x7a is the one that pays out - spending
+// funds at thirty a unit of work, or two for the 0x7a, and putting in at most
+// a sixteenth of its own strength.  When the cell's value runs out it becomes
+// 0x20, which is walkable.
+//
+// The original gates this on 0041ac10, which is not read; here the target has
+// to be inside the border, which is the guard 0040b680 itself applies next.
+SimActionResult simClearTarget(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->target[0];
+    const unsigned row = entity->target[1];
+    if (col == 0 || row == 0 || col > 0x2e || row > 0x2e)
+        return SIM_ACTION_REFUSED;
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return SIM_ACTION_REFUSED;
+
+    WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+    unsigned cost, work;
+    if (cell->terrain == 0x7a) {
+        cost = 2;
+        work = cell->value + 0xff;
+    } else if (cell->terrain >= 0x30 && cell->terrain <= 0x5f) {
+        cost = 0x1e;
+        work = cell->value + 1;
+    } else {
+        return SIM_ACTION_REFUSED;
+    }
+
+    unsigned amount = entity->at08 >> 4;
+    if (work < amount) amount = work;
+    if (!simSpend(state, faction, amount * cost)) return SIM_ACTION_NO_FUNDS;
+
+    if (cell->value > amount) {
+        cell->value -= amount;
+        return SIM_ACTION_PROGRESS;
+    }
+    // 0040b680 leaves the overshoot behind as the new cell's value.
+    cell->value = amount - cell->value;
+    cell->terrain = 0x20;
+    return SIM_ACTION_DONE;
+}
+
 // Not from the executable.  A faction only earns while an entity carrying the
 // leader bit stands on its castle (0041dc60 tests it), and only grows while
 // that bit is intact (00420b30 clears the faction otherwise) - but nothing in
@@ -1147,6 +1192,16 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_DONE) return;
         fallbackOrder(sim, slot);
         return;
+    case 7: {
+        // 00403170's case 7 is the clearing order, and its tail is the same
+        // hunt-or-home the high bits of +0x0d choose.
+        const SimActionResult r = simClearTarget(sim, slot);
+        if (r == SIM_ACTION_PROGRESS || r == SIM_ACTION_DONE) return;
+        if (entity->at0d & 0x80) return;
+        if (entity->at0d & 0x40) { entity->at0d = 0x10; return; }
+        fallbackOrder(sim, slot);
+        return;
+    }
     default:
         // 00403170 carries cases 6 through 0x0c as well, several hundred lines
         // of them, and none is read.  Falling back sends the unit home rather

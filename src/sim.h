@@ -28,6 +28,7 @@ typedef enum {
     SIM_ACTION_DONE = 1,            // 0040b330's 1
     SIM_ACTION_NO_FUNDS = 2,        // its 2
     SIM_ACTION_REFUSED = 3,         // its 3
+    SIM_ACTION_PROGRESS = 4,        // 0040b680's 4 - work done, not finished
     SIM_ACTION_SPENT_ENTITY = 6,    // its 6 - the entity was used up
 } SimActionResult;
 
@@ -52,6 +53,9 @@ void simMarkDying(GameState *state, unsigned slot, unsigned char cause);
 // the purse and by the acting entity's strength.
 SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
                                  unsigned row);
+
+// 0040b680: work the obstacle at this unit's target down towards ground.
+SimActionResult simClearTarget(Sim *sim, unsigned slot);
 
 // Puts a leader on each castle so a stage can start.  NOT from the
 // executable - see the comment in sim.c.

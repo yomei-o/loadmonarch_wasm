@@ -450,6 +450,58 @@ int main(void) {
         expect("on its own ground it stays", e->at18, 0x1f0);
     }
 
+    // 0040b680: an obstacle is worked down at thirty a unit of work, and
+    // becomes walkable ground once its value is gone.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim dig;
+        simInit(&dig, &state);
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at08 = 1600;                 // a sixteenth is 100 of work
+        e->position[0] = 20;
+        e->position[1] = 20;
+        e->target[0] = 21;
+        e->target[1] = 20;
+        WorldCell *rock = &state.world.cells[WORLD_INDEX(21, 20)];
+        rock->terrain = 0x40;           // an obstacle
+        rock->value = 250;
+        state.factions[0].funds = 100000;
+        const unsigned before = state.factions[0].funds;
+        expect("work went in", (long)simClearTarget(&dig, 1),
+               SIM_ACTION_PROGRESS);
+        expect("the obstacle wore down", rock->value, 150);
+        expect("and it was paid for at thirty a unit",
+               before - state.factions[0].funds, 100 * 0x1e);
+
+        // Enough work finishes it, and 0x20 is walkable.
+        rock->value = 40;
+        expect("the obstacle was cleared", (long)simClearTarget(&dig, 1),
+               SIM_ACTION_DONE);
+        expect("and became ground", rock->terrain, 0x20);
+        // The work available is capped by what the cell needs - value + 1 -
+        // so a cell at 40 takes 41 of work and leaves 1 behind.
+        expect("the overshoot became its value", rock->value, 1);
+
+        // Ordinary terrain refuses the order.
+        rock->terrain = 0x60;
+        expect("plain scenery is not clearable",
+               (long)simClearTarget(&dig, 1), SIM_ACTION_REFUSED);
+
+        // 0x7a is the cheap one that carries a lot of work.
+        rock->terrain = 0x7a;
+        rock->value = 10;
+        state.factions[0].funds = 100000;
+        const unsigned before2 = state.factions[0].funds;
+        expect("the rich cell cleared", (long)simClearTarget(&dig, 1),
+               SIM_ACTION_DONE);
+        expect("at two a unit of work",
+               before2 - state.factions[0].funds, 100 * 2);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }
