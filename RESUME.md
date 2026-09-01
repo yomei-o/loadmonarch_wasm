@@ -118,6 +118,14 @@ plane0 が +0x00、plane1 +0x20、plane2 +0x40、plane3 +0x60 にあり、同じ
 ただしスクリーンショットの色は当てにならない（8bit パレットアプリなので
 デスクトップ合成で色が化ける）。幾何・配置の確認には使える。
 
+## ビルドは必ず低優先度で
+
+このマシンは並列コンパイルでデスクトップごと固まる。**必ず `tools/lowpri.sh`
+経由**でビルドする（`cmd start /LOW` で生成時に優先度クラスを設定するので、
+コンパイラドライバが起こす子プロセスも全部継承する。後から探して renice する
+より軽くて確実）。`tools/build.sh` と `tools/build_tests.sh`、
+`tools/build_msvc.bat` はすでにそうなっている。
+
 ## 罠
 
 * **`small` は使えない**。`rpcndr.h` が `#define small char` しているので、MSVC で
