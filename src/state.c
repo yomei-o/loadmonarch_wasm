@@ -139,9 +139,30 @@ void stateMarkDefeated(GameState *state) {
 // worldLoadStage has already put the map's terrain in place, so the cell
 // reset that opens the original's chain is deliberately not repeated here -
 // it runs before a map is read, not after.
+// 0040b270.  The original drives this from the keyboard, a direction at a
+// time; a cell is a cell however it was chosen, so the hosts point it at
+// whatever the player is pointing at.
+#define CURSOR_SPRITE 0xccu
+
+void stateMoveCursor(GameState *state, int col, int row) {
+    if (state->cursorCol < WORLD_GRID && state->cursorRow < WORLD_GRID)
+        state->world.cells[WORLD_INDEX(state->cursorCol, state->cursorRow)]
+            .overlay = 0;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) {
+        state->cursorCol = 0xff;
+        state->cursorRow = 0xff;
+        return;
+    }
+    state->cursorCol = (unsigned char)col;
+    state->cursorRow = (unsigned char)row;
+    state->world.cells[WORLD_INDEX(col, row)].overlay = CURSOR_SPRITE;
+}
+
 void stateStartStage(GameState *state) {
     state->frame = 1;                   // DAT_00435b1c starts at one
     state->showOrders = 1;              // DAT_004376a1
+    state->cursorCol = 0xff;            // nowhere until a host points it
+    state->cursorRow = 0xff;
 
     stateMarkBlocked(state);
     stateResetEntitiesAndFactions(state);

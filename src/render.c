@@ -260,6 +260,11 @@ void renderStatus(const GameState *game, Surface *out) {
 static const unsigned char kPulse[16] = {100, 90, 80, 70, 60, 50, 40, 30,
                                          40,  50, 60, 70, 80, 90, 100, 100};
 
+static unsigned world_names_colour(const World *world, unsigned faction) {
+    return world->names.loaded && faction < 5
+               ? world->names.colour[NAME_COUNTRY + faction] : 0;
+}
+
 void renderPalette(const GameState *game, int zoom,
                    unsigned char table[256][3]) {
     const TileBank *ground = worldBank(&game->world, zoom);
@@ -277,9 +282,29 @@ void renderPalette(const GameState *game, int zoom,
         table[i][2] = from[2];
     }
 
+    // 00405fc0 installs the terrain's sixteen twice: once as they are, and
+    // once at 0x55/100 of their brightness sixteen entries further on.
+    for (unsigned i = 0; i < 16; i++)
+        for (int c = 0; c < 3; c++)
+            table[0x20 + i][c] =
+                (unsigned char)(ground->palette[0x10 + i][c] * 0x55u / 100u);
+
     table[UI_TRANSPARENT][0] = 0;
     table[UI_TRANSPARENT][1] = 0;
     table[UI_TRANSPARENT][2] = 0x96;
+
+    // 0x71 to 0x75 are the five countries' colours, named by the first byte of
+    // each country's record in the name table: a terrain index whose low four
+    // bits pick out of the sprite bank's sixteen.  The interface graphics are
+    // drawn in these, which is how a panel knows whose it is.
+    for (unsigned f = 0; f < 5; f++) {
+        const unsigned char *from =
+            sprites->palette[0x30u + (world_names_colour(&game->world, f) &
+                                      0x0fu)];
+        table[0x71 + f][0] = from[0];
+        table[0x71 + f][1] = from[1];
+        table[0x71 + f][2] = from[2];
+    }
     for (int c = 0; c < 3; c++) {
         table[0x1f][c] =
             (unsigned char)(ground->palette[0x1f][c] * scale / 100u);

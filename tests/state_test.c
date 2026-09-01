@@ -2,10 +2,12 @@
 // uses, so a wrong offset shows up here rather than as odd behaviour later.
 #include <stdio.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../src/sim.h"
 #include "../src/state.h"
+#include "../src/host.h"
 #include "../src/render.h"
 
 static int failures;
@@ -678,6 +680,46 @@ int main(void) {
                             if (n > highest) highest = n;
                         }
         expect("no sprite number leaves the bank", highest < 0xcc, 1);
+    }
+
+    // The name table out of the large terrain file.  It needs the game's own
+    // files, so this runs only where they are - beside the repository, as the
+    // build script is run.
+    {
+        static Host host;
+        FILE *archive = fopen("ds7e.zip", "rb");
+        if (archive) {
+            fseek(archive, 0, SEEK_END);
+            const long size = ftell(archive);
+            fseek(archive, 0, SEEK_SET);
+            unsigned char *bytes = (unsigned char *)malloc((size_t)size);
+            if (bytes && fread(bytes, 1, (size_t)size, archive) == (size_t)size &&
+                hostUseZip(&host, bytes, (unsigned)size)) {
+                static World probe;
+                char message[256];
+                if (worldLoadStage(&probe, &host, "B_003.MAP", message,
+                                   sizeof message)) {
+                    expect("the name table loaded", probe.names.loaded, 1);
+                    expect("country 0 is named",
+                           strlen(worldCountryName(&probe, 0)) > 0, 1);
+                    expect("all five countries are named",
+                           strlen(worldCountryName(&probe, 4)) > 0, 1);
+                    expect("and all sixteen orders",
+                           strlen(worldOrderName(&probe, 15)) > 0, 1);
+                    expect("a country carries a colour",
+                           probe.names.colour[1] != 0, 1);
+                    printf("  countries:");
+                    for (unsigned f = 0; f < 5; f++)
+                        printf(" [%s]", worldCountryName(&probe, f));
+                    printf("\n  orders:");
+                    for (unsigned o = 0; o < 16; o++)
+                        printf(" [%s]", worldOrderName(&probe, o));
+                    putchar('\n');
+                    worldFree(&probe);
+                }
+            }
+            fclose(archive);
+        }
     }
 
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);

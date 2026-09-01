@@ -127,7 +127,6 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
-    stateRecomputeTotals(&g_game);      // as 0041b370's interface caller does
     renderStatus(&g_game, &g_surface);
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
@@ -172,6 +171,23 @@ EMSCRIPTEN_KEEPALIVE void lm_pause(int paused) { g_running = !paused; }
 EMSCRIPTEN_KEEPALIVE int lm_running(void) { return g_running; }
 
 // A click, in canvas pixels: the same order the native shell issues.
+// 0040b270's cursor, pointed at a view pixel rather than nudged by a key.
+EMSCRIPTEN_KEEPALIVE void lm_set_cursor(int x, int y) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    if (x < 0 || y < 0) {
+        stateMoveCursor(&g_game, -1, -1);
+        return;
+    }
+    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y) / ts);
+}
+EMSCRIPTEN_KEEPALIVE int lm_cursor_col(void) { return g_game.cursorCol; }
+EMSCRIPTEN_KEEPALIVE int lm_cursor_row(void) { return g_game.cursorRow; }
+
+// Whether order balloons float above the units - DAT_004376a1.
+EMSCRIPTEN_KEEPALIVE void lm_show_orders(int on) { g_game.showOrders = on; }
+EMSCRIPTEN_KEEPALIVE int lm_orders_shown(void) { return g_game.showOrders; }
+
 EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
@@ -228,6 +244,18 @@ EMSCRIPTEN_KEEPALIVE int lm_funds(int faction) {
 EMSCRIPTEN_KEEPALIVE int lm_tax(int faction) {
     return faction >= 0 && faction < FACTION_COUNT
         ? (int)g_game.factions[faction].taxRate : 0;
+}
+// 0041b370's total: what its cells hold plus what its armies carry.
+EMSCRIPTEN_KEEPALIVE int lm_strength(int faction) {
+    return faction >= 0 && faction < FACTION_COUNT
+        ? (int)g_game.factions[faction].strength : 0;
+}
+// The scenery set's own wording, out of the large terrain file's name table.
+EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
+    return worldCountryName(&g_game.world, (unsigned)(faction < 0 ? 9 : faction));
+}
+EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
+    return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
 EMSCRIPTEN_KEEPALIVE int lm_losses(int faction) {
     return faction >= 0 && faction < FACTION_COUNT

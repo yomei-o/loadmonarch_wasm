@@ -114,6 +114,24 @@ createLordMonarch().then((M) => {
     M._lm_music_stop();
     expect('stopping stops it', M._lm_music_playing(), 0);
 
+    // The scenery set's own wording, and the cursor.
+    M._lm_load_stage(2);
+    const country = M.UTF8ToString(M._lm_country_name(0));
+    const order = M.UTF8ToString(M._lm_order_name(1));
+    expect('country 0 has a name', country.length, (n) => n > 0);
+    expect('order 1 has a name', order.length, (n) => n > 0);
+    console.log(`  set ${M._lm_scenery()}: ${country} / order 1 = ${order}`);
+
+    M._lm_set_cursor(100, 100);
+    expect('the cursor took a cell', M._lm_cursor_col(), (n) => n < 48);
+    const wasCol = M._lm_cursor_col(), wasRow = M._lm_cursor_row();
+    M._lm_set_cursor(-1, -1);
+    expect('and can be put away', M._lm_cursor_col(), 255);
+    M._lm_set_cursor(100, 100);
+    expect('and comes back to the same cell', M._lm_cursor_col(), wasCol);
+    expect('same row too', M._lm_cursor_row(), wasRow);
+    expect('orders show by default', M._lm_orders_shown(), 1);
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

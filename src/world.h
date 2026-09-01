@@ -46,6 +46,23 @@ typedef struct {
     unsigned char palette[256][3];                  // its own sixteen at 0x10
 } TileBank;
 
+// 00405fc0 copies a table of 16-byte records out of the large terrain file at
+// 0x7ea0 and keeps 22 of them.  Record 0 is junk; 1 to 5 name the five
+// countries and carry each one's colour in their first byte, which the loader
+// reads out and blanks; 6 to 21 name the sixteen orders, in order.  Every
+// scenery set has its own, so the countries and even the wording of the orders
+// change from campaign to campaign.
+#define NAME_RECORDS 22
+#define NAME_TEXT    13         // 0x7ea0's records are 16 wide, 13 usable
+#define NAME_COUNTRY 1          // record of country 0
+#define NAME_ORDER   6          // record of order 0
+
+typedef struct {
+    char text[NAME_RECORDS][NAME_TEXT + 1];
+    unsigned char colour[NAME_RECORDS];     // 1..5 only: a palette index
+    int loaded;
+} NameTable;
+
 // data1.bz, laid out by 00407560: a 256-wide sheet of everything the
 // interface is drawn from, with 0x70 standing for transparent.
 #define UI_SHEET_W 256
@@ -69,6 +86,7 @@ typedef struct {
     TileBank sprites;           // C_%03dm.bz, the 16-pixel unit sprites
     TileBank sprites32;         // C_%03dl1..4.bz, merged in fours
     UiSheet ui;                 // data1.bz, shared by every stage
+    NameTable names;            // 0x7ea0 of B_%03dl.bz
     char stage[64];             // which map this is
 } World;
 
@@ -82,6 +100,11 @@ void worldFree(World *world);
 
 // The bank for a zoom level: 0 small, 1 medium, 2 large.
 const TileBank *worldBank(const World *world, int zoom);
+
+// The name of a country, or of an order, in the wording this scenery set uses.
+// Never null; an empty string if the table did not load.
+const char *worldCountryName(const World *world, unsigned faction);
+const char *worldOrderName(const World *world, unsigned order);
 
 // The sprite bank for that zoom.  Never null, but its pixels can be, when the
 // stage had no such file.

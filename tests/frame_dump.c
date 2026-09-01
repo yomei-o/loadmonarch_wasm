@@ -59,7 +59,6 @@ int main(int argc, char **argv) {
     const int viewY = (span - H) / 2 > 0 ? (span - H) / 2 : 0;
     renderWorld(&game.world, zoom, viewX, viewY, 1, &surface);
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
-    stateRecomputeTotals(&game);
     renderStatus(&game, &surface);
 
     unsigned drawn = 0;

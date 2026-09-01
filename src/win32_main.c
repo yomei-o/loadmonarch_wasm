@@ -152,7 +152,6 @@ static void paint(App *app, HDC dc) {
                 app->transpose, &app->surface);
     // 0041b370 runs on a stage load and when the original's info window
     // refreshes - so here, before the strip is drawn.
-    stateRecomputeTotals(&app->game);
     renderStatus(&app->game, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
     if (app->showHud) paintHud(app, dc);
@@ -233,6 +232,15 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         clampView(app);
         updateTitle(window, app);
         InvalidateRect(window, NULL, FALSE);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        // 0040b270 moves the cursor a cell at a time from the keyboard.  A cell
+        // is a cell however it is chosen, so it follows the pointer here.
+        const TileBank *bank = worldBank(&app->game.world, app->zoom);
+        const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+        stateMoveCursor(&app->game, (app->viewX + (short)LOWORD(lparam)) / ts,
+                        (app->viewY + (short)HIWORD(lparam)) / ts);
         return 0;
     }
     case WM_LBUTTONDOWN: {

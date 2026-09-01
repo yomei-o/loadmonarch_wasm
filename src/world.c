@@ -27,8 +27,38 @@ static unsigned char *slurp(const Host *host, const char *path,
     return buf;
 }
 
+// 00405fc0's tail.  Records of sixteen bytes at 0x7ea0; thirteen are usable,
+// the loader having zeroed bytes 13 to 15 so a full-length name still ends.
+// For the five countries the first byte is a palette index rather than a
+// letter, and the original writes a space over it - so the names it prints
+// begin with one.  Kept as it is, since that is what the game shows.
+#define NAME_TABLE_AT 0x7ea0u
+
+static void loadNames(NameTable *names, const unsigned char *raw,
+                      unsigned size) {
+    memset(names, 0, sizeof *names);
+    if (size < NAME_TABLE_AT + NAME_RECORDS * 16u) return;
+    for (unsigned r = 0; r < NAME_RECORDS; r++) {
+        const unsigned char *record = raw + NAME_TABLE_AT + r * 16u;
+        unsigned from = 0;
+        if (r >= NAME_COUNTRY && r < NAME_COUNTRY + 5) {
+            names->colour[r] = record[0];
+            from = 1;
+        }
+        unsigned out = 0;
+        for (unsigned i = from; i < NAME_TEXT && record[i]; i++)
+            names->text[r][out++] = (char)record[i];
+        // Trailing blanks are padding in some sets; the game shows them, but
+        // nothing is lost by not carrying them into a caption.
+        while (out > 0 && names->text[r][out - 1] == 0x20) out--;
+        names->text[r][out] = 0;
+    }
+    names->loaded = 1;
+}
+
 static int loadBank(TileBank *bank, const Host *host, const char *path,
-                    int tileSize, char *message, unsigned messageSize) {
+                    int tileSize, NameTable *names, char *message,
+                    unsigned messageSize) {
     memset(bank, 0, sizeof *bank);
     long size = 0;
     unsigned char *file = slurp(host, path, &size);
@@ -59,8 +89,19 @@ static int loadBank(TileBank *bank, const Host *host, const char *path,
     }
     bank->tileSize = tileSize;
     gfxTilePalette(raw, produced, &bank->palette[0][0]);
+    if (names) loadNames(names, raw, produced);
     free(raw);
     return 1;
+}
+
+const char *worldCountryName(const World *world, unsigned faction) {
+    if (!world->names.loaded || faction >= 5) return "";
+    return world->names.text[NAME_COUNTRY + faction];
+}
+
+const char *worldOrderName(const World *world, unsigned order) {
+    if (!world->names.loaded || order >= 16) return "";
+    return world->names.text[NAME_ORDER + order];
 }
 
 // 00407560: data1.bz is a run of 16x16 tiles laid into a 256-wide sheet, with
@@ -247,7 +288,9 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
         snprintf(path, sizeof path, "BG/B_%03d%s.BZ", world->scenerySet,
                  banks[b].suffix);
         TileBank *bank = (TileBank *)((char *)world + banks[b].offset);
-        if (!loadBank(bank, host, path, banks[b].size, message,
+        // Only the large file carries the name table.
+        if (!loadBank(bank, host, path, banks[b].size,
+                      banks[b].size == 32 ? &world->names : NULL, message,
                       messageSize)) {
             worldFree(world);
             return 0;

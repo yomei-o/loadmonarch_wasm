@@ -80,6 +80,8 @@ typedef struct {
     // bits drive the palette pulse.  Not part of any ported structure.
     unsigned frame;
     int showOrders;                         // DAT_004376a1
+    unsigned char cursorCol;                // DAT_00437574
+    unsigned char cursorRow;                // DAT_00437578
 } GameState;
 
 // 004273b0: every cell back to default terrain and value.
@@ -99,9 +101,16 @@ void statePlaceEntities(GameState *state);
 // Safe to call as often as the interface likes.
 void stateRecomputeTotals(GameState *state);
 
-// Its last sweep: mark a faction with no strength left as out.  Nothing clears
-// that mark, so this belongs where the original calls it - a stage load.
+// Its last sweep: mark a faction with no strength left as out.  0040a5e0 runs
+// this every tick along with the sums, and nothing ever clears the mark - which
+// is safe only because the sums are rebuilt from scratch first.  Call it after
+// stateRecomputeTotals or never.
 void stateMarkDefeated(GameState *state);
+
+// 0040b270: park the cursor on a cell.  It lives in the cell itself, as sprite
+// 0xcc laid over whatever is there, so moving it means clearing the cell it
+// left.  Out-of-range coordinates put it away.
+void stateMoveCursor(GameState *state, int col, int row);
 
 // The whole chain 00407790 runs after a map loads, in its order.
 void stateStartStage(GameState *state);

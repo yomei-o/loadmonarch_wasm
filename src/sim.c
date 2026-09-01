@@ -349,6 +349,12 @@ void simStep(Sim *sim) {
         }
     }
     simStepEntities(sim);
+
+    // 0040a5e0 finishes its tick with 0041b370: the sums, then the mark on any
+    // country left with nothing.  Rebuilt from scratch every time, so a country
+    // is only marked when it really is finished.
+    stateRecomputeTotals(state);
+    stateMarkDefeated(state);
     sim->frames++;
 }
 
