@@ -1,6 +1,6 @@
 # Launch the native build, give it a moment, and photograph its window.
 param([string]$Exe = "loadmonarch.exe", [string]$Out = "tests/native.png",
-      [int]$Wait = 2500, [string]$Keys = "")
+      [int]$Wait = 2500, [string]$Keys = "", [int]$After = 0)
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 $proc = Start-Process -FilePath $Exe -PassThru
 Start-Sleep -Milliseconds $Wait
@@ -8,6 +8,9 @@ if ($Keys -ne "") {
     [System.Windows.Forms.SendKeys]::SendWait($Keys)
     Start-Sleep -Milliseconds 900
 }
+# -After lets the simulation run on after the keys, which is the only way to
+# watch it: reloading a stage resets its sweep counter.
+if ($After -gt 0) { Start-Sleep -Milliseconds $After }
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;

@@ -10,6 +10,7 @@ typedef struct {
     unsigned long long frames;
     unsigned humanFaction;      // DAT_004365cd
     int autoTax;                // DAT_0043769c == 1
+    unsigned pendingOrder;      // DAT_004365e0, stamped onto a new unit
 } Sim;
 
 void simInit(Sim *sim, GameState *state);

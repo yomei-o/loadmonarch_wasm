@@ -19,6 +19,71 @@
 
 #define SWEEP_PER_CALL 0x8f        // 00417380's loop counter
 #define ENTITY_NONE 0x40           // 0041cdc0 returns this when none is free
+#define CELL_VALUE_MAX 0xff        // 0041d870 clamps growth here
+#define UNIT_VALUE 200             // and turns value into a unit at this
+#define ENTITY_STRENGTH_CAP 100000
+
+// The eight neighbours, from the paired tables at 00434420 and 00434428:
+// west, east, north, south, then the four diagonals.
+static const signed char kNeighbourDx[8] = {-1, 1, 0, 0, -1, 1, 1, -1};
+static const signed char kNeighbourDy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
+
+// Only cells inside the border are worked on, which is the guard 0040b680
+// applies before it indexes.
+static int inBounds(int col, int row) {
+    return col > 0 && row > 0 && col < WORLD_GRID - 1 && row < WORLD_GRID - 1;
+}
+
+// 0041ee10's tally of what surrounds a cell.
+typedef struct {
+    unsigned char ownGround;    // neighbours already this faction's ground
+    unsigned char empty;        // neighbours holding nothing at all
+    unsigned char foreign;      // neighbours below 0x0d - somebody else's
+    unsigned char emptyCol;     // the first empty neighbour found
+    unsigned char emptyRow;
+} Neighbourhood;
+
+static void scanNeighbours(const GameState *state, unsigned col, unsigned row,
+                           unsigned faction, Neighbourhood *out) {
+    memset(out, 0, sizeof *out);
+    for (int i = 0; i < 8; i++) {
+        const int nc = (int)col + kNeighbourDx[i];
+        const int nr = (int)row + kNeighbourDy[i];
+        if (!inBounds(nc, nr)) continue;
+        const unsigned char t =
+            state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)].terrain;
+        if (t == faction + 0x0cu) {
+            out->ownGround++;
+        } else if (t == 0) {
+            if (++out->empty == 1) {
+                out->emptyCol = (unsigned char)nc;
+                out->emptyRow = (unsigned char)nr;
+            }
+        } else if (t < 0x0d) {
+            out->foreign++;
+        }
+    }
+}
+
+// 0041c780: the first neighbour holding another faction's claimed ground -
+// where a cell pushes when it has no empty land left to take.
+static int pickEnemyGround(const GameState *state, unsigned col, unsigned row,
+                           unsigned faction, unsigned char *outCol,
+                           unsigned char *outRow) {
+    for (int i = 0; i < 8; i++) {
+        const int nc = (int)col + kNeighbourDx[i];
+        const int nr = (int)row + kNeighbourDy[i];
+        if (!inBounds(nc, nr)) continue;
+        const unsigned char t =
+            state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)].terrain;
+        if (t > 0x0b && t < 0x10 && t != faction + 0x0cu) {
+            *outCol = (unsigned char)nc;
+            *outRow = (unsigned char)nr;
+            return 1;
+        }
+    }
+    return 0;
+}
 
 // 0041cdc0: the first inactive entity, or ENTITY_NONE.
 static unsigned allocEntity(GameState *state) {
@@ -143,11 +208,107 @@ static void stepCastle(Sim *sim, unsigned index, unsigned faction) {
     collectTax(state, faction);
 }
 
-// 0041d870, the unit arm.  A thousand bytes of movement, combat and claiming
-// that has not been read yet; leaving it out means units sit still rather than
-// behaving wrongly.
+// 0041d870's first branch: a faction carrying flag 0x40 is being relabelled.
+// at1f names what its cells become - or they are wiped when it is 4 - and the
+// change spreads over the 3x3 the original walks.
+static void relabelFaction(GameState *state, unsigned index, unsigned col,
+                           unsigned row, unsigned faction) {
+    const Faction *owner = &state->factions[faction];
+    const unsigned char becomes =
+        owner->at1f == 4 ? 0 : (unsigned char)(owner->at1f + 8);
+    const unsigned char groundBecomes =
+        owner->at1f == 4 ? 0 : (unsigned char)(owner->at1f + 0x0c);
+    state->world.cells[index].terrain = becomes;
+    for (int dc = -1; dc < 2; dc++) {
+        for (int dr = -1; dr < 2; dr++) {
+            const int nc = (int)col + dc, nr = (int)row + dr;
+            if (!inBounds(nc, nr)) continue;
+            WorldCell *cell =
+                &state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)];
+            if (cell->terrain == faction + 0x0cu) cell->terrain = groundBecomes;
+        }
+    }
+}
+
+// 0041d870's growth branch, which is how a country expands.  A unit's cell
+// gains value for every neighbouring cell its own faction already holds; once
+// that value covers the neighbours it feeds, the cell claims a piece of ground
+// - empty land first, otherwise a neighbour's - and at 200 it turns the
+// accumulated value into a unit, or hands it to the unit already standing
+// there.
+static void growFromUnit(Sim *sim, unsigned index, unsigned col, unsigned row,
+                         unsigned faction) {
+    GameState *state = sim->state;
+    WorldCell *cell = &state->world.cells[index];
+
+    Neighbourhood around;
+    scanNeighbours(state, col, row, faction, &around);
+    cell->value += around.ownGround + 1u;
+    if ((around.ownGround + 1u) * 0x10u > cell->value) return;
+    if (cell->value > CELL_VALUE_MAX) cell->value = CELL_VALUE_MAX;
+
+    unsigned char takeCol = 0, takeRow = 0;
+    int take;
+    if (around.empty == 0) {
+        take = pickEnemyGround(state, col, row, faction, &takeCol, &takeRow);
+    } else {
+        takeCol = around.emptyCol;
+        takeRow = around.emptyRow;
+        take = 1;
+    }
+    if (take) {
+        WorldCell *target = &state->world.cells[WORLD_INDEX(takeCol, takeRow)];
+        target->value = CELL_VALUE_RESET;
+        target->terrain = (unsigned char)(faction + 0x0c);
+        if (cell->value < UNIT_VALUE) return;
+    }
+
+    if (cell->owner < ENTITY_NONE) {
+        Entity *entity = &state->entities[cell->owner];
+        if (entity->faction != faction) return;
+        entity->at08 += cell->value;
+        cell->value = 1;
+        if (entity->at08 > ENTITY_STRENGTH_CAP)
+            entity->at08 = ENTITY_STRENGTH_CAP;
+        return;
+    }
+
+    const unsigned slot = allocEntity(state);
+    if (slot >= ENTITY_COUNT) return;
+    Entity *entity = &state->entities[slot];
+    entity->faction = (unsigned char)faction;
+    entity->at08 = cell->value - 1;
+    entity->position[0] = (unsigned char)col;
+    entity->position[1] = (unsigned char)row;
+    entity->target[0] = entity->position[0];
+    entity->target[1] = entity->position[1];
+    entity->flags = 0;
+    entity->at220 = 0xff;
+    cell->owner = (unsigned char)slot;
+    cell->value = 1;
+    // A unit the player raised carries the order the interface has selected
+    // (DAT_004365e0); everyone else's gets the plain one.
+    if (faction == sim->humanFaction && sim->pendingOrder != 1) {
+        entity->flags |= 4;
+        entity->at0d = (unsigned char)(sim->pendingOrder | 0x10);
+        return;
+    }
+    entity->at0d = 1;
+}
+
+// 0041d870.
 static void stepUnit(Sim *sim, unsigned index, unsigned faction) {
-    (void)sim; (void)index; (void)faction;
+    if (faction >= FACTION_COUNT) return;
+    GameState *state = sim->state;
+    const unsigned col = index / WORLD_GRID;
+    const unsigned row = index % WORLD_GRID;
+    const unsigned flags = state->factions[faction].flags;
+    if (flags & 0x40) {
+        relabelFaction(state, index, col, row, faction);
+        return;
+    }
+    if (flags & 1) return;
+    growFromUnit(sim, index, col, row, faction);
 }
 
 void simInit(Sim *sim, GameState *state) {
@@ -155,6 +316,7 @@ void simInit(Sim *sim, GameState *state) {
     sim->state = state;
     sim->humanFaction = 0;      // DAT_004365cd, until the menus set it
     sim->autoTax = 1;           // DAT_0043769c
+    sim->pendingOrder = 1;      // DAT_004365e0, the order a new unit takes
 }
 
 void simStep(Sim *sim) {
