@@ -80,21 +80,29 @@ void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
         // Where the cell sits on screen, with the sprite centred in it.
         const int cellX = (transpose ? (int)col : (int)col) * ts - viewX;
         const int cellY = (transpose ? (int)row : (int)row) * ts - viewY;
-        const int originX = cellX + (ts - ss) / 2;
-        const int originY = cellY + (ts - ss) / 2;
-        if (originX + ss <= 0 || originY + ss <= 0) continue;
-        if (originX >= out->width || originY >= out->height) continue;
+        if (cellX + ts <= 0 || cellY + ts <= 0) continue;
+        if (cellX >= out->width || cellY >= out->height) continue;
 
         const unsigned char *tile =
             bank->pixels + spriteFor(entity, bank) * (unsigned)(ss * ss);
-        for (int y = 0; y < ss; y++) {
-            const int py = originY + y;
+        // The original keeps a sprite bank per zoom - C_%03ds.BZ split into
+        // quarters and four C_%03dl*.BZ merged in fours - and neither of those
+        // rearrangements is ported.  Only the 16-pixel bank is, so at the
+        // other zooms the sprite is scaled to the cell instead.  That is this
+        // port's doing, not the game's.
+        const int size = ts < ss ? ts : (ts > ss ? ts : ss);
+        const int drawX = cellX + (ts - size) / 2;
+        const int drawY = cellY + (ts - size) / 2;
+        for (int y = 0; y < size; y++) {
+            const int py = drawY + y;
             if (py < 0 || py >= out->height) continue;
             unsigned char *dst = out->pixels + (size_t)py * out->width;
-            for (int x = 0; x < ss; x++) {
-                const int px = originX + x;
+            const int sy = size == ss ? y : y * ss / size;
+            for (int x = 0; x < size; x++) {
+                const int px = drawX + x;
                 if (px < 0 || px >= out->width) continue;
-                const unsigned char v = tile[y * ss + x];
+                const int sx = size == ss ? x : x * ss / size;
+                const unsigned char v = tile[sy * ss + sx];
                 if (v == CHR_TRANSPARENT) continue;
                 dst[px] = v;
             }
