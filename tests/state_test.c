@@ -34,6 +34,7 @@ int main(void) {
     expect("Entity.at0d", (long)offsetof(Entity, at0d), 0x0d);
     expect("Entity.at0f", (long)offsetof(Entity, at0f), 0x0f);
     expect("Entity.flags", (long)offsetof(Entity, flags), 0x10);
+    expect("Entity.at14", (long)offsetof(Entity, at14), 0x14);
     expect("Entity.at18", (long)offsetof(Entity, at18), 0x18);
     expect("Entity.flags21c", (long)offsetof(Entity, flags21c), 0x21c);
     expect("Entity.at220", (long)offsetof(Entity, at220), 0x220);

@@ -22,6 +22,7 @@
 #define CELL_VALUE_MAX 0xff        // 0041d870 clamps growth here
 #define UNIT_VALUE 200             // and turns value into a unit at this
 #define ENTITY_STRENGTH_CAP 100000
+#define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
 
 // The eight neighbours, from the paired tables at 00434420 and 00434428:
 // west, east, north, south, then the four diagonals.
@@ -491,6 +492,72 @@ unsigned simHumanActor(const Sim *sim) {
     return ENTITY_COUNT;
 }
 
+/* ------------------------------------------------------ routes, 00405250 */
+
+// The tables at 00434130 and 00434150.  The first is a diamond: an offset of
+// up to three cells maps to a row number, and anything further out maps to
+// zero.  The rows are three-step paths, and reading them settles the encoding
+// the routes use - 2 north, 6 south, 0 west, 4 east.
+//
+// What 5 means in a route is NOT settled.  0041d6d0 maps it to (+1,+1), and a
+// leader with no route walks that way, which the port checks; but row 13 is
+// the (0,0) offset and reads 5 5 5, which cannot be three steps south-east.
+// Treating it as a do-nothing filler was tried and it broke the verified walk,
+// so the tables are kept as the data they are and the question is left open
+// rather than answered by guesswork.
+static const unsigned char kRouteRow[7][7] = {
+    /* dy=-3 */ {0, 0, 0, 1, 0, 0, 0},
+    /* dy=-2 */ {0, 0, 2, 3, 4, 0, 0},
+    /* dy=-1 */ {0, 5, 6, 7, 8, 9, 0},
+    /* dy= 0 */ {10, 11, 12, 13, 14, 15, 16},
+    /* dy=+1 */ {0, 17, 18, 19, 20, 21, 0},
+    /* dy=+2 */ {0, 0, 22, 23, 24, 0, 0},
+    /* dy=+3 */ {0, 0, 0, 25, 0, 0, 0},
+};
+static const unsigned char kRouteSteps[26][3] = {
+    {6, 2, 2}, {2, 2, 2}, {2, 2, 0}, {2, 2, 5}, {2, 2, 4}, {2, 0, 0},
+    {2, 0, 5}, {2, 5, 5}, {2, 4, 5}, {2, 4, 4}, {0, 0, 0}, {0, 0, 5},
+    {0, 5, 5}, {5, 5, 5}, {4, 5, 5}, {4, 4, 5}, {4, 4, 4}, {6, 0, 0},
+    {6, 0, 5}, {6, 5, 5}, {6, 4, 5}, {6, 4, 4}, {6, 6, 0}, {6, 6, 5},
+    {6, 6, 4}, {6, 6, 6},
+};
+
+// 00405250.  Gives an entity a three-step path to a cell up to three away and
+// points its target at the far end.
+//
+// The original works out the length as weight[dy] + weight[dx] from a
+// four-entry {0,1,2,3} on its own stack, indexed by the raw offset - so a
+// negative one reads past that array, and one of its six callers does pass
+// (-3,-3), which the diamond has no row for either.  The length it means is
+// the number of real steps, which is |dx| + |dy|, and that is what this uses.
+void simMakeRoute(GameState *state, unsigned slot, int dx, int dy) {
+    if (slot >= ENTITY_COUNT) return;
+    if (dx < -3 || dx > 3 || dy < -3 || dy > 3) return;
+    Entity *entity = &state->entities[slot];
+    const unsigned char row = kRouteRow[dy + 3][dx + 3];
+    entity->at18 = 0;
+    entity->at14 = (unsigned)((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy));
+    entity->route[0] = kRouteSteps[row][0];
+    entity->route[1] = kRouteSteps[row][1];
+    entity->route[2] = kRouteSteps[row][2];
+    entity->target[0] = (unsigned char)((int)entity->position[0] + dx);
+    entity->target[1] = (unsigned char)((int)entity->position[1] + dy);
+}
+
+// 00405200.  One step along, and the route is spent once the index reaches the
+// length - which is what puts 0x1f0 back.
+int simAdvanceRoute(GameState *state, unsigned slot) {
+    if (slot >= ENTITY_COUNT) return 0;
+    Entity *entity = &state->entities[slot];
+    if (entity->at18 == ROUTE_EMPTY) return 0;
+    entity->at18++;
+    if (entity->at14 <= entity->at18) {
+        entity->at18 = ROUTE_EMPTY;
+        return 0;
+    }
+    return 1;
+}
+
 /* ------------------------------------------------- entities, 004204f0 */
 
 static void stepPlainUnit(Sim *sim, unsigned slot);   // 00401770, below
@@ -501,7 +568,6 @@ static void stepPlainUnit(Sim *sim, unsigned slot);   // 00401770, below
 static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
 static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
 #define DIRECTION_DEFAULT 5
-#define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
 
 // 0041d690: the next direction comes out of the route the entity carries -
 // +0x18 indexes into the bytes from +0x1c, which is what most of the 0x224
@@ -700,6 +766,7 @@ static void stepWalk(Sim *sim, unsigned slot) {
     to->owner = (unsigned char)slot;
     entity->position[0] = (unsigned char)nc;
     entity->position[1] = (unsigned char)nr;
+    simAdvanceRoute(state, slot);       // 00401000's closing 00405200
 }
 
 // 004204f0: the entity cursor, the counterpart of the cell sweep.  It walks

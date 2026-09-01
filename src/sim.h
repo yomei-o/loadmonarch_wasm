@@ -38,6 +38,12 @@ int simSpend(GameState *state, unsigned faction, unsigned cost);
 void simRetireEntity(GameState *state, unsigned slot, unsigned col,
                      unsigned row);
 
+// 00405250: a three-step path to a cell up to three away.
+void simMakeRoute(GameState *state, unsigned slot, int dx, int dy);
+
+// 00405200: one step along it; zero once it is spent.
+int simAdvanceRoute(GameState *state, unsigned slot);
+
 // 00420aa0: mark an entity dying, with a cause.
 void simMarkDying(GameState *state, unsigned slot, unsigned char cause);
 
