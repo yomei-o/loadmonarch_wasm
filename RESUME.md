@@ -774,5 +774,7 @@ dynamic huffman、stored も）。ブラウザに任せず C で書いたのは�
 * Ghidra 12.1.3 + JDK 21 を `C:\prog\ghidra` に。再実行:
   `JAVA_HOME=C:/prog/ghidra/jdk-21.0.12.1+1 /c/prog/ghidra/ghidra_12.1.3_PUBLIC/support/analyzeHeadless.bat <proj> lm -import <exe> -scriptPath tools/ghidra_scripts -postScript DecompileAll.java <outdir>`
   プロジェクトディレクトリは**事前に mkdir が要る**（無いと即 abort）
-* 出力 decomp/（all.c 32,240行、functions/*.c、index.csv）は git 管理外
+* 出力 decomp/（all.c 32,240行、functions/*.c、index.csv）は**コミット済み** —
+  RESUME.md がアドレスと行番号で参照しているので、これが無いと追えない。
+  詳細は `decomp/README.md`
 * ビルドマシン 192.168.6.14 はこの時点で SSH 不通だったのでローカルで実行

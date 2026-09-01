@@ -1,0 +1,44 @@
+/* 00429960 */
+
+/* Library Function - Single Match
+    ___FrameUnwindToState
+   
+   Library: Visual Studio 1998 Release */
+
+void __cdecl ___FrameUnwindToState(int param_1,undefined4 param_2,int param_3,int param_4)
+
+{
+  int iVar1;
+  int iVar2;
+  undefined4 *unaff_FS_OFFSET;
+  undefined4 local_14;
+  undefined1 *puStack_10;
+  undefined *puStack_c;
+  undefined4 local_8;
+  
+  local_14 = *unaff_FS_OFFSET;
+  puStack_c = &DAT_004309c0;
+  puStack_10 = &LAB_0042b3d8;
+  *unaff_FS_OFFSET = &local_14;
+  for (iVar1 = *(int *)(param_1 + 8); iVar1 != param_4;
+      iVar1 = *(int *)(*(int *)(param_3 + 8) + iVar1 * 8)) {
+    local_8 = 0xffffffff;
+    if ((iVar1 < 0) || (*(int *)(param_3 + 4) <= iVar1)) {
+      FUN_00429fb0();
+    }
+    local_8 = 0;
+    iVar2 = *(int *)(*(int *)(param_3 + 8) + 4 + iVar1 * 8);
+    if (iVar2 != 0) {
+      __CallSettingFrame_12(iVar2,param_1,0x103);
+    }
+  }
+  local_8 = 0xffffffff;
+  if (iVar1 != param_4) {
+    FUN_00429fb0();
+  }
+  *(int *)(param_1 + 8) = iVar1;
+  *unaff_FS_OFFSET = local_14;
+  return;
+}
+
+

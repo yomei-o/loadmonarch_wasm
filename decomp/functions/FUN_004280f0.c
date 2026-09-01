@@ -1,0 +1,26 @@
+/* 004280f0 */
+
+/* WARNING: Removing unreachable block (ram,0x00428154) */
+
+void __cdecl FUN_004280f0(int param_1,uint param_2,int param_3,_func_void_void_ptr *param_4)
+
+{
+  void *unaff_EDI;
+  undefined4 *unaff_FS_OFFSET;
+  undefined4 uStack_14;
+  undefined1 *puStack_10;
+  undefined *puStack_c;
+  undefined4 local_8;
+  
+  uStack_14 = *unaff_FS_OFFSET;
+  puStack_c = &DAT_00430980;
+  puStack_10 = &LAB_0042b3d8;
+  *unaff_FS_OFFSET = &uStack_14;
+  local_8 = 0;
+  while (param_3 = param_3 + -1, -1 < param_3) {
+    (*param_4)(unaff_EDI);
+  }
+  return;
+}
+
+

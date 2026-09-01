@@ -1,0 +1,93 @@
+/* 0042bba0 */
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_0042bba0(void)
+
+{
+  char cVar1;
+  int *piVar2;
+  uint uVar3;
+  uint uVar4;
+  uint uVar5;
+  char *pcVar6;
+  int iVar7;
+  char *pcVar8;
+  char *pcVar9;
+  
+  iVar7 = 0;
+  cVar1 = *DAT_00434770;
+  pcVar6 = DAT_00434770;
+  while (cVar1 != '\0') {
+    if (*pcVar6 != '=') {
+      iVar7 = iVar7 + 1;
+    }
+    uVar3 = 0xffffffff;
+    pcVar9 = pcVar6;
+    do {
+      if (uVar3 == 0) break;
+      uVar3 = uVar3 - 1;
+      cVar1 = *pcVar9;
+      pcVar9 = pcVar9 + 1;
+    } while (cVar1 != '\0');
+    pcVar6 = pcVar6 + ~uVar3;
+    cVar1 = *pcVar6;
+  }
+  piVar2 = (int *)FUN_0042a050(iVar7 * 4 + 4);
+  _DAT_0043487c = piVar2;
+  if (piVar2 == (int *)0x0) {
+    __amsg_exit(9);
+  }
+  cVar1 = *DAT_00434770;
+  pcVar6 = DAT_00434770;
+  do {
+    if (cVar1 == '\0') {
+      FUN_0042a030(DAT_00434770);
+      *piVar2 = 0;
+      return;
+    }
+    uVar3 = 0xffffffff;
+    pcVar9 = pcVar6;
+    do {
+      if (uVar3 == 0) break;
+      uVar3 = uVar3 - 1;
+      cVar1 = *pcVar9;
+      pcVar9 = pcVar9 + 1;
+    } while (cVar1 != '\0');
+    if (*pcVar6 != '=') {
+      iVar7 = FUN_0042a050(~uVar3);
+      *piVar2 = iVar7;
+      if (iVar7 == 0) {
+        __amsg_exit(9);
+      }
+      uVar4 = 0xffffffff;
+      pcVar9 = pcVar6;
+      do {
+        pcVar8 = pcVar9;
+        if (uVar4 == 0) break;
+        uVar4 = uVar4 - 1;
+        pcVar8 = pcVar9 + 1;
+        cVar1 = *pcVar9;
+        pcVar9 = pcVar8;
+      } while (cVar1 != '\0');
+      uVar4 = ~uVar4;
+      pcVar9 = (char *)*piVar2;
+      piVar2 = piVar2 + 1;
+      pcVar8 = pcVar8 + -uVar4;
+      for (uVar5 = uVar4 >> 2; uVar5 != 0; uVar5 = uVar5 - 1) {
+        *(undefined4 *)pcVar9 = *(undefined4 *)pcVar8;
+        pcVar8 = pcVar8 + 4;
+        pcVar9 = pcVar9 + 4;
+      }
+      for (uVar4 = uVar4 & 3; uVar4 != 0; uVar4 = uVar4 - 1) {
+        *pcVar9 = *pcVar8;
+        pcVar8 = pcVar8 + 1;
+        pcVar9 = pcVar9 + 1;
+      }
+    }
+    pcVar6 = pcVar6 + ~uVar3;
+    cVar1 = *pcVar6;
+  } while( true );
+}
+
+
