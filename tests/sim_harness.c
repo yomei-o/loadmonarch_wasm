@@ -16,7 +16,8 @@
 #include "../src/state.h"
 #include "../src/world.h"
 
-static void report(const GameState *game, const Sim *sim, const char *when) {
+static void report(GameState *game, const Sim *sim, const char *when) {
+    stateRecomputeTotals(game);
     unsigned units[FACTION_COUNT] = {0}, ground[FACTION_COUNT] = {0};
     unsigned castles[FACTION_COUNT] = {0}, neutral = 0, empty = 0, live = 0;
     for (int i = 0; i < WORLD_CELLS; i++) {

@@ -63,6 +63,51 @@ static int loadBank(TileBank *bank, const Host *host, const char *path,
     return 1;
 }
 
+// 00407560: data1.bz is a run of 16x16 tiles laid into a 256-wide sheet, with
+// 0x1f meaning transparent and everything else biased by 0x70.  One sheet
+// serves every stage, so it is loaded with the first.
+static int loadUiSheet(UiSheet *ui, const Host *host) {
+    if (ui->pixels) return 1;
+    long size = 0;
+    unsigned char *file = slurp(host, "DATA/DATA1.BZ", &size);
+    if (!file) return 0;
+    unsigned char *raw = (unsigned char *)malloc(0x40000);
+    unsigned produced = 0;
+    if (!raw || !bzDecompress(file, (unsigned)size, raw, 0x40000, &produced)) {
+        free(file);
+        free(raw);
+        return 0;
+    }
+    free(file);
+
+    ui->pixels = (unsigned char *)calloc(UI_SHEET_W * UI_SHEET_H, 1);
+    if (!ui->pixels) { free(raw); return 0; }
+    unsigned s = 0;
+    for (unsigned band = 0; band < UI_SHEET_W * UI_SHEET_H; band += 0x1000) {
+        for (unsigned col = 0; col < 16; col++) {
+            unsigned d = band + col * 16;
+            for (unsigned row = 0; row < 16; row++) {
+                for (unsigned x = 0; x < 16; x++) {
+                    const unsigned char v = raw[s + x];
+                    ui->pixels[d + x] = v == 0x1f
+                        ? UI_TRANSPARENT : (unsigned char)(v + 0x70);
+                }
+                s += 16;
+                d += UI_SHEET_W;
+            }
+        }
+    }
+    free(raw);
+
+    long rgbSize = 0;
+    unsigned char *rgb = slurp(host, "DATA/DATA1.RGB", &rgbSize);
+    if (rgb) {
+        gfxUiPalette(rgb, (unsigned)rgbSize, &ui->palette[0][0]);
+        free(rgb);
+    }
+    return 1;
+}
+
 int worldLoadStage(World *world, const Host *host, const char *mapName,
                    char *message, unsigned messageSize) {
     memset(world, 0, sizeof *world);
@@ -91,6 +136,7 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
     }
     world->scenerySet = map[WORLD_CELLS];
     free(map);
+    loadUiSheet(&world->ui, host);
 
     // The same byte the original hands to 00405fc0.
     static const struct { const char *suffix; int size; size_t offset; } banks[] = {
@@ -211,6 +257,8 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
 }
 
 void worldFree(World *world) {
+    free(world->ui.pixels);
+    world->ui.pixels = NULL;
     free(world->sprites.pixels);
     free(world->sprites8.pixels);
     free(world->sprites32.pixels);

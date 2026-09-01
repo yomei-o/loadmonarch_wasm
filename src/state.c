@@ -69,26 +69,63 @@ void statePlaceEntities(GameState *state) {
     }
 }
 
-// 0041b370's tail.  The head of that routine also walks the entities to build
-// the per-faction sums; what it adds is not settled yet, so only the parts
-// the executable makes plain are here: the entity count, the capped strength,
-// and the defeat mark.
+// 0041b370.  A faction's strength is two sums: what its cells hold and what
+// its entities carry, each capped at a hundred thousand on the way in and the
+// pair capped again at the end.  Everything the interface calls a total comes
+// from here.
 void stateRecomputeTotals(GameState *state) {
-    for (int i = 0; i < FACTION_COUNT; i++) state->factions[i].entities = 0;
+    for (int i = 0; i < FACTION_COUNT; i++) {
+        Faction *faction = &state->factions[i];
+        faction->entities = 0;      // +0x24
+        faction->at28 = 0;
+        faction->at2c = 0;
+        faction->at30 = 0;
+    }
 
+    // The cells: a neutral spawner's value goes to the neutral faction, and a
+    // unit cell's to whoever holds it, counted as it goes.
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const WorldCell *cell = &state->world.cells[i];
+        if (cell->terrain == 5) {
+            state->factions[4].at30 += cell->value;
+            continue;
+        }
+        const int owner = (int)cell->terrain - 8;
+        if (owner < 0 || owner >= 4) continue;
+        Faction *faction = &state->factions[owner];
+        faction->at30 += cell->value;
+        if (faction->at30 > FACTION_STRENGTH_CAP)
+            faction->at30 = FACTION_STRENGTH_CAP;
+        faction->at2c++;
+    }
+
+    // The entities, leaders excepted - a leader's strength is not part of its
+    // country's, which is why losing one is a different kind of loss.
     for (int i = 0; i < ENTITY_COUNT; i++) {
         const Entity *entity = &state->entities[i];
-        if (entity->faction < FACTION_COUNT)
-            state->factions[entity->faction].entities++;
+        if (entity->flags & 0x80) continue;
+        if (entity->at0d & 0x20) continue;
+        if (entity->faction >= FACTION_COUNT) continue;
+        Faction *faction = &state->factions[entity->faction];
+        faction->at28 += entity->at08;
+        if (faction->at28 > FACTION_STRENGTH_CAP)
+            faction->at28 = FACTION_STRENGTH_CAP;
+        faction->entities++;
     }
+
     for (int i = 0; i < FACTION_COUNT; i++) {
         Faction *faction = &state->factions[i];
         const unsigned sum = faction->at28 + faction->at30;
         faction->strength = sum < FACTION_STRENGTH_CAP + 1
                                 ? sum : FACTION_STRENGTH_CAP;
     }
-    // Only the four playable factions can be knocked out: 0041b370's last
-    // sweep stops at 0xe0, one record short of the fifth.
+}
+
+// 0041b370's last sweep, which stops at 0xe0 - one record short of the fifth
+// faction, so only the four playable ones can be knocked out.  Nothing ever
+// clears that mark, so it is kept apart from the sums: those are safe to
+// recompute whenever, this is not.
+void stateMarkDefeated(GameState *state) {
     for (int i = 0; i < PLAYABLE_FACTIONS; i++) {
         Faction *faction = &state->factions[i];
         if (faction->strength == 0) {
@@ -107,4 +144,5 @@ void stateStartStage(GameState *state) {
     stateResetEntitiesAndFactions(state);
     statePlaceEntities(state);
     stateRecomputeTotals(state);
+    stateMarkDefeated(state);
 }

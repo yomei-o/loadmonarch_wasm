@@ -62,6 +62,14 @@ static void applyPalette(App *app) {
         // The terrain's sixteen sit at 0x10 and the sprites' at 0x30, so one
         // table carries both without either overwriting the other.
         const TileBank *from = (i >= 0x30 && i < 0x40) ? sprites : bank;
+        if (i >= 0x80 && i < 0xb0) {
+            // The interface's colours, which data1.rgb puts at 0x80.
+            table[i].rgbRed = app->game.world.ui.palette[i][0];
+            table[i].rgbGreen = app->game.world.ui.palette[i][1];
+            table[i].rgbBlue = app->game.world.ui.palette[i][2];
+            table[i].rgbReserved = 0;
+            continue;
+        }
         table[i].rgbRed = from->palette[i][0];
         table[i].rgbGreen = from->palette[i][1];
         table[i].rgbBlue = from->palette[i][2];
@@ -153,6 +161,10 @@ static void paint(App *app, HDC dc) {
                 app->transpose, &app->surface);
     renderUnits(&app->game, app->zoom, app->viewX, app->viewY,
                 app->transpose, &app->surface);
+    // 0041b370 runs on a stage load and when the original's info window
+    // refreshes - so here, before the strip is drawn.
+    stateRecomputeTotals(&app->game);
+    renderStatus(&app->game, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
     if (app->showHud) paintHud(app, dc);
 }

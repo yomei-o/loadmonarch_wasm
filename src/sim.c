@@ -1402,10 +1402,19 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         fallbackOrder(sim, slot);
         return;
     }
+    case 0x0c: {
+        // 00403170's last case: its faction has lost its leader, so it joins
+        // whoever +0x1f names, or dies when that is four.
+        const unsigned char becomes = state->factions[faction].at1f;
+        if (becomes == 4) {
+            simMarkDying(state, slot, 4);
+            return;
+        }
+        entity->faction = becomes;
+        entity->at0d = 1;
+        return;
+    }
     default:
-        // 00403170 carries cases 6 through 0x0c as well, several hundred lines
-        // of them, and none is read.  Falling back sends the unit home rather
-        // than inventing what they do.
         fallbackOrder(sim, slot);
         return;
     }

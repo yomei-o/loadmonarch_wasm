@@ -64,9 +64,9 @@ typedef struct {
     unsigned char at1f;         // +0x1f         4 once defeated
     unsigned char at20[4];
     unsigned entities;          // +0x24         entities counted per faction
-    unsigned at28;              // +0x28         summed into strength
-    unsigned char at2c[4];
-    unsigned at30;              // +0x30         summed into strength
+    unsigned at28;              // +0x28         its entities' strength
+    unsigned at2c;              // +0x2c         how many cells it holds
+    unsigned at30;              // +0x30         its cells' value
     unsigned char at34[4];
 } Faction;
 
@@ -89,9 +89,13 @@ void stateResetEntitiesAndFactions(GameState *state);
 // own index into the cell it stands on.
 void statePlaceEntities(GameState *state);
 
-// 0041b370: recompute each faction's entity count and strength, and mark a
-// faction with no strength left as defeated.
+// 0041b370's sums: what each faction's cells hold and what its entities carry.
+// Safe to call as often as the interface likes.
 void stateRecomputeTotals(GameState *state);
+
+// Its last sweep: mark a faction with no strength left as out.  Nothing clears
+// that mark, so this belongs where the original calls it - a stage load.
+void stateMarkDefeated(GameState *state);
 
 // The whole chain 00407790 runs after a map loads, in its order.
 void stateStartStage(GameState *state);

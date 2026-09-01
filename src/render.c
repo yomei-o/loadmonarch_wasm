@@ -104,3 +104,79 @@ void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
         }
     }
 }
+
+/* ------------------------------------------- the interface, from data1.bz */
+
+// Where each font sits on the sheet, and how big its glyphs are.  Measured by
+// finding the inked columns: the large digits are eight wide over sixteen
+// rows, the small ones four over eight, and each has a white and a red set.
+static const struct { int x, y, w, h; } kUiFonts[4] = {
+    {0, 0, 8, 16},          // large white
+    {0, 16, 8, 16},         // large red
+    {0, 32, 4, 8},          // small white
+    {0, 48, 4, 8},          // small red
+};
+
+// One glyph of the sheet, with 0x70 left out.
+static void blitGlyph(const UiSheet *ui, int sx, int sy, int w, int h,
+                      int dx, int dy, Surface *out) {
+    for (int y = 0; y < h; y++) {
+        const int py = dy + y;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int x = 0; x < w; x++) {
+            const int px = dx + x;
+            if (px < 0 || px >= out->width) continue;
+            const unsigned char v =
+                ui->pixels[(size_t)(sy + y) * UI_SHEET_W + sx + x];
+            if (v == UI_TRANSPARENT) continue;
+            row[px] = v;
+        }
+    }
+}
+
+int renderNumber(const World *world, UiFont font, int x, int y,
+                 unsigned value, Surface *out) {
+    const UiSheet *ui = &world->ui;
+    if (!ui->pixels) return 0;
+    if (font < 0 || font > 3) font = UI_FONT_LARGE_WHITE;
+    const int gw = kUiFonts[font].w, gh = kUiFonts[font].h;
+
+    // Right to left, which is how a number falls out of a division.
+    int at = x - gw;
+    unsigned left = value;
+    do {
+        const unsigned digit = left % 10u;
+        blitGlyph(ui, kUiFonts[font].x + (int)digit * gw, kUiFonts[font].y,
+                  gw, gh, at, y, out);
+        at -= gw;
+        left /= 10u;
+    } while (left);
+    return x - at - gw;
+}
+
+void renderStatus(const GameState *game, Surface *out) {
+    const UiSheet *ui = &game->world.ui;
+    if (!ui->pixels) return;
+
+    // Four columns, one per faction, each with its purse above its tax rate.
+    // A faction that is out is drawn in the red set, which is what that second
+    // font is for.
+    const int columnWidth = out->width / PLAYABLE_FACTIONS;
+    for (int f = 0; f < PLAYABLE_FACTIONS; f++) {
+        const int right = columnWidth * (f + 1) - 6;
+        const int out_ = (game->factions[f].flags & 0x10) != 0;
+        renderNumber(&game->world,
+                     out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
+                     right, 2, game->factions[f].funds, out);
+        // The faction's total, which is the pair of sums 0041b370 keeps, and
+        // its tax rate - both in the large font, since the small one is four
+        // pixels wide and unreadable at this scale.
+        const int width = renderNumber(
+            &game->world, out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
+            right, 20, game->factions[f].strength, out);
+        renderNumber(&game->world,
+                     out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
+                     right - width - 8, 20, game->factions[f].taxRate, out);
+    }
+}

@@ -30,4 +30,22 @@ void renderWorld(const World *world, int zoom, int viewX, int viewY,
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                  int transpose, Surface *out);
 
+// The game's own digits, measured off the interface sheet: eight by sixteen at
+// the top of it, and a four by eight set below.  White and red of each.
+typedef enum {
+    UI_FONT_LARGE_WHITE = 0,
+    UI_FONT_LARGE_RED,
+    UI_FONT_SMALL_WHITE,
+    UI_FONT_SMALL_RED,
+} UiFont;
+
+// Draws a number in one of those fonts, right-aligned to (x, y).  Returns the
+// width it took.
+int renderNumber(const World *world, UiFont font, int x, int y,
+                 unsigned value, Surface *out);
+
+// A strip along the top of the view: each faction's purse and tax rate in the
+// game's own numerals.
+void renderStatus(const GameState *game, Surface *out);
+
 #endif

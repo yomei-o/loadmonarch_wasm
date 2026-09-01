@@ -41,6 +41,17 @@ typedef struct {
     unsigned char palette[256][3];                  // its own sixteen at 0x10
 } TileBank;
 
+// data1.bz, laid out by 00407560: a 256-wide sheet of everything the
+// interface is drawn from, with 0x70 standing for transparent.
+#define UI_SHEET_W 256
+#define UI_SHEET_H 1024
+#define UI_TRANSPARENT 0x70
+
+typedef struct {
+    unsigned char *pixels;                  // UI_SHEET_W * UI_SHEET_H, or null
+    unsigned char palette[256][3];          // data1.rgb's 48 at index 0x80
+} UiSheet;
+
 typedef struct {
     WorldCell cells[WORLD_CELLS];
     unsigned char scenerySet;   // the .MAP byte at 0x900: 10, 20, 30, 40, 50
@@ -52,6 +63,7 @@ typedef struct {
     TileBank sprites8;          // C_%03ds.bz, cut into quarters
     TileBank sprites;           // C_%03dm.bz, the 16-pixel unit sprites
     TileBank sprites32;         // C_%03dl1..4.bz, merged in fours
+    UiSheet ui;                 // data1.bz, shared by every stage
     char stage[64];             // which map this is
 } World;
 

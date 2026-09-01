@@ -59,7 +59,13 @@ int main(int argc, char **argv) {
     const int viewY = (span - H) / 2 > 0 ? (span - H) / 2 : 0;
     renderWorld(&game.world, zoom, viewX, viewY, 1, &surface);
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
+    stateRecomputeTotals(&game);
+    renderStatus(&game, &surface);
 
+    for (int f = 0; f < 4; f++)
+        printf("  faction %d strength %u flags %#x tax %u\n", f,
+               game.factions[f].strength, game.factions[f].flags,
+               game.factions[f].taxRate);
     unsigned drawn = 0;
     for (int i = 0; i < ENTITY_COUNT; i++)
         if ((game.entities[i].flags & 0x80) == 0) drawn++;
@@ -71,9 +77,14 @@ int main(int argc, char **argv) {
     fprintf(o, "P6\n%d %d\n255\n", W, H);
     for (int i = 0; i < W * H; i++) {
         const unsigned char v = indices[i];
-        const TileBank *from = (v >= 0x30 && v < 0x40)
-                                   ? worldSprites(&game.world, zoom) : ground;
-        fwrite(from->palette[v], 1, 3, o);
+        if (v >= 0x80 && v < 0xb0) {
+            fwrite(game.world.ui.palette[v], 1, 3, o);
+        } else {
+            const TileBank *from = (v >= 0x30 && v < 0x40)
+                                       ? worldSprites(&game.world, zoom)
+                                       : ground;
+            fwrite(from->palette[v], 1, 3, o);
+        }
     }
     fclose(o);
     printf("wrote %s\n", argv[3]);
