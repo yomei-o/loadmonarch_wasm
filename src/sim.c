@@ -526,14 +526,125 @@ static void stepDying(GameState *state, unsigned slot, unsigned col,
     if (entity->at0e > 3) simRetireEntity(state, slot, col, row);
 }
 
+/* ------------------------------------------- meeting somebody, 00401000 */
+
+// 00420e70.  Damage is capped by what the defender has, tallied into the
+// defender faction's +0x14, and a defender it finishes is marked dying with
+// the *attacker's faction* as the cause - which is how a country changes
+// hands: 00420b30 copies that cause into the faction's +0x1f, and the unit
+// arm's relabel branch then repaints its cells in the winner's colour.
+static void dealDamage(GameState *state, unsigned attacker, unsigned defender,
+                       unsigned damage) {
+    if (attacker >= ENTITY_COUNT || defender >= ENTITY_COUNT) return;
+    Entity *victim = &state->entities[defender];
+    unsigned dealt = damage;
+    if (dealt > victim->at08) dealt = victim->at08;
+    if (victim->faction < FACTION_COUNT)
+        state->factions[victim->faction].at14 += dealt;
+    if (victim->at08 <= dealt) {
+        simMarkDying(state, defender, state->entities[attacker].faction);
+        return;
+    }
+    victim->at08 -= dealt;
+}
+
+// 00420c60: the fight.  Standing on a castle a unit strikes for a quarter of
+// its strength and takes nothing back; against a unit on a castle the exchange
+// is even; in the open the attacker gives an eighth and receives a sixteenth.
+static int fightAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
+    GameState *state = sim->state;
+    const unsigned index = WORLD_INDEX(col, row);
+    const unsigned char target = state->world.cells[index].owner;
+    if (target >= ENTITY_NONE) return 0;
+    Entity *me = &state->entities[slot];
+    Entity *them = &state->entities[target];
+    if (them->faction == me->faction) return 0;
+    if (me->faction < FACTION_COUNT &&
+        state->factions[me->faction].at1e == them->faction) return 0;
+    if ((them->at0d & 0x0f) == 0x0c) return 0;      // it has no leader left
+    if (them->at18 > 0x1ef) {
+        const unsigned char facing = (unsigned char)((me->at0c + 4) & 6);
+        if (them->at0c != facing) them->at0c = facing;
+    }
+
+    const unsigned here = WORLD_INDEX(me->position[0], me->position[1]);
+    const unsigned onCastle = (unsigned)(state->world.cells[here].terrain
+                                         - 0x14u);
+    if (onCastle < 4) {
+        dealDamage(state, slot, target, (me->at08 >> 2) + 1);
+        return 1;
+    }
+    const unsigned theirCastle =
+        (unsigned)(state->world.cells[index].terrain - 0x14u);
+    if (theirCastle < 4) {
+        dealDamage(state, slot, target, (me->at08 >> 3) + 1);
+        dealDamage(state, target, slot, (them->at08 >> 3) + 1);
+        return 1;
+    }
+    dealDamage(state, slot, target, (me->at08 >> 3) + 1);
+    dealDamage(state, target, slot, (them->at08 >> 4) + 1);
+    return 1;
+}
+
+// 00420610: two of the same faction meeting merge, and the leader is the one
+// that absorbs.  The original has a further branch for the two ordered roles
+// (+0x0d bit 4) which is not read; those pairs are left to pass by instead.
+static int mergeAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
+    GameState *state = sim->state;
+    const unsigned char other = state->world.cells[WORLD_INDEX(col, row)].owner;
+    if (other >= ENTITY_NONE) return 0;
+    Entity *me = &state->entities[slot];
+    Entity *them = &state->entities[other];
+    if (them->faction != me->faction) return 0;
+    if (them->flags & 2) return 0;
+    if (them->at08 + me->at08 > 100000) return 0;
+
+    if (me->at0d & 0x20) {                  // I am the leader: it joins me
+        me->at08 += them->at08;
+        simRetireEntity(state, other, col, row);
+        return 0;                           // and I carry on into the cell
+    }
+    if (them->at0d & 0x20) {                // it is: I join it
+        them->at08 += me->at08;
+        simRetireEntity(state, slot, me->position[0], me->position[1]);
+        return 1;
+    }
+    return 0;
+}
+
+// 004208b0: walking into another faction's settlement raids it.  The cell's
+// value falls by the attacker's strength, and when there is none left the
+// settlement is razed back to bare land.
+static int raidSettlement(Sim *sim, unsigned slot, unsigned col,
+                          unsigned row) {
+    GameState *state = sim->state;
+    const unsigned index = WORLD_INDEX(col, row);
+    WorldCell *cell = &state->world.cells[index];
+    const unsigned char owner = (unsigned char)(cell->terrain - 8);
+    if (owner > 3) return 0;
+    Entity *me = &state->entities[slot];
+    if (owner == me->faction) return 0;
+    if (me->faction < FACTION_COUNT &&
+        state->factions[me->faction].at1e == owner) return 0;
+
+    unsigned damage = me->at08;
+    if (damage > cell->value) damage = cell->value;
+    state->factions[owner].at14 += damage;
+    if (damage < cell->value) {
+        cell->value -= damage;
+        return 1;
+    }
+    cell->value = CELL_VALUE_RESET;
+    cell->terrain = 0;
+    return 1;
+}
+
 // 00401000's ordinary path: face the way the route says, and only once facing
 // it, take the step.  Turning costs a tick, which is why units visibly pivot
 // before they set off.
 //
-// The original consults three more routines between deciding to move and
-// moving (00420c60, 00420610, 004208b0 - what happens when the destination
-// holds somebody).  Those are not read yet, so this only takes empty ground:
-// a unit will stop rather than resolve an encounter wrongly.
+// What happens when the destination holds somebody is 00420c60, 00420610 and
+// 004208b0 above, asked in that order.
 static void stepWalk(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
@@ -559,11 +670,16 @@ static void stepWalk(Sim *sim, unsigned slot) {
         if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
         return;
     }
+    // 00401000 asks the three in this order: fight, merge, then raid.  Any of
+    // them consuming the step means the unit stays where it is.
+    if (fightAt(sim, slot, nc, nr)) return;
+    if (mergeAt(sim, slot, nc, nr)) return;
+    if (entity->flags & 0x80) return;      // a merge can retire the mover
     if (to->owner < ENTITY_NONE) {
-        // Somebody is standing there; resolving that is the unread part.
         if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
         return;
     }
+    if (raidSettlement(sim, slot, nc, nr)) return;
     state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
     to->owner = (unsigned char)slot;
     entity->position[0] = (unsigned char)nc;

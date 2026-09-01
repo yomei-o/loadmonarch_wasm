@@ -177,12 +177,20 @@ int main(void) {
                e->position[0] * 100 + e->position[1], 21 * 100 + 21);
         expect("and the route was cleared", e->at18, 0x1f0);
 
-        // So does another entity standing there.
+        // So does somebody else's unit - it becomes a fight instead of a step.
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 0;
         state.world.cells[WORLD_INDEX(22, 22)].owner = 9;
+        state.entities[9].flags = 0;
+        state.entities[9].faction = 1;          // an enemy
+        state.entities[9].at08 = 5000;
+        e->at18 = 0;
+        e->route[0] = 5;
+        e->at08 = 8000;
         simStepEntities(&walk);
-        expect("an occupied cell stopped it",
+        expect("an enemy unit stopped the step",
                e->position[0] * 100 + e->position[1], 21 * 100 + 21);
+        expect("and took damage instead", state.entities[9].at08 < 5000, 1);
+        expect("the mover was hit back", e->at08 < 8000, 1);
 
         // A dying entity counts three ticks and then goes.
         Entity *d = &state.entities[2];
@@ -298,6 +306,84 @@ int main(void) {
         simStepEntities(&fall);
         expect("the unit changed sides", e->faction, 2);
         expect("and took the plain order", e->at0d, 1);
+    }
+
+    // 00420c60: from a castle a unit strikes for a quarter and takes nothing
+    // back.  00420e70: the killing blow marks the loser with the winner's
+    // faction, which is what lets a country change hands.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim war;
+        simInit(&war, &state);
+        war.humanFaction = 3;
+        Entity *a = &state.entities[1];
+        a->flags = 0; a->faction = 0; a->at0d = 0x20;
+        a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
+        a->position[0] = 15; a->position[1] = 15;
+        state.world.cells[WORLD_INDEX(15, 15)].terrain = 0x14;   // on a castle
+        state.world.cells[WORLD_INDEX(15, 15)].owner = 1;
+        Entity *b = &state.entities[9];
+        b->flags = 0; b->faction = 2; b->at08 = 300;
+        b->position[0] = 16; b->position[1] = 16;
+        state.world.cells[WORLD_INDEX(16, 16)].owner = 9;
+        state.factions[0].funds = 100000;
+        simStepEntities(&war);
+        expect("the defender was killed outright", b->flags & 2, 2);
+        expect("and marked with the winner's faction", b->at0f, 0);
+        expect("the losses were tallied", state.factions[2].at14 > 0, 1);
+    }
+
+    // 004208b0: walking into another faction's settlement razes it once its
+    // value is gone.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim raid;
+        simInit(&raid, &state);
+        raid.humanFaction = 3;
+        Entity *a = &state.entities[1];
+        a->flags = 0; a->faction = 0; a->at0d = 0x20;
+        a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
+        a->position[0] = 18; a->position[1] = 18;
+        state.world.cells[WORLD_INDEX(18, 18)].terrain = 8;   // its own ground
+        state.world.cells[WORLD_INDEX(18, 18)].owner = 1;
+        state.world.cells[WORLD_INDEX(19, 19)].terrain = 9;   // faction 1's
+        state.world.cells[WORLD_INDEX(19, 19)].value = 50;
+        state.factions[0].funds = 100000;
+        simStepEntities(&raid);
+        expect("the settlement was razed",
+               state.world.cells[WORLD_INDEX(19, 19)].terrain, 0);
+        expect("and left bare land at 100",
+               state.world.cells[WORLD_INDEX(19, 19)].value, 100);
+    }
+
+    // 00420610: a leader walking into one of its own absorbs it and moves on.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim join;
+        simInit(&join, &state);
+        join.humanFaction = 3;
+        Entity *a = &state.entities[1];
+        a->flags = 0; a->faction = 0; a->at0d = 0x20;
+        a->at08 = 1000; a->at0c = 5; a->at18 = 0x1f0;
+        a->position[0] = 22; a->position[1] = 22;
+        state.world.cells[WORLD_INDEX(22, 22)].terrain = 8;
+        state.world.cells[WORLD_INDEX(22, 22)].owner = 1;
+        Entity *b = &state.entities[9];
+        b->flags = 0; b->faction = 0; b->at08 = 700;
+        b->position[0] = 23; b->position[1] = 23;
+        state.world.cells[WORLD_INDEX(23, 23)].owner = 9;
+        state.factions[0].funds = 100000;
+        simStepEntities(&join);
+        expect("the leader absorbed its own", a->at08 >= 1000 + 700 - 8, 1);
+        expect("the absorbed unit went inactive", b->flags & 0x80, 0x80);
+        expect("and the leader took the cell",
+               a->position[0] * 100 + a->position[1], 23 * 100 + 23);
     }
 
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
