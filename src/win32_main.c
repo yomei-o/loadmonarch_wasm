@@ -41,6 +41,8 @@ typedef struct {
     int stage;
     int transpose;              // which half of the cell index is screen x
     int showHud;
+    int lastAction;             // 0040b330's return code, for the read-out
+    unsigned lastCol, lastRow;
     char dataDir[512];
 } App;
 
@@ -83,6 +85,8 @@ static int loadStage(App *app, int stage, char *message, unsigned size) {
     // The chain 00407790 runs after a map is read.
     stateStartStage(&app->game);
     simInit(&app->sim, &app->game);
+    simSeedLeaders(&app->sim);
+    app->lastAction = 0;
     // Centre on the map rather than starting in a corner.
     const TileBank *bank = worldBank(&app->game.world, app->zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
@@ -114,10 +118,15 @@ static void paintHud(App *app, HDC dc) {
     SetTextColor(dc, RGB(220, 240, 255));
     char line[200];
     int y = 4;
+    static const char *actionName[7] = {
+        "-", "placed", "no funds", "refused", "-", "-", "spent the unit",
+    };
     snprintf(line, sizeof line,
-             "sweep %llu  %s   neutral cells %u   live entities %u",
+             "sweep %llu  %s   neutral %u   entities %u   click %u,%u %s",
              app->sim.frames, app->running ? "running" : "paused",
-             neutral, entities);
+             neutral, entities, app->lastCol, app->lastRow,
+             actionName[app->lastAction >= 0 && app->lastAction < 7
+                            ? app->lastAction : 0]);
     TextOutA(dc, 4, y, line, (int)strlen(line));
     y += 16;
     for (int f = 0; f < FACTION_COUNT; f++) {
@@ -144,7 +153,8 @@ static void updateTitle(HWND window, const App *app) {
     char title[256];
     snprintf(title, sizeof title,
              "Lord Monarch - %s  scenery %u  tiles %s  index %s  "
-             "(arrows, 1/2/3 zoom, PgUp/PgDn stage, Space run, S step, H hud)",
+             "(click to raise a unit, arrows, 1/2/3 zoom, PgUp/PgDn stage, "
+             "Space run, H hud)",
              kStages[app->stage], app->game.world.scenerySet,
              zoomName[app->zoom],
              app->transpose ? "x*48+y" : "y*48+x");
@@ -212,6 +222,26 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         }
         clampView(app);
         updateTitle(window, app);
+        InvalidateRect(window, NULL, FALSE);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        // The original routes an order to a chosen entity and lets it walk to
+        // the target; that selection and the movement are not ported yet, so
+        // the click applies 0040b330 directly through the player's first
+        // entity.  The action itself is the executable's.
+        const TileBank *bank = worldBank(&app->game.world, app->zoom);
+        const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+        const int worldX = app->viewX + (short)LOWORD(lparam);
+        const int worldY = app->viewY + (short)HIWORD(lparam);
+        const unsigned col = (unsigned)(worldX / ts);
+        const unsigned row = (unsigned)(worldY / ts);
+        const unsigned actor = simHumanActor(&app->sim);
+        app->lastCol = col;
+        app->lastRow = row;
+        app->lastAction = actor < ENTITY_COUNT
+            ? (int)simBuildUnitCell(&app->sim, actor, col, row)
+            : (int)SIM_ACTION_REFUSED;
         InvalidateRect(window, NULL, FALSE);
         return 0;
     }

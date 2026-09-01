@@ -18,4 +18,31 @@ void simInit(Sim *sim, GameState *state);
 // One call of 00417380: 0x8f cells from where the last one stopped.
 void simStep(Sim *sim);
 
+typedef enum {
+    SIM_ACTION_DONE = 1,            // 0040b330's 1
+    SIM_ACTION_NO_FUNDS = 2,        // its 2
+    SIM_ACTION_REFUSED = 3,         // its 3
+    SIM_ACTION_SPENT_ENTITY = 6,    // its 6 - the entity was used up
+} SimActionResult;
+
+// 0041a8d0.
+int simSpend(GameState *state, unsigned faction, unsigned cost);
+
+// 00420b30.
+void simRetireEntity(GameState *state, unsigned slot, unsigned col,
+                     unsigned row);
+
+// 0040b330: raise one of the faction's unit cells at (col, row), paid for by
+// the purse and by the acting entity's strength.
+SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
+                                 unsigned row);
+
+// Puts a leader on each castle so a stage can start.  NOT from the
+// executable - see the comment in sim.c.
+void simSeedLeaders(Sim *sim);
+
+// The entity the human player's orders act through.
+unsigned simHumanActor(const Sim *sim);
+
+
 #endif

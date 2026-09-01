@@ -345,3 +345,147 @@ void simStep(Sim *sim) {
     }
     sim->frames++;
 }
+
+/* ------------------------------------------------------------- actions */
+
+// 0041a8d0.  Spends from the acting faction's purse, or fails.
+int simSpend(GameState *state, unsigned faction, unsigned cost) {
+    if (faction >= FACTION_COUNT) return 0;
+    Faction *owner = &state->factions[faction];
+    if (owner->funds < cost) return 0;
+    owner->funds -= cost;
+    return 1;
+}
+
+// 0041e670: does the 3x3 around this cell already hold one of this faction's
+// unit cells?  Its caller wants the answer to be no - a new one may only go
+// where none is adjacent, which is what keeps units spread out.
+static int unitCellAdjacent(const GameState *state, unsigned col, unsigned row,
+                            unsigned faction) {
+    const unsigned char alt =
+        (unsigned char)(state->factions[faction].at1e + 8);
+    const unsigned char own = (unsigned char)(faction + 8);
+    for (int dc = -1; dc < 2; dc++) {
+        for (int dr = -1; dr < 2; dr++) {
+            const int nc = (int)col + dc, nr = (int)row + dr;
+            if (!inBounds(nc, nr)) continue;
+            const unsigned char t = state->world.cells[
+                WORLD_INDEX((unsigned)nc, (unsigned)nr)].terrain;
+            if (t == alt || t == own) return 1;
+        }
+    }
+    return 0;
+}
+
+// 00420b30.  Retires an entity.  Losing one that carries the leader bit
+// (+0x0d bit 5) puts its whole faction into the state flag 0 selects - which
+// is what stops that faction growing - and resets its remaining entities.
+void simRetireEntity(GameState *state, unsigned slot, unsigned col,
+                     unsigned row) {
+    if (slot >= ENTITY_COUNT) return;
+    Entity *entity = &state->entities[slot];
+    entity->at220 = 0xff;
+    entity->at08 = 0;
+    entity->at18 = 0x1f0;
+    entity->at0e = 3;
+    if (entity->at0d & 0x20) {
+        const unsigned faction = entity->faction;
+        if (faction < FACTION_COUNT) {
+            Faction *owner = &state->factions[faction];
+            owner->flags |= 1;
+            owner->at1f = entity->at0f;
+            owner->at0c = 0x40;
+            for (int i = 0; i < ENTITY_COUNT; i++) {
+                Entity *other = &state->entities[i];
+                if (other->flags & 0x80) continue;
+                if (other->faction != faction) continue;
+                other->at0d = (unsigned char)((other->at0d & 0x20) | 0x0c);
+                other->at0c = 6;
+                other->flags |= 1;
+                other->at220 = 0xff;
+                other->at18 = 0x1f0;
+            }
+        }
+    }
+    if (inBounds((int)col, (int)row))
+        state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
+    entity->flags = 0x80;
+}
+
+// 0040b330: the order that turns ground into one of the faction's unit cells.
+// It costs a hundred from the purse plus up to two hundred of the acting
+// entity's own strength, and the entity is retired when that is all it had.
+SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
+                                 unsigned row) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    if (!inBounds((int)col, (int)row)) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    if (entity->flags & 0x80) return SIM_ACTION_REFUSED;
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return SIM_ACTION_REFUSED;
+
+    const unsigned index = WORLD_INDEX(col, row);
+    WorldCell *cell = &state->world.cells[index];
+    const unsigned char t = cell->terrain;
+    // Empty land, or ground somebody has claimed - nothing else.
+    if (t != 0 && (t < 0x0c || t > 0x10)) return SIM_ACTION_REFUSED;
+    if (unitCellAdjacent(state, col, row, faction)) return SIM_ACTION_REFUSED;
+    if (!simSpend(state, faction, 100)) return SIM_ACTION_NO_FUNDS;
+
+    unsigned spend = entity->at08;
+    if (spend > 199) spend = 200;
+    cell->terrain = (unsigned char)(faction + 8);
+    cell->value = (spend >> 1) + 1;
+    if (entity->at08 <= spend) {
+        simRetireEntity(state, slot, entity->position[0], entity->position[1]);
+        return SIM_ACTION_SPENT_ENTITY;
+    }
+    entity->at08 -= spend;
+    return SIM_ACTION_DONE;
+}
+
+// Not from the executable.  A faction only earns while an entity carrying the
+// leader bit stands on its castle (0041dc60 tests it), and only grows while
+// that bit is intact (00420b30 clears the faction otherwise) - but nothing in
+// the decompilation has been found that *sets* that bit, so the original
+// probably starts a stage from a saved template.  Until that is read, this
+// puts one leader on each castle so a stage can begin at all.  It is marked
+// out here rather than dressed up as the original's own doing.
+void simSeedLeaders(Sim *sim) {
+    GameState *state = sim->state;
+    for (unsigned i = 0; i < WORLD_CELLS; i++) {
+        const unsigned char t = state->world.cells[i].terrain;
+        if (t < 0x14 || t > 0x17) continue;
+        const unsigned faction = t - 0x14u;
+        const unsigned slot = allocEntity(state);
+        if (slot >= ENTITY_COUNT) return;
+        Entity *entity = &state->entities[slot];
+        entity->faction = (unsigned char)faction;
+        entity->position[0] = (unsigned char)(i / WORLD_GRID);
+        entity->position[1] = (unsigned char)(i % WORLD_GRID);
+        entity->target[0] = entity->position[0];
+        entity->target[1] = entity->position[1];
+        entity->flags = 0;
+        entity->at08 = 200;
+        entity->at0c = 6;
+        entity->at0d = 0x20 | 1;        // the leader bit, plus the plain order
+        entity->at0f = 4;               // what the faction becomes if lost
+        entity->at18 = 0x1f0;
+        entity->at220 = 0xff;
+        state->world.cells[i].owner = (unsigned char)slot;
+    }
+    (void)sim;
+}
+
+// The human faction's first active entity, which is what the click below acts
+// through.  The original routes an order to a chosen entity and lets it walk
+// there; that selection and movement live in code not read yet.
+unsigned simHumanActor(const Sim *sim) {
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        const Entity *entity = &sim->state->entities[i];
+        if (entity->flags & 0x80) continue;
+        if (entity->faction == sim->humanFaction) return i;
+    }
+    return ENTITY_COUNT;
+}

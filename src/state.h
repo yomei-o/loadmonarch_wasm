@@ -48,8 +48,11 @@ typedef struct {
 
 typedef struct {
     unsigned char at00[4];
-    unsigned flags;             // +0x04         bit 4 (0x10) = defeated
-    unsigned char at08[8];
+    unsigned flags;             // +0x04         bit 0 set when the leader is
+                                //               lost, bit 4 (0x10) defeated,
+                                //               bit 6 (0x40) being relabelled
+    unsigned char at08[4];
+    unsigned at0c;              // +0x0c         0x40 when the leader is lost
     unsigned strength;          // +0x10         at28 + at30, capped
     unsigned at14;              // +0x14         cleared at reset
     unsigned funds;             // +0x18         5000 at reset

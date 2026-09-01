@@ -38,6 +38,7 @@ int main(void) {
     expect("Entity.flags21c", (long)offsetof(Entity, flags21c), 0x21c);
     expect("Entity.at220", (long)offsetof(Entity, at220), 0x220);
     expect("Faction.flags", (long)offsetof(Faction, flags), 0x04);
+    expect("Faction.at0c", (long)offsetof(Faction, at0c), 0x0c);
     expect("Faction.strength", (long)offsetof(Faction, strength), 0x10);
     expect("Faction.funds", (long)offsetof(Faction, funds), 0x18);
     expect("Faction.taxRate", (long)offsetof(Faction, taxRate), 0x1c);
@@ -78,6 +79,64 @@ int main(void) {
     statePlaceEntities(&state);
     expect("cell owner from entity", state.world.cells[WORLD_INDEX(5, 9)].owner,
            7);
+
+    // A unit cell beside empty land claims it, and turns its accumulated
+    // value into a unit once there is nothing left to take.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        const unsigned unitCell = WORLD_INDEX(10, 10);
+        // Scenery all round but one gap, so the claim has only one place to
+        // go: the scan runs west, east, north, south then the diagonals, and
+        // an all-empty board would be claimed to the west.
+        for (int dc = -1; dc < 2; dc++)
+            for (int dr = -1; dr < 2; dr++)
+                state.world.cells[WORLD_INDEX(10 + dc, 10 + dr)].terrain = 0x60;
+        state.world.cells[unitCell].terrain = 8;      // faction 0's unit
+        state.world.cells[unitCell].value = 101;      // what 0040b330 leaves
+        state.world.cells[WORLD_INDEX(11, 10)].terrain = 0;   // the one gap
+        Sim grow;
+        simInit(&grow, &state);
+        for (int i = 0; i < WORLD_CELLS / 0x8f + 2; i++) simStep(&grow);
+        expect("unit claimed the empty neighbour",
+               state.world.cells[WORLD_INDEX(11, 10)].terrain, 0x0c);
+        expect("claimed ground starts at 100",
+               state.world.cells[WORLD_INDEX(11, 10)].value, 100);
+    }
+
+    // 0040b330: the order costs a hundred, plants the faction's unit cell, and
+    // refuses a second one beside the first.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim act;
+        simInit(&act, &state);
+        state.entities[0].flags = 0;
+        state.entities[0].faction = 0;
+        state.entities[0].at08 = 1000;            // enough to survive spending
+        state.entities[0].position[0] = 20;
+        state.entities[0].position[1] = 20;
+        state.factions[0].funds = 250;
+        const int first = (int)simBuildUnitCell(&act, 0, 20, 20);
+        expect("order placed a unit", first, SIM_ACTION_DONE);
+        expect("order cost a hundred", state.factions[0].funds, 150);
+        expect("cell became the faction's unit",
+               state.world.cells[WORLD_INDEX(20, 20)].terrain, 8);
+        expect("cell value from the unit's strength",
+               state.world.cells[WORLD_INDEX(20, 20)].value, 101);
+        expect("unit paid from its own strength", state.entities[0].at08, 800);
+        const int second = (int)simBuildUnitCell(&act, 0, 21, 20);
+        expect("a second beside it is refused", second, SIM_ACTION_REFUSED);
+        expect("the refusal cost nothing", state.factions[0].funds, 150);
+        // Spending an entity down to nothing retires it.
+        state.entities[0].at08 = 200;
+        const int last = (int)simBuildUnitCell(&act, 0, 30, 30);
+        expect("the order used the unit up", last, SIM_ACTION_SPENT_ENTITY);
+        expect("the used unit went inactive",
+               state.entities[0].flags & 0x80, 0x80);
+    }
 
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
