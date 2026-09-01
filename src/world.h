@@ -18,7 +18,9 @@
 #define TILE_BANK_TILES 128
 
 typedef struct {
-    unsigned char owner;      // +0x00  0x40 at load, later the faction byte
+    unsigned char occupant;   // +0x00  the entity standing here, or >= 0x40
+                              //        for nobody.  004240c0 draws whatever
+                              //        this indexes; it is not an owner.
     unsigned char pad1;
     unsigned char pad2;
     unsigned char pad3;
@@ -30,7 +32,10 @@ typedef struct {
     unsigned value;           // +0x0c  100 at load, later (v >> 1) + 1
     unsigned char terrain;    // +0x10  the tile number, straight from the file
     unsigned char pad11[3];
-    unsigned troops;          // +0x14  cleared, then set from the active count
+    unsigned overlay;         // +0x14  a sprite number drawn over the cell,
+                              //        two frames wide.  0040b270 parks the
+                              //        cursor (0xcc) here and clears the old
+                              //        cell as it moves.
 } WorldCell;
 
 // One decompressed and unpacked graphics bank.

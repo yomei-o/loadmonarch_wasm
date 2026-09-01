@@ -74,6 +74,12 @@ typedef struct {
     World world;                            // the cells and the tile banks
     Entity entities[ENTITY_COUNT];
     Faction factions[FACTION_COUNT];
+
+    // 0040a5e0 advances one counter per tick and everything animated reads it:
+    // bit 0 blinks the cursor, bit 1 steps the walk cycle, and the low four
+    // bits drive the palette pulse.  Not part of any ported structure.
+    unsigned frame;
+    int showOrders;                         // DAT_004376a1
 } GameState;
 
 // 004273b0: every cell back to default terrain and value.

@@ -48,59 +48,122 @@ void renderWorld(const World *world, int zoom, int viewX, int viewY,
     }
 }
 
-// 1833 works the sprite out as 0xa0 - 0xa8 for the neutral faction - plus
-// faction * 8 plus an animation frame, less one.  Those numbers reach 187,
-// which is why the sprite bank holds 208 tiles rather than the terrain banks'
-// 128; the frame is the facing the entity carries.
-static unsigned spriteFor(const Entity *entity, const TileBank *bank) {
-    const unsigned base = entity->faction == 4 ? 0xa8u : 0xa0u;
-    const unsigned frame = (unsigned)(entity->at0c & 7u) + 1u;
-    const unsigned index = base + entity->faction * 8u + frame - 1u;
-    return index < bank->tiles ? index : 0u;
+
+// 0041b520: which sprite an entity shows.  The number is bit-packed, not
+// looked up, and the ranges fill the 208-tile bank exactly:
+//
+//   walking    size | faction<<3 | facing | frame        0x00..0x7f
+//   working    0x80/0x82/0x84/0x86 | faction<<3 | frame  0x80..0x9f
+//   fighting   0xa0 (0xa4 leader) | faction<<3 | phase   0xa0..0xbf
+//   neutral    0xc0 | facing | frame, or 0xc8 | phase    0xc0..0xcf
+//
+// where size is 0 below a thousand strong, 0x20 below ten thousand, 0x40 above
+// that, and 0x60 for a leader whatever its strength.  A leader is therefore
+// drawn by rank, not by size - and 0xcc, past everything, is the cursor.
+unsigned renderSpriteNumber(const Entity *entity, unsigned frame) {
+    const unsigned leader = (entity->at0d & 0x20) != 0;
+    const unsigned faction = entity->faction;
+    const unsigned beat = (frame & 2) >> 1;
+
+    if (faction == 4) {
+        if (entity->flags & 2) return 0xc8u | entity->at0e;
+        return 0xc0u | (unsigned)(entity->at0c & 6) | beat;
+    }
+    if (entity->flags & 2)
+        return (leader ? 0xa4u : 0xa0u) | entity->at0e | (faction << 3);
+    if (entity->flags & 1) {
+        const unsigned base = leader ? 0x86u
+                            : entity->at08 < 1000 ? 0x80u
+                            : entity->at08 < 10000 ? 0x82u : 0x84u;
+        return base | (faction << 3) | beat;
+    }
+    const unsigned base = leader ? 0x60u
+                        : entity->at08 < 1000 ? 0x00u
+                        : entity->at08 < 10000 ? 0x20u : 0x40u;
+    return base | (unsigned)(entity->at0c & 6) | (faction << 3) | beat;
 }
 
+// 00424460: one tile of the sprite bank over the surface, 'p' left alone.
+static void blitSprite(const TileBank *bank, unsigned number, int x, int y,
+                       Surface *out) {
+    if (!bank->pixels || number >= bank->tiles) return;
+    const int ss = bank->tileSize;
+    const unsigned char *tile = bank->pixels + (size_t)number * ss * ss;
+    for (int ty = 0; ty < ss; ty++) {
+        const int py = y + ty;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *dst = out->pixels + (size_t)py * out->width;
+        for (int tx = 0; tx < ss; tx++) {
+            const int px = x + tx;
+            if (px < 0 || px >= out->width) continue;
+            const unsigned char v = tile[ty * ss + tx];
+            if (v == CHR_TRANSPARENT) continue;
+            dst[px] = v;
+        }
+    }
+}
+
+// 004244b0: the order balloon, taken from the interface sheet rather than the
+// sprite bank.  Each order has a 32-tall band of the sheet, and the three
+// zooms sit side by side at x = 0xc0 + the tile size - which lands them at
+// 0xc8, 0xd0 and 0xe0, filling 0xc8..0xff without a gap.
+static void blitBalloon(const UiSheet *ui, unsigned number, int size, int x,
+                        int y, Surface *out) {
+    if (!ui->pixels) return;
+    const unsigned sx = 0xc0u + (unsigned)size;
+    const unsigned sy = number * 32u;
+    if (sy + (unsigned)size > UI_SHEET_H || sx + (unsigned)size > UI_SHEET_W)
+        return;
+    for (int ty = 0; ty < size; ty++) {
+        const int py = y + ty;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *dst = out->pixels + (size_t)py * out->width;
+        const unsigned char *row = ui->pixels + (size_t)(sy + ty) * UI_SHEET_W;
+        for (int tx = 0; tx < size; tx++) {
+            const int px = x + tx;
+            if (px < 0 || px >= out->width) continue;
+            const unsigned char v = row[sx + tx];
+            if (v == UI_TRANSPARENT) continue;
+            dst[px] = v;
+        }
+    }
+}
+
+// 004240c0 draws the units by sweeping the cells, not the entity array: a cell
+// names its occupant, and that is the only thing on screen.  An entity whose
+// cell link is stale is invisible, which is the original's behaviour and worth
+// keeping - it is how a unit disappears the instant it is taken off the board.
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                  int transpose, Surface *out) {
+    (void)transpose;
     const TileBank *bank = worldSprites(&game->world, zoom);
-    if (!bank->pixels || bank->tileSize <= 0) return;
     const TileBank *ground = worldBank(&game->world, zoom);
-    if (!ground->pixels || ground->tileSize <= 0) return;
+    if (!bank->pixels || !ground->pixels || ground->tileSize <= 0) return;
     const int ts = ground->tileSize;
-    const int ss = bank->tileSize;
+    const unsigned frame = game->frame;
 
-    for (int i = 0; i < ENTITY_COUNT; i++) {
-        const Entity *entity = &game->entities[i];
-        if (entity->flags & 0x80) continue;
-        const unsigned col = entity->position[0];
-        const unsigned row = entity->position[1];
-        if (col >= WORLD_GRID || row >= WORLD_GRID) continue;
+    for (unsigned col = 0; col < WORLD_GRID; col++) {
+        const int cellX = (int)col * ts - viewX;
+        if (cellX + ts <= 0 || cellX >= out->width) continue;
+        for (unsigned row = 0; row < WORLD_GRID; row++) {
+            const int cellY = (int)row * ts - viewY;
+            if (cellY + ts <= 0 || cellY >= out->height) continue;
+            const WorldCell *cell =
+                &game->world.cells[WORLD_INDEX(col, row)];
 
-        // Where the cell sits on screen, with the sprite centred in it.
-        const int cellX = (transpose ? (int)col : (int)col) * ts - viewX;
-        const int cellY = (transpose ? (int)row : (int)row) * ts - viewY;
-        if (cellX + ts <= 0 || cellY + ts <= 0) continue;
-        if (cellX >= out->width || cellY >= out->height) continue;
-
-        const unsigned char *tile =
-            bank->pixels + spriteFor(entity, bank) * (unsigned)(ss * ss);
-        // A bank whose tiles match the cell draws at its own size; the
-        // 8-pixel zoom still borrows the 16-pixel bank and is scaled.
-        const int size = ss == ts ? ss : ts;
-        const int drawX = cellX + (ts - size) / 2;
-        const int drawY = cellY + (ts - size) / 2;
-        for (int y = 0; y < size; y++) {
-            const int py = drawY + y;
-            if (py < 0 || py >= out->height) continue;
-            unsigned char *dst = out->pixels + (size_t)py * out->width;
-            const int sy = size == ss ? y : y * ss / size;
-            for (int x = 0; x < size; x++) {
-                const int px = drawX + x;
-                if (px < 0 || px >= out->width) continue;
-                const int sx = size == ss ? x : x * ss / size;
-                const unsigned char v = tile[sy * ss + sx];
-                if (v == CHR_TRANSPARENT) continue;
-                dst[px] = v;
+            if (cell->occupant < ENTITY_COUNT) {
+                const Entity *entity = &game->entities[cell->occupant];
+                blitSprite(bank, renderSpriteNumber(entity, frame), cellX, cellY,
+                           out);
+                // Its order, if it has one, floats one cell above.
+                if (game->showOrders && entity->at220 != 0xff)
+                    blitBalloon(&game->world.ui, entity->at220, ts, cellX,
+                                cellY - ts, out);
             }
+            // And whatever the cell itself carries - the cursor lives here.
+            if (cell->overlay != 0)
+                blitSprite(bank, (frame & 1) + cell->overlay, cellX, cellY,
+                           out);
         }
     }
 }
@@ -178,5 +241,49 @@ void renderStatus(const GameState *game, Surface *out) {
         renderNumber(&game->world,
                      out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
                      right - width - 8, 20, game->factions[f].taxRate, out);
+    }
+}
+
+// The palette the drawing surface wants, assembled the way the original's
+// several SetPaletteEntries calls leave it.  Four bands are live at once and a
+// host that collapses them draws one band in another's colours:
+//
+//   0x10..0x1f  the terrain bank's sixteen
+//   0x30..0x3f  the sprite bank's sixteen
+//   0x70        RGB(0, 0, 0x96), the interface ground
+//   0x76        a pulsing copy of sprite colour 0x3f
+//   0x80..0xaf  data1.rgb's forty-eight, the interface
+//
+// and 0x1f pulses in place.  0040a6f0 scales both pulsing entries by
+// kPulse[frame & 0xf], a triangle from full down to under a third and back,
+// which is what makes marked ground breathe and the smallest units blink.
+static const unsigned char kPulse[16] = {100, 90, 80, 70, 60, 50, 40, 30,
+                                         40,  50, 60, 70, 80, 90, 100, 100};
+
+void renderPalette(const GameState *game, int zoom,
+                   unsigned char table[256][3]) {
+    const TileBank *ground = worldBank(&game->world, zoom);
+    const TileBank *sprites = worldSprites(&game->world, zoom);
+    const unsigned scale = kPulse[game->frame & 0xf];
+
+    for (unsigned i = 0; i < 256; i++) {
+        const unsigned char *from = ground->palette[i];
+        if (i >= 0x80 && i < 0xb0 && game->world.ui.pixels)
+            from = game->world.ui.palette[i];
+        else if (i >= 0x30 && i < 0x40)
+            from = sprites->palette[i];
+        table[i][0] = from[0];
+        table[i][1] = from[1];
+        table[i][2] = from[2];
+    }
+
+    table[UI_TRANSPARENT][0] = 0;
+    table[UI_TRANSPARENT][1] = 0;
+    table[UI_TRANSPARENT][2] = 0x96;
+    for (int c = 0; c < 3; c++) {
+        table[0x1f][c] =
+            (unsigned char)(ground->palette[0x1f][c] * scale / 100u);
+        table[CHR_PULSE][c] =
+            (unsigned char)(sprites->palette[0x3f][c] * scale / 100u);
     }
 }

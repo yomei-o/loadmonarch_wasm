@@ -132,7 +132,7 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
     for (int i = 0; i < WORLD_CELLS; i++) {
         world->cells[i].terrain = map[i];
         world->cells[i].value = 100;
-        world->cells[i].owner = 0x40;
+        world->cells[i].occupant = 0x40;
     }
     world->scenerySet = map[WORLD_CELLS];
     free(map);
@@ -272,13 +272,12 @@ void worldFree(World *world) {
 }
 
 const TileBank *worldSprites(const World *world, int zoom) {
+    // 00422740 picks a bank by tile size, so each zoom draws from its own and
+    // nothing is scaled.  The 8-pixel bank looked like an alphabet until
+    // 0041b520 was read: those glyph-like tiles are the leader badges, and the
+    // numbering is shared across all three banks.
     if (zoom >= 2 && world->sprites32.pixels) return &world->sprites32;
-    // The 8-pixel bank is loaded and unpacked, but not used: the sprite number
-    // 1833 works out lands on letter glyphs in it, so that bank is numbered
-    // differently and how has not been read.  Drawing from the 16-pixel one
-    // scaled is wrong in a way that looks right, which is better than drawing
-    // the alphabet.
-    (void)zoom;
+    if (zoom <= 0 && world->sprites8.pixels) return &world->sprites8;
     return &world->sprites;
 }
 

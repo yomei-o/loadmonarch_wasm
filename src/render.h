@@ -23,10 +23,10 @@ void surfaceInit(Surface *surface, int width, int height,
 void renderWorld(const World *world, int zoom, int viewX, int viewY,
                  int transpose, Surface *out);
 
-// Draws the units on top, from the sprite bank the stage loaded.  1833's
-// sprite number is 0xa0 + faction * 8 + frame, and the palette entry 0x70
-// stands for "leave what is underneath" - which is what makes them read as
-// figures rather than blocks.
+// Draws the units on top by sweeping the cells the way 004240c0 does: each
+// cell names its occupant, its order balloon goes one cell above, and a sprite
+// parked on the cell itself (the cursor) goes last.  0041b520 decides the
+// sprite number; see render.c for how it is packed.
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                  int transpose, Surface *out);
 
@@ -43,6 +43,17 @@ typedef enum {
 // width it took.
 int renderNumber(const World *world, UiFont font, int x, int y,
                  unsigned value, Surface *out);
+
+// 0041b520: the sprite number an entity shows, packed out of its size, its
+// faction, which way it faces and the frame counter.  Exposed so the packing
+// can be tested without a surface.
+unsigned renderSpriteNumber(const Entity *entity, unsigned frame);
+
+// Fills a 256-entry colour table for the surface: the terrain, sprite and
+// interface bands at once, with the two entries the game pulses scaled by
+// where `game->frame` has reached.  Every host uses this rather than its own.
+void renderPalette(const GameState *game, int zoom,
+                   unsigned char table[256][3]);
 
 // A strip along the top of the view: each faction's purse and tax rate in the
 // game's own numerals.

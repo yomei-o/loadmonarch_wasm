@@ -14,6 +14,11 @@ int gfxUnpackTiles(const unsigned char *buf, unsigned bufSize, int tileSize,
 // 16-pixel size is handled - the 8- and 32-pixel sprite banks are rearranged
 // as well, which is not ported.
 #define CHR_TRANSPARENT 0x70
+
+// 0040a6f0 rewrites palette entries 0x1f and 0x76 every tick, scaling a saved
+// colour by a triangular curve.  The 8-pixel sprites are laid on 0x76, so the
+// smallest zoom shows its units as pulsing marks.
+#define CHR_PULSE 0x76
 // 208, not the terrain banks' 128: 00406c70's pass runs to 0x6800 of the
 // payload, which at 0x80 bytes a tile is 208 of them - and it has to be,
 // because the sprite numbers 1833 works out reach 187.
@@ -31,7 +36,7 @@ int gfxTilePalette(const unsigned char *buf, unsigned bufSize,
 // 00406c70's 8-pixel path: each 16x16 becomes four 8x8, in the order
 // top-left, bottom-left, top-right, bottom-right.  Sixty-four source tiles
 // (0x2000 of the payload) give 256.
-#define CHR_TILES8 256
+#define CHR_TILES8 208
 int gfxUnpackSprites8(const unsigned char *buf, unsigned bufSize,
                       unsigned char *out, unsigned outCapacity,
                       unsigned *tilesOut);

@@ -103,7 +103,7 @@ static void stepNeutral(GameState *state, unsigned index, unsigned col,
         return;
     }
     cell->value -= 0xf5;
-    if (cell->owner < ENTITY_NONE) return;      // somebody is already here
+    if (cell->occupant < ENTITY_NONE) return;      // somebody is already here
 
     const unsigned slot = allocEntity(state);
     if (slot >= ENTITY_COUNT) return;
@@ -121,7 +121,7 @@ static void stepNeutral(GameState *state, unsigned index, unsigned col,
     entity->at08 = 200;
     entity->at18 = 0x1f0;
     entity->at0f = 10;
-    cell->owner = (unsigned char)slot;
+    cell->occupant = (unsigned char)slot;
 }
 
 // The 0x0c..0x0f arm, which the sweep handles without a call: claimed ground
@@ -190,7 +190,7 @@ static void stepCastle(Sim *sim, unsigned index, unsigned faction) {
     updateTaxRate(state, faction, faction == sim->humanFaction,
                   sim->autoTax);
 
-    const unsigned char occupant = state->world.cells[index].owner;
+    const unsigned char occupant = state->world.cells[index].occupant;
     if (occupant >= ENTITY_NONE) return;
     const Entity *entity = &state->entities[occupant];
     if (entity->faction != faction) return;
@@ -264,8 +264,8 @@ static void growFromUnit(Sim *sim, unsigned index, unsigned col, unsigned row,
         if (cell->value < UNIT_VALUE) return;
     }
 
-    if (cell->owner < ENTITY_NONE) {
-        Entity *entity = &state->entities[cell->owner];
+    if (cell->occupant < ENTITY_NONE) {
+        Entity *entity = &state->entities[cell->occupant];
         if (entity->faction != faction) return;
         entity->at08 += cell->value;
         cell->value = 1;
@@ -285,7 +285,7 @@ static void growFromUnit(Sim *sim, unsigned index, unsigned col, unsigned row,
     entity->target[1] = entity->position[1];
     entity->flags = 0;
     entity->at220 = 0xff;
-    cell->owner = (unsigned char)slot;
+    cell->occupant = (unsigned char)slot;
     cell->value = 1;
     // A unit the player raised carries the order the interface has selected
     // (DAT_004365e0); everyone else's gets the plain one.
@@ -321,6 +321,10 @@ void simInit(Sim *sim, GameState *state) {
 }
 
 void simStep(Sim *sim) {
+    // 0040a5e0 advances the animation counter once per tick, ahead of the
+    // sweep, and the drawing reads it.
+    sim->state->frame++;
+
     GameState *state = sim->state;
     for (int n = SWEEP_PER_CALL; n != 0; n--) {
         // 00417380 advances first, then wraps by subtracting 0x8ff.
@@ -410,7 +414,7 @@ void simRetireEntity(GameState *state, unsigned slot, unsigned col,
         }
     }
     if (inBounds((int)col, (int)row))
-        state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
+        state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
     entity->flags = 0x80;
 }
 
@@ -536,8 +540,8 @@ SimActionResult simMakeMine(Sim *sim, unsigned slot) {
     cell->value = 0;
     cell->terrain = 0x7a;
     stateMarkBlocked(state);
-    if (cell->owner < ENTITY_NONE)
-        simMarkDying(state, cell->owner, (unsigned char)entity->faction);
+    if (cell->occupant < ENTITY_NONE)
+        simMarkDying(state, cell->occupant, (unsigned char)entity->faction);
     return SIM_ACTION_DONE;
 }
 
@@ -551,7 +555,7 @@ SimActionResult simBreakSpawner(Sim *sim, unsigned slot) {
     WorldCell *cell = targetCell(state, entity, NULL, NULL);
     if (!cell) return SIM_ACTION_REFUSED;
     if (cell->terrain != 5) return SIM_ACTION_REFUSED;
-    if (cell->owner < ENTITY_NONE) return SIM_ACTION_PROGRESS;
+    if (cell->occupant < ENTITY_NONE) return SIM_ACTION_PROGRESS;
 
     const int left = (int)cell->value - (int)(entity->at08 >> 3);
     if (left >= 0) {
@@ -583,7 +587,7 @@ SimActionResult simBuildWall(Sim *sim, unsigned slot) {
     if (faction >= FACTION_COUNT) return SIM_ACTION_REFUSED;
 
     WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
-    if (cell->owner < ENTITY_NONE) return SIM_ACTION_NO_FUNDS;  // 0040b440's 2
+    if (cell->occupant < ENTITY_NONE) return SIM_ACTION_NO_FUNDS;  // 0040b440's 2
 
     const unsigned strengthWork = entity->at08 >> 4;
 
@@ -691,7 +695,7 @@ void simSeedLeaders(Sim *sim) {
         entity->at0f = 4;               // what the faction becomes if lost
         entity->at18 = 0x1f0;
         entity->at220 = 0xff;
-        state->world.cells[i].owner = (unsigned char)slot;
+        state->world.cells[i].occupant = (unsigned char)slot;
     }
     (void)sim;
 }
@@ -840,7 +844,7 @@ static void dealDamage(GameState *state, unsigned attacker, unsigned defender,
 static int fightAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
     GameState *state = sim->state;
     const unsigned index = WORLD_INDEX(col, row);
-    const unsigned char target = state->world.cells[index].owner;
+    const unsigned char target = state->world.cells[index].occupant;
     if (target >= ENTITY_NONE) return 0;
     Entity *me = &state->entities[slot];
     Entity *them = &state->entities[target];
@@ -877,7 +881,7 @@ static int fightAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
 // (+0x0d bit 4) which is not read; those pairs are left to pass by instead.
 static int mergeAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
     GameState *state = sim->state;
-    const unsigned char other = state->world.cells[WORLD_INDEX(col, row)].owner;
+    const unsigned char other = state->world.cells[WORLD_INDEX(col, row)].occupant;
     if (other >= ENTITY_NONE) return 0;
     Entity *me = &state->entities[slot];
     Entity *them = &state->entities[other];
@@ -977,13 +981,13 @@ static void stepWalk(Sim *sim, unsigned slot) {
     if (fightAt(sim, slot, nc, nr)) return;
     if (mergeAt(sim, slot, nc, nr)) return;
     if (entity->flags & 0x80) return;      // a merge can retire the mover
-    if (to->owner < ENTITY_NONE) {
+    if (to->occupant < ENTITY_NONE) {
         if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
         return;
     }
     if (raidSettlement(sim, slot, nc, nr)) return;
-    state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
-    to->owner = (unsigned char)slot;
+    state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+    to->occupant = (unsigned char)slot;
     entity->position[0] = (unsigned char)nc;
     entity->position[1] = (unsigned char)nr;
     simAdvanceRoute(state, slot);       // 00401000's closing 00405200
@@ -1032,14 +1036,14 @@ static void stepWalkOrdered(Sim *sim, unsigned slot) {
     if (fightAt(sim, slot, nc, nr)) return;
     if (mergeAt(sim, slot, nc, nr)) return;
     if (entity->flags & 0x80) return;
-    if (to->owner < ENTITY_NONE) return;
+    if (to->occupant < ENTITY_NONE) return;
     if (raidSettlement(sim, slot, nc, nr)) return;
     if (giveUp) return;
 
     // The way is clear: take it, and the patience spent above is returned.
     entity->at0f++;
-    state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
-    to->owner = (unsigned char)slot;
+    state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+    to->occupant = (unsigned char)slot;
     entity->position[0] = (unsigned char)nc;
     entity->position[1] = (unsigned char)nr;
     simAdvanceRoute(state, slot);
@@ -1094,7 +1098,7 @@ static void stepNeutralEntity(Sim *sim, unsigned slot) {
             if (fightAt(sim, slot, nc, nr)) return;
             if (mergeAt(sim, slot, nc, nr)) return;
             if (entity->flags & 0x80) return;
-            if (to->owner < ENTITY_NONE) {
+            if (to->occupant < ENTITY_NONE) {
                 // Somebody is in the way: turn, sometimes about face.
                 entity->at0c = (unsigned char)((simRandom(100) < 0x32 ? 4u : 2u)
                                                + entity->at0c) & 7u;
@@ -1103,9 +1107,9 @@ static void stepNeutralEntity(Sim *sim, unsigned slot) {
             if (raidSettlement(sim, slot, nc, nr)) return;
             entity->at0f--;
             if (entity->at0f != 0) {
-                state->world.cells[WORLD_INDEX(col, row)].owner =
+                state->world.cells[WORLD_INDEX(col, row)].occupant =
                     CELL_NO_ENTITY;
-                to->owner = (unsigned char)slot;
+                to->occupant = (unsigned char)slot;
                 entity->position[0] = (unsigned char)nc;
                 entity->position[1] = (unsigned char)nr;
                 return;
@@ -1232,7 +1236,7 @@ static int passableCell(const GameState *state, int col, int row) {
 static int wouldOverflow(const GameState *state, unsigned slot, int col,
                          int row) {
     const unsigned char other =
-        state->world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].owner;
+        state->world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
     if (other >= ENTITY_NONE || other == slot) return 0;
     const Entity *them = &state->entities[other];
     const Entity *me = &state->entities[slot];

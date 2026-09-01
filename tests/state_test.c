@@ -6,6 +6,7 @@
 
 #include "../src/sim.h"
 #include "../src/state.h"
+#include "../src/render.h"
 
 static int failures;
 
@@ -47,13 +48,13 @@ int main(void) {
     expect("Faction.entities", (long)offsetof(Faction, entities), 0x24);
     expect("Faction.at28", (long)offsetof(Faction, at28), 0x28);
     expect("Faction.at30", (long)offsetof(Faction, at30), 0x30);
-    expect("WorldCell.owner", (long)offsetof(WorldCell, owner), 0x00);
+    expect("WorldCell.occupant", (long)offsetof(WorldCell, occupant), 0x00);
     expect("WorldCell.marked", (long)offsetof(WorldCell, marked), 0x04);
     expect("WorldCell.blocked", (long)offsetof(WorldCell, blocked), 0x05);
     expect("WorldCell.cost", (long)offsetof(WorldCell, cost), 0x08);
     expect("WorldCell.value", (long)offsetof(WorldCell, value), 0x0c);
     expect("WorldCell.terrain", (long)offsetof(WorldCell, terrain), 0x10);
-    expect("WorldCell.troops", (long)offsetof(WorldCell, troops), 0x14);
+    expect("WorldCell.overlay", (long)offsetof(WorldCell, overlay), 0x14);
 
     // The reset values, and the two things the chain derives.
     static GameState state;
@@ -65,7 +66,7 @@ int main(void) {
     expect("faction funds after reset", state.factions[0].funds, 5000);
     expect("entity inactive after reset", state.entities[0].flags, 0x80);
     expect("entity at18 after reset", state.entities[0].at18, 0x1f0);
-    expect("cell owner after place", state.world.cells[0].owner, 0x40);
+    expect("cell owner after place", state.world.cells[0].occupant, 0x40);
     expect("blocked at terrain 0x2f", state.world.cells[0x2f].blocked, 0);
     expect("blocked at terrain 0x30", state.world.cells[0x30].blocked, 1);
     // Every playable faction starts with no strength, so all four are marked.
@@ -78,7 +79,7 @@ int main(void) {
     state.entities[7].position[0] = 5;      // column
     state.entities[7].position[1] = 9;      // row
     statePlaceEntities(&state);
-    expect("cell owner from entity", state.world.cells[WORLD_INDEX(5, 9)].owner,
+    expect("cell owner from entity", state.world.cells[WORLD_INDEX(5, 9)].occupant,
            7);
 
     // A unit cell beside empty land claims it, and turns its accumulated
@@ -156,7 +157,7 @@ int main(void) {
         e->at0c = 0;                            // facing the wrong way
         e->position[0] = 20;
         e->position[1] = 20;
-        state.world.cells[WORLD_INDEX(20, 20)].owner = 1;
+        state.world.cells[WORLD_INDEX(20, 20)].occupant = 1;
         simStepEntities(&walk);
         expect("the leader turned first", e->at0c, 5);
         expect("and did not move yet",
@@ -165,9 +166,9 @@ int main(void) {
         expect("then it stepped", e->position[0] * 100 + e->position[1],
                21 * 100 + 21);
         expect("it left the cell behind",
-               state.world.cells[WORLD_INDEX(20, 20)].owner, 0x40);
+               state.world.cells[WORLD_INDEX(20, 20)].occupant, 0x40);
         expect("and occupies the new one",
-               state.world.cells[WORLD_INDEX(21, 21)].owner, 1);
+               state.world.cells[WORLD_INDEX(21, 21)].occupant, 1);
 
         // Scenery stops it, and clears the route of anyone but the player.
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 0x60;
@@ -180,7 +181,7 @@ int main(void) {
 
         // So does somebody else's unit - it becomes a fight instead of a step.
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 0;
-        state.world.cells[WORLD_INDEX(22, 22)].owner = 9;
+        state.world.cells[WORLD_INDEX(22, 22)].occupant = 9;
         state.entities[9].flags = 0;
         state.entities[9].faction = 1;          // an enemy
         state.entities[9].at08 = 5000;
@@ -324,11 +325,11 @@ int main(void) {
         a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
         a->position[0] = 15; a->position[1] = 15;
         state.world.cells[WORLD_INDEX(15, 15)].terrain = 0x14;   // on a castle
-        state.world.cells[WORLD_INDEX(15, 15)].owner = 1;
+        state.world.cells[WORLD_INDEX(15, 15)].occupant = 1;
         Entity *b = &state.entities[9];
         b->flags = 0; b->faction = 2; b->at08 = 300;
         b->position[0] = 16; b->position[1] = 16;
-        state.world.cells[WORLD_INDEX(16, 16)].owner = 9;
+        state.world.cells[WORLD_INDEX(16, 16)].occupant = 9;
         state.factions[0].funds = 100000;
         simStepEntities(&war);
         expect("the defender was killed outright", b->flags & 2, 2);
@@ -350,7 +351,7 @@ int main(void) {
         a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
         a->position[0] = 18; a->position[1] = 18;
         state.world.cells[WORLD_INDEX(18, 18)].terrain = 8;   // its own ground
-        state.world.cells[WORLD_INDEX(18, 18)].owner = 1;
+        state.world.cells[WORLD_INDEX(18, 18)].occupant = 1;
         state.world.cells[WORLD_INDEX(19, 19)].terrain = 9;   // faction 1's
         state.world.cells[WORLD_INDEX(19, 19)].value = 50;
         state.factions[0].funds = 100000;
@@ -374,11 +375,11 @@ int main(void) {
         a->at08 = 1000; a->at0c = 5; a->at18 = 0x1f0;
         a->position[0] = 22; a->position[1] = 22;
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 8;
-        state.world.cells[WORLD_INDEX(22, 22)].owner = 1;
+        state.world.cells[WORLD_INDEX(22, 22)].occupant = 1;
         Entity *b = &state.entities[9];
         b->flags = 0; b->faction = 0; b->at08 = 700;
         b->position[0] = 23; b->position[1] = 23;
-        state.world.cells[WORLD_INDEX(23, 23)].owner = 9;
+        state.world.cells[WORLD_INDEX(23, 23)].occupant = 9;
         state.factions[0].funds = 100000;
         simStepEntities(&join);
         expect("the leader absorbed its own", a->at08 >= 1000 + 700 - 8, 1);
@@ -404,7 +405,7 @@ int main(void) {
         e->at08 = 8000;
         e->position[0] = 20;
         e->position[1] = 20;
-        state.world.cells[WORLD_INDEX(20, 20)].owner = 1;
+        state.world.cells[WORLD_INDEX(20, 20)].occupant = 1;
         state.world.cells[WORLD_INDEX(20, 20)].terrain = 8;   // its own ground
         state.factions[0].funds = 100000;
         // Faction 1's settlement two cells east, with clear ground between.
@@ -433,7 +434,7 @@ int main(void) {
         e->at08 = 8000;
         e->position[0] = 30;
         e->position[1] = 30;
-        state.world.cells[WORLD_INDEX(30, 30)].owner = 1;
+        state.world.cells[WORLD_INDEX(30, 30)].occupant = 1;
         state.world.cells[WORLD_INDEX(32, 30)].terrain = 8;   // home, two east
         state.factions[0].funds = 100000;
         stateMarkBlocked(&state);
@@ -546,7 +547,7 @@ int main(void) {
 
         // Somebody standing there refuses it.
         site->terrain = 0;
-        site->owner = 9;
+        site->occupant = 9;
         expect("an occupied site refuses", (long)simBuildWall(&build, 1),
                SIM_ACTION_NO_FUNDS);
     }
@@ -603,7 +604,7 @@ int main(void) {
         // A spawner takes an eighth a turn and then is gone for good.
         there->terrain = 5;
         there->value = 1000;
-        there->owner = 0x40;
+        there->occupant = 0x40;
         expect("the spawner took damage", (long)simBreakSpawner(&work, 1),
                SIM_ACTION_PROGRESS);
         expect("an eighth of it", there->value, 1000 - 400);
@@ -618,6 +619,65 @@ int main(void) {
                (long)simDemolishWall(&work, 1), SIM_ACTION_REFUSED);
         expect("a spawner order too",
                (long)simBreakSpawner(&work, 1), SIM_ACTION_REFUSED);
+    }
+
+    // 0041b520's packing.  A number is size | faction << 3 | facing | frame,
+    // and every branch has to stay inside the 208-tile bank.
+    {
+        Entity e;
+        memset(&e, 0, sizeof e);
+        e.faction = 0;
+        e.at08 = 500;
+        expect("smallest unit, first frame", renderSpriteNumber(&e, 0), 0);
+        expect("and its second", renderSpriteNumber(&e, 2), 1);
+        e.at0c = 4;                     // facing
+        expect("facing is bits one and two", renderSpriteNumber(&e, 0), 4);
+        e.at0c = 0;
+        e.faction = 2;
+        expect("faction is bits three and four", renderSpriteNumber(&e, 0),
+               0x10);
+        e.at08 = 1500;
+        expect("a thousand strong moves up a size",
+               renderSpriteNumber(&e, 0), 0x30);
+        e.at08 = 20000;
+        expect("ten thousand moves up again", renderSpriteNumber(&e, 0), 0x50);
+        e.at0d = 0x20;                  // a leader
+        expect("a leader is drawn by rank, not size",
+               renderSpriteNumber(&e, 0), 0x70);
+        e.at0d = 0;
+        e.at08 = 500;
+        e.flags = 1;
+        expect("at work", renderSpriteNumber(&e, 0), 0x90);
+        e.flags = 2;
+        e.at0e = 3;
+        expect("fighting", renderSpriteNumber(&e, 0), 0xb3);
+        e.at0d = 0x20;
+        expect("a leader fighting", renderSpriteNumber(&e, 0), 0xb7);
+        e.faction = 4;
+        e.at0d = 0;
+        expect("a neutral fighting", renderSpriteNumber(&e, 0), 0xcb);
+        e.flags = 0;
+        e.at0c = 2;
+        expect("a neutral walking", renderSpriteNumber(&e, 2), 0xc3);
+
+        // Nothing may reach past the bank, cursor included.
+        unsigned highest = 0;
+        for (unsigned f = 0; f < 5; f++)
+            for (unsigned flags = 0; flags < 4; flags++)
+                for (unsigned dir = 0; dir < 8; dir++)
+                    for (unsigned phase = 0; phase < 4; phase++)
+                        for (unsigned leader = 0; leader < 2; leader++) {
+                            memset(&e, 0, sizeof e);
+                            e.faction = (unsigned char)f;
+                            e.flags = (unsigned char)flags;
+                            e.at0c = (unsigned char)dir;
+                            e.at0e = (unsigned char)phase;
+                            e.at0d = leader ? 0x20 : 0;
+                            e.at08 = 50000;
+                            const unsigned n = renderSpriteNumber(&e, 1);
+                            if (n > highest) highest = n;
+                        }
+        expect("no sprite number leaves the bank", highest < 0xcc, 1);
     }
 
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);

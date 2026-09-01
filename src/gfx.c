@@ -156,16 +156,24 @@ int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
 int gfxUnpackSprites8(const unsigned char *buf, unsigned bufSize,
                       unsigned char *out, unsigned outCapacity,
                       unsigned *tilesOut) {
-    const unsigned sources = 0x2000u / TILE_SRC;        // 64
-    if (bufSize < 0x2000u) return 0;
+    // 208 tiles, four to a source block, so 52 blocks - and the file is
+    // exactly that long.  The original's loop runs to 0x2000 instead and reads
+    // twelve blocks past the end into a bank that has no room for them; the
+    // bound below is the one the data supports.
+    const unsigned sources = CHR_TILES8 / 4u;           // 52
+    if (bufSize < sources * TILE_SRC) return 0;
     if (outCapacity < CHR_TILES8 * 64u) return 0;
     unsigned produced = 0;
     for (unsigned s = 0; s < sources; s++) {
         const unsigned char *tile = buf + s * TILE_SRC;
         unsigned char full[256];
+        // Every block but the last lays its transparent nibble on the pulsing
+        // colour, which is what makes a unit visible at this size.
+        const unsigned char ground =
+            s * TILE_SRC < 0x1980u ? CHR_PULSE : CHR_TRANSPARENT;
         for (unsigned i = 0; i < 256; i++) {
             const unsigned char v = planarPixel(tile, i >> 3, i & 7);
-            full[i] = v == 0x0f ? CHR_TRANSPARENT : (unsigned char)(v + 0x30);
+            full[i] = v == 0x0f ? ground : (unsigned char)(v + 0x30);
         }
         for (unsigned half = 0; half < 2; half++) {          // left, right
             for (unsigned band = 0; band < 2; band++) {      // top, bottom

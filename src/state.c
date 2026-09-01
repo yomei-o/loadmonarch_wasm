@@ -53,8 +53,8 @@ void stateResetEntitiesAndFactions(GameState *state) {
 // 00427210.
 void statePlaceEntities(GameState *state) {
     for (int i = 0; i < WORLD_CELLS; i++) {
-        state->world.cells[i].owner = CELL_NO_ENTITY;
-        state->world.cells[i].troops = 0;
+        state->world.cells[i].occupant = CELL_NO_ENTITY;
+        state->world.cells[i].overlay = 0;
     }
     for (int i = 0; i < ENTITY_COUNT; i++) {
         Entity *entity = &state->entities[i];
@@ -64,7 +64,7 @@ void statePlaceEntities(GameState *state) {
             const unsigned index = WORLD_INDEX(entity->position[0],
                                                entity->position[1]);
             if (index < WORLD_CELLS)
-                state->world.cells[index].owner = (unsigned char)i;
+                state->world.cells[index].occupant = (unsigned char)i;
         }
     }
 }
@@ -140,6 +140,9 @@ void stateMarkDefeated(GameState *state) {
 // reset that opens the original's chain is deliberately not repeated here -
 // it runs before a map is read, not after.
 void stateStartStage(GameState *state) {
+    state->frame = 1;                   // DAT_00435b1c starts at one
+    state->showOrders = 1;              // DAT_004376a1
+
     stateMarkBlocked(state);
     stateResetEntitiesAndFactions(state);
     statePlaceEntities(state);

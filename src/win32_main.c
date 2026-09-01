@@ -55,24 +55,13 @@ static App g_app;
 // change repaints the palette too - exactly what 004065e0 does when a stage
 // loads.
 static void applyPalette(App *app) {
-    const TileBank *bank = worldBank(&app->game.world, app->zoom);
-    const TileBank *sprites = &app->game.world.sprites;
+    unsigned char colours[256][3];
+    renderPalette(&app->game, app->zoom, colours);
     RGBQUAD *table = (RGBQUAD *)(app->info->bmiColors);
     for (int i = 0; i < 256; i++) {
-        // The terrain's sixteen sit at 0x10 and the sprites' at 0x30, so one
-        // table carries both without either overwriting the other.
-        const TileBank *from = (i >= 0x30 && i < 0x40) ? sprites : bank;
-        if (i >= 0x80 && i < 0xb0) {
-            // The interface's colours, which data1.rgb puts at 0x80.
-            table[i].rgbRed = app->game.world.ui.palette[i][0];
-            table[i].rgbGreen = app->game.world.ui.palette[i][1];
-            table[i].rgbBlue = app->game.world.ui.palette[i][2];
-            table[i].rgbReserved = 0;
-            continue;
-        }
-        table[i].rgbRed = from->palette[i][0];
-        table[i].rgbGreen = from->palette[i][1];
-        table[i].rgbBlue = from->palette[i][2];
+        table[i].rgbRed = colours[i][0];
+        table[i].rgbGreen = colours[i][1];
+        table[i].rgbBlue = colours[i][2];
         table[i].rgbReserved = 0;
     }
     SetDIBColorTable(app->memoryDc, 0, 256, table);

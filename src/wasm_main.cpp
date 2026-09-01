@@ -129,15 +129,12 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     stateRecomputeTotals(&g_game);      // as 0041b370's interface caller does
     renderStatus(&g_game, &g_surface);
-    const TileBank *bank = worldBank(&g_game.world, g_zoom);
-    const TileBank *sprites = &g_game.world.sprites;
+    // The pulsing entries move with the frame, so the table is rebuilt here
+    // rather than only when a stage loads.
+    unsigned char colours[256][3];
+    renderPalette(&g_game, g_zoom, colours);
     for (int i = 0; i < VIEW_W * VIEW_H; i++) {
-        const unsigned char index = g_indices[i];
-        // The terrain's colours sit at 0x10, the sprites' at 0x30.
-        const unsigned char *rgb;
-        if (index >= 0x80 && index < 0xb0) rgb = g_game.world.ui.palette[index];
-        else if (index >= 0x30 && index < 0x40) rgb = sprites->palette[index];
-        else rgb = bank->palette[index];
+        const unsigned char *rgb = colours[g_indices[i]];
         g_pixels[i] = 0xff000000u | (unsigned)rgb[0] |
                       ((unsigned)rgb[1] << 8) | ((unsigned)rgb[2] << 16);
     }
