@@ -48,17 +48,15 @@ void renderWorld(const World *world, int zoom, int viewX, int viewY,
     }
 }
 
-// 1833 works the sprite out as 0xa0 (or 0xa4 when a flag is clear, 0xa8 for
-// the neutral faction) plus faction * 8 plus an animation frame less one.  The
-// bank this port unpacks holds 128 tiles, so the number is taken modulo that -
-// the sprite banks the original keeps are larger than one .BZ provides and how
-// it fills the rest is not read yet.  The colours still come out per faction,
-// which is what makes a unit readable on the map.
+// 1833 works the sprite out as 0xa0 - 0xa8 for the neutral faction - plus
+// faction * 8 plus an animation frame, less one.  Those numbers reach 187,
+// which is why the sprite bank holds 208 tiles rather than the terrain banks'
+// 128; the frame is the facing the entity carries.
 static unsigned spriteFor(const Entity *entity, const TileBank *bank) {
     const unsigned base = entity->faction == 4 ? 0xa8u : 0xa0u;
-    const unsigned frame = (unsigned)(entity->at0c & 3u) + 1u;
+    const unsigned frame = (unsigned)(entity->at0c & 7u) + 1u;
     const unsigned index = base + entity->faction * 8u + frame - 1u;
-    return bank->tiles ? index % bank->tiles : 0u;
+    return index < bank->tiles ? index : 0u;
 }
 
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,

@@ -14,6 +14,10 @@ int gfxUnpackTiles(const unsigned char *buf, unsigned bufSize, int tileSize,
 // 16-pixel size is handled - the 8- and 32-pixel sprite banks are rearranged
 // as well, which is not ported.
 #define CHR_TRANSPARENT 0x70
+// 208, not the terrain banks' 128: 00406c70's pass runs to 0x6800 of the
+// payload, which at 0x80 bytes a tile is 208 of them - and it has to be,
+// because the sprite numbers 1833 works out reach 187.
+#define CHR_TILES 208
 int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
                      unsigned char *out, unsigned outCapacity,
                      unsigned *tilesOut);

@@ -135,7 +135,7 @@ void gfxUiPalette(const unsigned char *rgbFile, unsigned size,
 int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
                      unsigned char *out, unsigned outCapacity,
                      unsigned *tilesOut) {
-    const unsigned tiles = 0x80;
+    const unsigned tiles = CHR_TILES;
     if (bufSize < tiles * TILE_SRC || outCapacity < tiles * 256u) return 0;
     unsigned produced = 0;
     for (unsigned t = 0; t < tiles; t++) {

@@ -112,7 +112,7 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
             unsigned produced = 0;
             if (raw && bzDecompress(spriteFile, (unsigned)spriteSize, raw,
                                     BANK_BUFFER, &produced)) {
-                const unsigned bytes = TILE_BANK_TILES * 16u * 16u;
+                const unsigned bytes = CHR_TILES * 16u * 16u;
                 world->sprites.pixels = (unsigned char *)malloc(bytes);
                 if (world->sprites.pixels &&
                     gfxUnpackSprites(raw, produced, world->sprites.pixels,
