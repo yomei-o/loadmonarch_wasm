@@ -201,7 +201,10 @@ EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
         if (entity->flags & 0x80) continue;
         if (entity->faction != g_sim.humanFaction) continue;
         if (entity->at0d & 0x20) continue;         // leave the leader alone
-        entity->at0d = (unsigned char)(0x10 | (order & 0x0f));
+        // Bit 7 is what 00403170 reads as "keep hunting"; without it order 4
+        // sends the unit home instead.
+        const unsigned hunt = (order & 0x0f) == 4 ? 0x80u : 0u;
+        entity->at0d = (unsigned char)(hunt | 0x10u | (order & 0x0f));
         entity->at18 = 0x1f0;                     // drop whatever it was doing
         changed++;
     }

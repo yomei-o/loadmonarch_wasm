@@ -399,7 +399,7 @@ int main(void) {
         Entity *e = &state.entities[1];
         e->flags = 0;
         e->faction = 0;
-        e->at0d = 0x10 | 4;              // ordered, and the order is 4
+        e->at0d = 0x80 | 0x10 | 4;       // ordered, hunting, order 4
         e->at18 = 0x1f0;
         e->at08 = 8000;
         e->position[0] = 20;

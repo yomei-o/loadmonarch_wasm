@@ -1093,7 +1093,8 @@ static void fallbackOrder(Sim *sim, unsigned slot) {
     entity->at0c = 6;
 }
 
-// 00402bc0.  Upkeep, a swing at anything adjacent, then the order.
+// 00402bc0 and 00403170's shared shape.  Upkeep, a swing at anything
+// adjacent, then the order - whose high bits 00403170 also reads.
 static void stepOrderedUnit(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
@@ -1113,16 +1114,33 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         entity->at0c = 6;
         entity->flags &= (unsigned char)~4u;
         return;
+    case 2:
+        // 00403170's case 2: face south and build where you stand.
+        entity->at0c = 6;
+        simBuildUnitCell(sim, slot, col, row);
+        return;
     case 4: {
-        // Go for a neighbour's settlement.
+        // 00403170 reads the high bits of +0x0d here as well as the order:
+        // bit 7 means keep hunting, bit 6 puts the unit back to ordered-idle,
+        // and neither means go home and build.  0041e0a0 finds the quarry.
         signed char dx = 0, dy = 0;
-        if ((entity->flags & 8) == 0 &&
-            chooseAlong(state, slot, 1, &dx, &dy)) {
-            simMakeRoute(state, slot, dx, dy);
-            entity->flags &= (unsigned char)~4u;
+        if (entity->at0d & 0x80) {
+            if ((entity->flags & 8) == 0 &&
+                chooseAlong(state, slot, 1, &dx, &dy)) {
+                simMakeRoute(state, slot, dx, dy);
+                entity->flags &= (unsigned char)~4u;
+                return;
+            }
+            fallbackOrder(sim, slot);
             return;
         }
-        fallbackOrder(sim, slot);
+        if (entity->at0d & 0x40) {
+            entity->at0d = 0x10;
+            return;
+        }
+        entity->at0d = 1;
+        if (chooseHome(state, slot, &dx, &dy)) simMakeRoute(state, slot, dx, dy);
+        else entity->at0c = 6;
         return;
     }
     case 5:
@@ -1130,6 +1148,9 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         fallbackOrder(sim, slot);
         return;
     default:
+        // 00403170 carries cases 6 through 0x0c as well, several hundred lines
+        // of them, and none is read.  Falling back sends the unit home rather
+        // than inventing what they do.
         fallbackOrder(sim, slot);
         return;
     }
