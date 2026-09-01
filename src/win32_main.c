@@ -10,6 +10,8 @@
 #include <string.h>
 
 #include "render.h"
+#include "sim.h"
+#include "state.h"
 #include "world.h"
 
 #define VIEW_W 640
@@ -22,8 +24,13 @@ static const char *kStages[STAGES] = {
     "S_101.MAP", "S_105.MAP", "S_115.MAP", "S_201.MAP", "T_000.MAP",
 };
 
+#define SIM_TIMER 1
+#define SIM_TIMER_MS 50
+
 typedef struct {
-    World world;
+    GameState game;             // the world plus the entities and factions
+    Sim sim;
+    int running;
     Surface surface;
     HBITMAP dib;
     HDC memoryDc;
@@ -33,6 +40,7 @@ typedef struct {
     int viewX, viewY;
     int stage;
     int transpose;              // which half of the cell index is screen x
+    int showHud;
     char dataDir[512];
 } App;
 
@@ -42,7 +50,7 @@ static App g_app;
 // change repaints the palette too - exactly what 004065e0 does when a stage
 // loads.
 static void applyPalette(App *app) {
-    const TileBank *bank = worldBank(&app->world, app->zoom);
+    const TileBank *bank = worldBank(&app->game.world, app->zoom);
     RGBQUAD *table = (RGBQUAD *)(app->info->bmiColors);
     for (int i = 0; i < 256; i++) {
         table[i].rgbRed = bank->palette[i][0];
@@ -54,7 +62,7 @@ static void applyPalette(App *app) {
 }
 
 static void clampView(App *app) {
-    const TileBank *bank = worldBank(&app->world, app->zoom);
+    const TileBank *bank = worldBank(&app->game.world, app->zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
     const int maxX = span - VIEW_W, maxY = span - VIEW_H;
     if (app->viewX > maxX) app->viewX = maxX;
@@ -69,11 +77,14 @@ static int loadStage(App *app, int stage, char *message, unsigned size) {
     World fresh;
     if (!worldLoadStage(&fresh, app->dataDir, kStages[stage], message, size))
         return 0;
-    worldFree(&app->world);
-    app->world = fresh;
+    worldFree(&app->game.world);
+    app->game.world = fresh;
     app->stage = stage;
+    // The chain 00407790 runs after a map is read.
+    stateStartStage(&app->game);
+    simInit(&app->sim, &app->game);
     // Centre on the map rather than starting in a corner.
-    const TileBank *bank = worldBank(&app->world, app->zoom);
+    const TileBank *bank = worldBank(&app->game.world, app->zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
     app->viewX = (span - VIEW_W) / 2;
     app->viewY = (span - VIEW_H) / 2;
@@ -82,10 +93,50 @@ static int loadStage(App *app, int stage, char *message, unsigned size) {
     return 1;
 }
 
+// A debug read-out of the simulation, so its progress is visible before the
+// game's own interface exists.  Counts the cells each faction holds by the
+// terrain encoding the sweep uses.
+static void paintHud(App *app, HDC dc) {
+    unsigned units[FACTION_COUNT] = {0}, ground[FACTION_COUNT] = {0};
+    unsigned castles[FACTION_COUNT] = {0}, neutral = 0, entities = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const unsigned char t = app->game.world.cells[i].terrain;
+        if (t == 5) neutral++;
+        else if (t >= 8 && t <= 0x0b) units[t - 8]++;
+        else if (t >= 0x0c && t <= 0x0f) ground[t - 0x0c]++;
+        else if (t >= 0x14 && t <= 0x17) castles[t - 0x14]++;
+    }
+    for (int i = 0; i < ENTITY_COUNT; i++)
+        if ((app->game.entities[i].flags & 0x80) == 0) entities++;
+
+    SetBkMode(dc, OPAQUE);
+    SetBkColor(dc, RGB(0, 0, 0));
+    SetTextColor(dc, RGB(220, 240, 255));
+    char line[200];
+    int y = 4;
+    snprintf(line, sizeof line,
+             "sweep %llu  %s   neutral cells %u   live entities %u",
+             app->sim.frames, app->running ? "running" : "paused",
+             neutral, entities);
+    TextOutA(dc, 4, y, line, (int)strlen(line));
+    y += 16;
+    for (int f = 0; f < FACTION_COUNT; f++) {
+        snprintf(line, sizeof line,
+                 "faction %d  funds %6u  tax %3u  castles %u  units %3u  "
+                 "ground %4u%s",
+                 f, app->game.factions[f].funds, app->game.factions[f].taxRate,
+                 castles[f], units[f], ground[f],
+                 (app->game.factions[f].flags & 0x10) ? "  out" : "");
+        TextOutA(dc, 4, y, line, (int)strlen(line));
+        y += 16;
+    }
+}
+
 static void paint(App *app, HDC dc) {
-    renderWorld(&app->world, app->zoom, app->viewX, app->viewY,
+    renderWorld(&app->game.world, app->zoom, app->viewX, app->viewY,
                 app->transpose, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
+    if (app->showHud) paintHud(app, dc);
 }
 
 static void updateTitle(HWND window, const App *app) {
@@ -93,8 +144,8 @@ static void updateTitle(HWND window, const App *app) {
     char title[256];
     snprintf(title, sizeof title,
              "Lord Monarch - %s  scenery %u  tiles %s  index %s  "
-             "(arrows, 1/2/3 zoom, PgUp/PgDn stage, T transpose)",
-             kStages[app->stage], app->world.scenerySet,
+             "(arrows, 1/2/3 zoom, PgUp/PgDn stage, Space run, S step, H hud)",
+             kStages[app->stage], app->game.world.scenerySet,
              zoomName[app->zoom],
              app->transpose ? "x*48+y" : "y*48+x");
     SetWindowTextA(window, title);
@@ -112,7 +163,7 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
     case WM_KEYDOWN: {
-        const TileBank *bank = worldBank(&app->world, app->zoom);
+        const TileBank *bank = worldBank(&app->game.world, app->zoom);
         const int step = bank->tileSize > 0 ? bank->tileSize : 16;
         char reason[256];
         switch (wparam) {
@@ -124,7 +175,7 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
             const int wanted = (int)(wparam - '1');
             if (wanted != app->zoom) {
                 // Keep the centre of the view over the same cell.
-                const TileBank *to = worldBank(&app->world, wanted);
+                const TileBank *to = worldBank(&app->game.world, wanted);
                 const double scale = (double)to->tileSize / bank->tileSize;
                 app->viewX = (int)((app->viewX + VIEW_W / 2) * scale) - VIEW_W / 2;
                 app->viewY = (int)((app->viewY + VIEW_H / 2) * scale) - VIEW_H / 2;
@@ -144,6 +195,15 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         case 'T':
             app->transpose = !app->transpose;
             break;
+        case VK_SPACE:
+            app->running = !app->running;
+            break;
+        case 'H':
+            app->showHud = !app->showHud;
+            break;
+        case 'S':                       // one sweep, for watching it step
+            simStep(&app->sim);
+            break;
         case VK_ESCAPE:
             DestroyWindow(window);
             return 0;
@@ -155,6 +215,12 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         InvalidateRect(window, NULL, FALSE);
         return 0;
     }
+    case WM_TIMER:
+        if (wparam == SIM_TIMER && app->running) {
+            simStep(&app->sim);
+            InvalidateRect(window, NULL, FALSE);
+        }
+        return 0;
     case WM_ERASEBKGND:
         return 1;               // the blit covers everything
     case WM_DESTROY:
@@ -193,6 +259,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
     // The original's cell index is `a * 0x30 + b`; taking a as the column is
     // what matches the game on screen.  T flips it back for comparison.
     app->transpose = 1;
+    app->showHud = 1;
+    app->running = 1;
 
     if (cmdLine && *cmdLine) {
         snprintf(app->dataDir, sizeof app->dataDir, "%s", cmdLine);
@@ -246,6 +314,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
         return 1;
     }
     updateTitle(window, app);
+    SetTimer(window, SIM_TIMER, SIM_TIMER_MS, NULL);
     ShowWindow(window, SW_SHOW);
 
     MSG msg;
@@ -253,6 +322,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-    worldFree(&app->world);
+    KillTimer(window, SIM_TIMER);
+    worldFree(&app->game.world);
     return 0;
 }

@@ -31,9 +31,12 @@ typedef struct {
     unsigned char position[2];  // +0x00, +0x01  column, row (see WORLD_INDEX)
     unsigned char target[2];    // +0x02, +0x03  0040b680 bounds both to 1..46
     unsigned char faction;      // +0x04         indexes the faction array
-    unsigned char at05[7];
-    unsigned char at0c;         // +0x0c         0040b680's branch writes 6
-    unsigned char at0d[3];
+    unsigned char at05[3];
+    unsigned at08;              // +0x08         200 for a neutral spawn
+    unsigned char at0c;         // +0x0c         6 on spawn and on a move
+    unsigned char at0d;         // +0x0d         0x0e on spawn; bit 5 gates tax
+    unsigned char at0e;
+    unsigned char at0f;         // +0x0f         10 on spawn
     unsigned char flags;        // +0x10         0x80 = inactive (004272b0)
     unsigned char at11[7];
     unsigned at18;              // +0x18         0x1f0 at reset
@@ -50,7 +53,7 @@ typedef struct {
     unsigned strength;          // +0x10         at28 + at30, capped
     unsigned at14;              // +0x14         cleared at reset
     unsigned funds;             // +0x18         5000 at reset
-    unsigned char at1c;         // +0x1c         0 at reset
+    unsigned char taxRate;      // +0x1c         0041dc60 derives it from funds
     unsigned char at1d;
     unsigned char at1e;         // +0x1e         0x80 at reset
     unsigned char at1f;         // +0x1f         4 once defeated

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "../src/sim.h"
 #include "../src/state.h"
 
 static int failures;
@@ -28,7 +29,10 @@ int main(void) {
     expect("Entity.position", (long)offsetof(Entity, position), 0x00);
     expect("Entity.target", (long)offsetof(Entity, target), 0x02);
     expect("Entity.faction", (long)offsetof(Entity, faction), 0x04);
+    expect("Entity.at08", (long)offsetof(Entity, at08), 0x08);
     expect("Entity.at0c", (long)offsetof(Entity, at0c), 0x0c);
+    expect("Entity.at0d", (long)offsetof(Entity, at0d), 0x0d);
+    expect("Entity.at0f", (long)offsetof(Entity, at0f), 0x0f);
     expect("Entity.flags", (long)offsetof(Entity, flags), 0x10);
     expect("Entity.at18", (long)offsetof(Entity, at18), 0x18);
     expect("Entity.flags21c", (long)offsetof(Entity, flags21c), 0x21c);
@@ -36,6 +40,7 @@ int main(void) {
     expect("Faction.flags", (long)offsetof(Faction, flags), 0x04);
     expect("Faction.strength", (long)offsetof(Faction, strength), 0x10);
     expect("Faction.funds", (long)offsetof(Faction, funds), 0x18);
+    expect("Faction.taxRate", (long)offsetof(Faction, taxRate), 0x1c);
     expect("Faction.at1f", (long)offsetof(Faction, at1f), 0x1f);
     expect("Faction.entities", (long)offsetof(Faction, entities), 0x24);
     expect("Faction.at28", (long)offsetof(Faction, at28), 0x28);

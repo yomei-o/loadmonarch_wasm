@@ -34,7 +34,7 @@ void stateResetEntitiesAndFactions(GameState *state) {
     for (int i = 0; i < FACTION_COUNT; i++) {
         Faction *faction = &state->factions[i];
         faction->funds = FACTION_FUNDS_RESET;
-        faction->at1c = 0;
+        faction->taxRate = 0;
         faction->at1e = 0x80;
         faction->at14 = 0;
         // The original clears bits 0, 1, 2, 3, 4, 5 and 7 one at a time,
