@@ -563,7 +563,8 @@ int simAdvanceRoute(GameState *state, unsigned slot) {
 
 /* ------------------------------------------------- entities, 004204f0 */
 
-static void stepPlainUnit(Sim *sim, unsigned slot);   // 00401770, below
+static void stepPlainUnit(Sim *sim, unsigned slot);     // 00401770, below
+static void stepOrderedUnit(Sim *sim, unsigned slot);  // 00402bc0, below
 
 // 0041d6d0's table, read off the sixteen words it builds on the stack.  A
 // direction is a column delta and a row delta; 5 is the one 0041d690 falls
@@ -801,7 +802,14 @@ void simStepEntities(Sim *sim) {
             stepWalk(sim, slot);                        // 00401000
             continue;
         }
-        if (entity->at0d & 0x10) continue;              // 00403170 / 00402bc0
+        if (entity->at0d & 0x10) {
+            stepOrderedUnit(sim, slot);                 // 00402bc0
+            // A unit with a route walks it.  The step itself is 00401000's;
+            // which of the ordered arms the original walks from is in
+            // 00403170, which is not read.
+            if (entity->at18 != ROUTE_EMPTY) stepWalk(sim, slot);
+            continue;
+        }
         stepPlainUnit(sim, slot);                       // 00401770
     }
 }
@@ -852,6 +860,142 @@ static int trampleGround(GameState *state, unsigned index, unsigned faction) {
     if (state->factions[faction].at1e == (unsigned char)owner) return 0;
     cell->terrain = 0;
     return 1;
+}
+
+/* ------------------------------------------------ orders, 00402bc0 */
+
+// The offsets both choosers look along, from 00434400 and 00434410: one cell
+// each way, then two.  Index zero is unused - the original starts at one.
+static const signed char kLookDx[9] = {0, -1, 1, 0, 0, -2, 2, 0, 0};
+static const signed char kLookDy[9] = {0, 0, 0, -1, 1, 0, 0, -2, 2};
+
+// 0041ebf0.  Inside the border and not blocked terrain.
+static int passableCell(const GameState *state, int col, int row) {
+    if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return 0;
+    return state->world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)]
+               .blocked == 0;
+}
+
+// 0041e700's first test: a friendly already there whose strength added to this
+// one would pass the hundred thousand cap.  The rest of that routine is not
+// read; this is the part its callers act on.
+static int wouldOverflow(const GameState *state, unsigned slot, int col,
+                         int row) {
+    const unsigned char other =
+        state->world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].owner;
+    if (other >= ENTITY_NONE || other == slot) return 0;
+    const Entity *them = &state->entities[other];
+    const Entity *me = &state->entities[slot];
+    if (them->faction != me->faction) return 0;
+    return them->at08 + me->at08 > 100000u;
+}
+
+// The pair of choosers share a shape: walk the eight offsets, remember which
+// were impassable in a shifting mask, and skip a candidate whose path was
+// blocked four steps back.  That mask is what stops a unit setting off towards
+// something on the far side of a wall.
+static int chooseAlong(const GameState *state, unsigned slot, int wantEnemy,
+                       signed char *outDx, signed char *outDy) {
+    const Entity *me = &state->entities[slot];
+    const int col = me->position[0], row = me->position[1];
+    if (!passableCell(state, col, row)) return 0;
+    const unsigned faction = me->faction;
+
+    int mask = 0;
+    for (int i = 1; i < 9; i++) {
+        mask >>= 1;
+        const int nc = kLookDx[i] + col;
+        const int nr = kLookDy[i] + row;
+        if (!passableCell(state, nc, nr)) {
+            mask |= 0x80;
+            continue;
+        }
+        if (mask & 8) continue;
+        const unsigned char t = state->world.cells[
+            WORLD_INDEX((unsigned)nc, (unsigned)nr)].terrain;
+        int wanted;
+        if (wantEnemy) {
+            // 0041e0a0: somebody else's settlement, and not an ally's.
+            wanted = t > 7 && t < 0x0c &&
+                     (unsigned char)(t - 8) != faction &&
+                     state->factions[faction].at1e != (unsigned char)(t - 8);
+        } else {
+            // 0041e560: one of its own.
+            wanted = t == (unsigned char)(faction + 8);
+        }
+        if (!wanted) continue;
+        if (wouldOverflow(state, slot, nc, nr)) continue;
+        *outDx = kLookDx[i];
+        *outDy = kLookDy[i];
+        return 1;
+    }
+    return 0;
+}
+
+// 0041e560.  A unit already standing on one of its own settlements stays.
+static int chooseHome(const GameState *state, unsigned slot,
+                      signed char *dx, signed char *dy) {
+    const Entity *me = &state->entities[slot];
+    const unsigned index = WORLD_INDEX(me->position[0], me->position[1]);
+    if ((unsigned char)(state->world.cells[index].terrain - me->faction) == 8)
+        return 0;
+    return chooseAlong(state, slot, 0, dx, dy);
+}
+
+// 00403100.  Back to the plain order, and off towards home if there is one.
+static void fallbackOrder(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    entity->flags &= (unsigned char)~4u;
+    entity->at0d = 1;
+    signed char dx = 0, dy = 0;
+    if (chooseHome(state, slot, &dx, &dy)) {
+        simMakeRoute(state, slot, dx, dy);
+        return;
+    }
+    entity->at0c = 6;
+}
+
+// 00402bc0.  Upkeep, a swing at anything adjacent, then the order.
+static void stepOrderedUnit(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return;
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    if (!inBounds((int)col, (int)row)) return;
+    const unsigned index = WORLD_INDEX(col, row);
+
+    if (!payUpkeep(state, slot, index, faction)) return;
+    trampleGround(state, index, faction);
+    if (lashOut(sim, slot, col, row)) return;
+
+    switch (entity->at0d & 0x0f) {
+    case 0:
+        entity->at0c = 6;
+        entity->flags &= (unsigned char)~4u;
+        return;
+    case 4: {
+        // Go for a neighbour's settlement.
+        signed char dx = 0, dy = 0;
+        if ((entity->flags & 8) == 0 &&
+            chooseAlong(state, slot, 1, &dx, &dy)) {
+            simMakeRoute(state, slot, dx, dy);
+            entity->flags &= (unsigned char)~4u;
+            return;
+        }
+        fallbackOrder(sim, slot);
+        return;
+    }
+    case 5:
+        if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_DONE) return;
+        fallbackOrder(sim, slot);
+        return;
+    default:
+        fallbackOrder(sim, slot);
+        return;
+    }
 }
 
 // 00401770.  The order a unit carries is the low nibble of +0x0d, and it acts

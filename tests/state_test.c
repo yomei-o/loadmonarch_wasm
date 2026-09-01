@@ -387,6 +387,69 @@ int main(void) {
                a->position[0] * 100 + a->position[1], 23 * 100 + 23);
     }
 
+    // 0041e0a0 through 00402bc0: order 4 heads for a neighbour's settlement,
+    // and the route it lays out is walked.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim march;
+        simInit(&march, &state);
+        march.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 0x10 | 4;              // ordered, and the order is 4
+        e->at18 = 0x1f0;
+        e->at08 = 8000;
+        e->position[0] = 20;
+        e->position[1] = 20;
+        state.world.cells[WORLD_INDEX(20, 20)].owner = 1;
+        state.world.cells[WORLD_INDEX(20, 20)].terrain = 8;   // its own ground
+        state.factions[0].funds = 100000;
+        // Faction 1's settlement two cells east, with clear ground between.
+        state.world.cells[WORLD_INDEX(22, 20)].terrain = 9;
+        stateMarkBlocked(&state);
+        simStepEntities(&march);
+        expect("the order laid out a route", e->at18 != 0x1f0, 1);
+        expect("aimed at the settlement",
+               e->target[0] * 100 + e->target[1], 22 * 100 + 20);
+    }
+
+    // 0041e560 through 00403100: a unit away from its own settlements is sent
+    // home, and one standing on one stays put.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim home;
+        simInit(&home, &state);
+        home.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 0x10 | 7;              // an order the switch falls through
+        e->at18 = 0x1f0;
+        e->at08 = 8000;
+        e->position[0] = 30;
+        e->position[1] = 30;
+        state.world.cells[WORLD_INDEX(30, 30)].owner = 1;
+        state.world.cells[WORLD_INDEX(32, 30)].terrain = 8;   // home, two east
+        state.factions[0].funds = 100000;
+        stateMarkBlocked(&state);
+        simStepEntities(&home);
+        expect("the fallback sent it home", e->at18 != 0x1f0, 1);
+        expect("and set the plain order", e->at0d & 0x0f, 1);
+
+        // Standing on its own, it is left alone.
+        e->at0d = 0x10 | 7;
+        e->at18 = 0x1f0;
+        e->position[0] = 32;
+        e->position[1] = 30;
+        simStepEntities(&home);
+        expect("on its own ground it stays", e->at18, 0x1f0);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }
