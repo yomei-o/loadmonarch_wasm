@@ -56,11 +56,15 @@ static App g_app;
 // loads.
 static void applyPalette(App *app) {
     const TileBank *bank = worldBank(&app->game.world, app->zoom);
+    const TileBank *sprites = &app->game.world.sprites;
     RGBQUAD *table = (RGBQUAD *)(app->info->bmiColors);
     for (int i = 0; i < 256; i++) {
-        table[i].rgbRed = bank->palette[i][0];
-        table[i].rgbGreen = bank->palette[i][1];
-        table[i].rgbBlue = bank->palette[i][2];
+        // The terrain's sixteen sit at 0x10 and the sprites' at 0x30, so one
+        // table carries both without either overwriting the other.
+        const TileBank *from = (i >= 0x30 && i < 0x40) ? sprites : bank;
+        table[i].rgbRed = from->palette[i][0];
+        table[i].rgbGreen = from->palette[i][1];
+        table[i].rgbBlue = from->palette[i][2];
         table[i].rgbReserved = 0;
     }
     SetDIBColorTable(app->memoryDc, 0, 256, table);
@@ -146,6 +150,8 @@ static void paintHud(App *app, HDC dc) {
 
 static void paint(App *app, HDC dc) {
     renderWorld(&app->game.world, app->zoom, app->viewX, app->viewY,
+                app->transpose, &app->surface);
+    renderUnits(&app->game, app->zoom, app->viewX, app->viewY,
                 app->transpose, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
     if (app->showHud) paintHud(app, dc);

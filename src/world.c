@@ -98,6 +98,37 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
         {"m", 16, offsetof(World, bank16)},
         {"l", 32, offsetof(World, bank32)},
     };
+    // The sprite bank, whose palette 004065e0 puts at 0x30 - and which
+    // 00406c70 unpacks with a different bias, so it goes through its own
+    // routine.  A stage without one still plays; the units are just unseen.
+    {
+        char spritePath[256];
+        snprintf(spritePath, sizeof spritePath, "CHR/C_%03dm.BZ",
+                 world->scenerySet);
+        long spriteSize = 0;
+        unsigned char *spriteFile = slurp(host, spritePath, &spriteSize);
+        if (spriteFile) {
+            unsigned char *raw = (unsigned char *)malloc(BANK_BUFFER);
+            unsigned produced = 0;
+            if (raw && bzDecompress(spriteFile, (unsigned)spriteSize, raw,
+                                    BANK_BUFFER, &produced)) {
+                const unsigned bytes = TILE_BANK_TILES * 16u * 16u;
+                world->sprites.pixels = (unsigned char *)malloc(bytes);
+                if (world->sprites.pixels &&
+                    gfxUnpackSprites(raw, produced, world->sprites.pixels,
+                                     bytes, &world->sprites.tiles)) {
+                    world->sprites.tileSize = 16;
+                    gfxSpritePalette(raw, produced, &world->sprites.palette[0][0]);
+                } else {
+                    free(world->sprites.pixels);
+                    world->sprites.pixels = NULL;
+                }
+            }
+            free(raw);
+            free(spriteFile);
+        }
+    }
+
     for (unsigned b = 0; b < sizeof banks / sizeof banks[0]; b++) {
         snprintf(path, sizeof path, "BG/B_%03d%s.BZ", world->scenerySet,
                  banks[b].suffix);
@@ -112,6 +143,8 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
 }
 
 void worldFree(World *world) {
+    free(world->sprites.pixels);
+    world->sprites.pixels = NULL;
     free(world->bank8.pixels);
     free(world->bank16.pixels);
     free(world->bank32.pixels);

@@ -49,6 +49,7 @@ typedef struct {
     TileBank bank8;             // B_%03ds.bz
     TileBank bank16;            // B_%03dm.bz
     TileBank bank32;            // B_%03dl.bz
+    TileBank sprites;           // C_%03dm.bz, the 16-pixel unit sprites
     char stage[64];             // which map this is
 } World;
 

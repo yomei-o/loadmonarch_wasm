@@ -125,13 +125,17 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 // take straight into an ImageData.
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
+    renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const TileBank *sprites = &g_game.world.sprites;
     for (int i = 0; i < VIEW_W * VIEW_H; i++) {
         const unsigned char index = g_indices[i];
+        // The terrain's colours sit at 0x10, the sprites' at 0x30.
+        const TileBank *from = (index >= 0x30 && index < 0x40) ? sprites : bank;
         g_pixels[i] = 0xff000000u |
-                      (unsigned)bank->palette[index][0] |
-                      ((unsigned)bank->palette[index][1] << 8) |
-                      ((unsigned)bank->palette[index][2] << 16);
+                      (unsigned)from->palette[index][0] |
+                      ((unsigned)from->palette[index][1] << 8) |
+                      ((unsigned)from->palette[index][2] << 16);
     }
     return g_pixels;
 }

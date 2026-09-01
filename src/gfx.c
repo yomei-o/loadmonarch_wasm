@@ -93,18 +93,28 @@ int gfxUnpackTiles(const unsigned char *buf, unsigned bufSize, int tileSize,
 // four bits per channel in the order blue, red, green - so each is shifted up
 // by four to fill a byte.  004065e0's caller asks for 0x10 entries starting
 // at palette index 0x10, which is exactly the bias 00406810 applies.
-int gfxTilePalette(const unsigned char *buf, unsigned bufSize,
-                   unsigned char *rgb256) {
+static int tilePaletteAt(const unsigned char *buf, unsigned bufSize,
+                         unsigned char *rgb256, unsigned base) {
     if (bufSize < 0x8000u + 16u * 3u) return 0;
     const unsigned char *src = buf + 0x8000u;
     for (unsigned i = 0; i < 16; i++) {
-        unsigned char *dst = rgb256 + (0x10u + i) * 3u;
+        unsigned char *dst = rgb256 + (base + i) * 3u;
         dst[0] = (unsigned char)(src[1] << 4);   // red
         dst[1] = (unsigned char)(src[2] << 4);   // green
         dst[2] = (unsigned char)(src[0] << 4);   // blue
         src += 3;
     }
     return 1;
+}
+
+int gfxTilePalette(const unsigned char *buf, unsigned bufSize,
+                   unsigned char *rgb256) {
+    return tilePaletteAt(buf, bufSize, rgb256, 0x10u);
+}
+
+int gfxSpritePalette(const unsigned char *buf, unsigned bufSize,
+                     unsigned char *rgb256) {
+    return tilePaletteAt(buf, bufSize, rgb256, 0x30u);
 }
 
 // 0040e560 with start 0x80 and count 0x30: data1.rgb's entries are already
@@ -117,4 +127,25 @@ void gfxUiPalette(const unsigned char *rgbFile, unsigned size,
         dst[1] = rgbFile[i * 4 + 1];
         dst[2] = rgbFile[i * 4 + 2];
     }
+}
+
+// 00406c70's 16-pixel path.  Same four planes as the terrain banks, but a full
+// nibble means "draw nothing here" and everything else lands in the palette
+// bank at 0x30 rather than 0x10.
+int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
+                     unsigned char *out, unsigned outCapacity,
+                     unsigned *tilesOut) {
+    const unsigned tiles = 0x80;
+    if (bufSize < tiles * TILE_SRC || outCapacity < tiles * 256u) return 0;
+    unsigned produced = 0;
+    for (unsigned t = 0; t < tiles; t++) {
+        const unsigned char *tile = buf + t * TILE_SRC;
+        for (unsigned i = 0; i < 256; i++) {
+            const unsigned char v = planarPixel(tile, i >> 3, i & 7);
+            out[produced++] = v == 0x0f ? CHR_TRANSPARENT
+                                        : (unsigned char)(v + 0x30);
+        }
+    }
+    if (tilesOut) *tilesOut = tiles;
+    return 1;
 }
