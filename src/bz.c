@@ -144,14 +144,17 @@ static void rowBitPacked(BzState *s, unsigned rowLen) {
             distance = (hi << 8) | take(s);
             if (distance == 0) return;             // end of row
             if (distance == 1) {
-                // The long run escape.
-                unsigned count;
+                // The long run escape.  Both branches fill raw + 0x0e bytes;
+                // the 0x0f and 0x10 the original also computes go into its
+                // consumed-bytes bookkeeping, not into the count.
+                unsigned raw;
                 if (!bit(s)) {
-                    count = bitsOf(s, 4) + 0x0f;
+                    raw = bitsOf(s, 4);
                 } else {
                     const unsigned hi2 = bitsOf(s, 4);
-                    count = ((hi2 << 8) | take(s)) + 0x10;
+                    raw = (hi2 << 8) | take(s);
                 }
+                unsigned count = raw + 0x0e;
                 const unsigned char v = take(s);
                 while (count-- && !s->failed) emit(s, v);
                 continue;

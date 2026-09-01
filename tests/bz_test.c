@@ -8,7 +8,9 @@
 
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: bz_test <file.bz>...\n"); return 2; }
-    static unsigned char out[0x20000];
+    // The largest buffer the game hands the decoder: 0x40000 for data1.bz,
+    // 0x8030 for the tile banks.
+    static unsigned char out[0x40000];
     int bad = 0;
     for (int i = 1; i < argc; i++) {
         FILE *f = fopen(argv[i], "rb");
