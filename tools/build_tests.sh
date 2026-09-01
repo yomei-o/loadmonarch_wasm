@@ -7,6 +7,9 @@ for t in bz_test tiles_test map_test data1_test; do
     sh tools/lowpri.sh "$GCC" -O2 -Wall -o "tests/$t.exe" "tests/$t.c"         src/bz.c src/gfx.c
     echo "built tests/$t.exe"
 done
-sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/state_test.exe     tests/state_test.c src/state.c src/world.c src/bz.c src/gfx.c
+SIM="src/sim.c src/state.c src/world.c src/bz.c src/gfx.c"
+sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/state_test.exe     tests/state_test.c $SIM
 echo "built tests/state_test.exe"
+sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/sim_harness.exe     tests/sim_harness.c $SIM
+echo "built tests/sim_harness.exe"
 ./tests/state_test.exe

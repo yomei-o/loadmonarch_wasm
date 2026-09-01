@@ -40,6 +40,11 @@ for ($i = 0; $i -lt $Clicks; $i++) {
     Start-Sleep -Milliseconds 500
 }
 if ($After -gt 0) { Start-Sleep -Milliseconds $After }
+# Something else can take the foreground during a long wait, and then the
+# screenshot catches whatever is on top instead.
+[void][Nat]::SetForegroundWindow($h)
+Start-Sleep -Milliseconds 600
+[void][Nat]::ClientToScreen($h, [ref]$origin)
 $r = New-Object RC
 [void][Nat]::GetClientRect($h, [ref]$r)
 $bmp = New-Object System.Drawing.Bitmap ($r.R), ($r.B)

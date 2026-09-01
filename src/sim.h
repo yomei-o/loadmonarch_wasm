@@ -38,6 +38,10 @@ int simSpend(GameState *state, unsigned faction, unsigned cost);
 void simRetireEntity(GameState *state, unsigned slot, unsigned col,
                      unsigned row);
 
+// 00420aa0: mark an entity dying, with a cause.
+void simMarkDying(GameState *state, unsigned slot, unsigned char cause);
+
+
 // 0040b330: raise one of the faction's unit cells at (col, row), paid for by
 // the purse and by the acting entity's strength.
 SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,

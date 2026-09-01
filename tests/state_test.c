@@ -195,6 +195,111 @@ int main(void) {
         expect("a dying entity was retired", d->flags & 0x80, 0x80);
     }
 
+    // 0041a920: on its own ground a unit is paid for out of the treasury; off
+    // it, the unit eats its own strength and eventually starves.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim keep;
+        simInit(&keep, &state);
+        keep.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 4;                       // an order nothing is ported for
+        e->at18 = 0x1f0;
+        e->at08 = 4096;
+        e->position[0] = 20;
+        e->position[1] = 20;
+        state.world.cells[WORLD_INDEX(20, 20)].terrain = 8;   // its own ground
+        state.factions[0].funds = 1000;
+        simStepEntities(&keep);
+        expect("upkeep came from the treasury", state.factions[0].funds,
+               1000 - (4096 >> 11));
+        expect("and left the unit's strength alone", e->at08, 4096);
+
+        // Off its own ground it pays with itself.
+        state.world.cells[WORLD_INDEX(20, 20)].terrain = 0;
+        simStepEntities(&keep);
+        expect("off its ground it paid with strength", e->at08,
+               4096 - ((4096 >> 8) + 1));
+
+        // Down to nothing, it is marked dying.
+        e->at08 = 1;
+        simStepEntities(&keep);
+        expect("a starved unit is marked dying", e->flags & 2, 2);
+    }
+
+    // 00420a40: walking over somebody else's claimed ground wipes it.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim tramp;
+        simInit(&tramp, &state);
+        tramp.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 4;
+        e->at18 = 0x1f0;
+        e->at08 = 4096;
+        e->position[0] = 25;
+        e->position[1] = 25;
+        state.world.cells[WORLD_INDEX(25, 25)].terrain = 0x0d;  // faction 1's
+        state.factions[0].funds = 1000;
+        simStepEntities(&tramp);
+        expect("enemy ground was wiped",
+               state.world.cells[WORLD_INDEX(25, 25)].terrain, 0);
+    }
+
+    // 00401770's orders 1..3: a unit raises one of its faction's unit cells
+    // by itself, which is what makes a country expand unattended.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim order;
+        simInit(&order, &state);
+        order.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 1;                       // the plain build order
+        e->at18 = 0x1f0;
+        e->at08 = 4096;
+        e->position[0] = 26;
+        e->position[1] = 26;
+        state.factions[0].funds = 1000;
+        simStepEntities(&order);
+        expect("the unit built by itself",
+               state.world.cells[WORLD_INDEX(26, 26)].terrain, 8);
+        expect("and it was paid for", state.factions[0].funds < 1000, 1);
+    }
+
+    // A unit whose faction lost its leader joins whoever at1f names.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim fall;
+        simInit(&fall, &state);
+        fall.humanFaction = 3;
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 0x0c;
+        e->at08 = 4096;
+        e->position[0] = 27;
+        e->position[1] = 27;
+        state.factions[0].at1f = 2;         // it becomes faction 2's
+        state.factions[0].funds = 1000;
+        simStepEntities(&fall);
+        expect("the unit changed sides", e->faction, 2);
+        expect("and took the plain order", e->at0d, 1);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }

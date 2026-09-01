@@ -493,6 +493,8 @@ unsigned simHumanActor(const Sim *sim) {
 
 /* ------------------------------------------------- entities, 004204f0 */
 
+static void stepPlainUnit(Sim *sim, unsigned slot);   // 00401770, below
+
 // 0041d6d0's table, read off the sixteen words it builds on the stack.  A
 // direction is a column delta and a row delta; 5 is the one 0041d690 falls
 // back on when an entity has no route.
@@ -598,6 +600,119 @@ void simStepEntities(Sim *sim) {
             continue;
         }
         if (entity->at0d & 0x10) continue;              // 00403170 / 00402bc0
-        // 00401770, the plain unit.
+        stepPlainUnit(sim, slot);                       // 00401770
+    }
+}
+
+/* --------------------------------------------- the plain unit, 00401770 */
+
+// 00420aa0: mark an entity dying, with a cause in +0x0f.  The cursor's dying
+// arm then counts three ticks before it goes.
+void simMarkDying(GameState *state, unsigned slot, unsigned char cause) {
+    if (slot >= ENTITY_COUNT) return;
+    Entity *entity = &state->entities[slot];
+    if ((entity->flags & 2) == 0) {
+        entity->flags |= 2;
+        entity->at0f = cause;
+        entity->at0e = 0;
+    }
+    entity->at08 = 0;
+}
+
+// 0041a920, the upkeep.  Standing on a castle or on its own faction's unit
+// cell, a unit is paid for out of the treasury - a small slice of its own
+// strength.  Anywhere else it eats that strength instead, and starves.
+static int payUpkeep(GameState *state, unsigned slot, unsigned index,
+                     unsigned faction) {
+    Entity *entity = &state->entities[slot];
+    const unsigned char t = state->world.cells[index].terrain;
+    const int onCastle = (int)t - 0x14 >= 0 && (int)t - 0x14 < 4;
+    const int onOwnUnit = (unsigned char)(t - faction) == 8;
+    if (onCastle || onOwnUnit) {
+        if (simSpend(state, faction, entity->at08 >> 11)) return 1;
+    }
+    const unsigned drain = (entity->at08 >> 8) + 1;
+    if (entity->at08 <= drain) {
+        simMarkDying(state, slot, 4);
+        return 0;
+    }
+    entity->at08 -= drain;
+    return 1;
+}
+
+// 00420a40: walking over ground another faction has claimed wipes it.  An
+// ally named by +0x1e is spared.
+static int trampleGround(GameState *state, unsigned index, unsigned faction) {
+    WorldCell *cell = &state->world.cells[index];
+    const int owner = (int)cell->terrain - 0x0c;
+    if (owner < 0 || owner >= 4) return 0;
+    if ((unsigned)owner == faction) return 0;
+    if (state->factions[faction].at1e == (unsigned char)owner) return 0;
+    cell->terrain = 0;
+    return 1;
+}
+
+// 00401770.  The order a unit carries is the low nibble of +0x0d, and it acts
+// on it by itself - which is what makes a country play without being told.
+//
+// Ported: the upkeep gate, the 0x0c state a unit falls into when its faction
+// loses its leader, standing on somebody else's castle, and orders 1, 2 and 3
+// - which all raise one of the faction's unit cells through 0040b330.  The
+// rest of that routine walks a unit toward a target through 0041ef80 and
+// handles the remaining orders; neither is read, so a unit with any other
+// order simply holds still.
+static void stepPlainUnit(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return;
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    if (!inBounds((int)col, (int)row)) return;
+    const unsigned index = WORLD_INDEX(col, row);
+
+    if (!payUpkeep(state, slot, index, faction)) return;
+
+    if ((entity->at0d & 0x0f) == 0x0c) {
+        // Its faction lost its leader: it joins whoever at1f names, or dies.
+        const unsigned char becomes = state->factions[faction].at1f;
+        if (becomes == 4) {
+            simMarkDying(state, slot, 4);
+            return;
+        }
+        entity->faction = becomes;
+        entity->at0d = 1;
+        if (entity->faction == sim->humanFaction) entity->at0d = 0;
+        return;
+    }
+
+    trampleGround(state, index, faction);
+
+    const unsigned onCastle = (unsigned)(state->world.cells[index].terrain
+                                         - 0x14u);
+    if (onCastle < 4 && onCastle != faction) {
+        // Somebody else's castle: drop everything and take the order that
+        // deals with it.
+        entity->at18 = ROUTE_EMPTY;
+        entity->at0c = 6;
+        entity->at0d = 2;
+        return;
+    }
+
+    if (entity->at18 != ROUTE_EMPTY) {
+        // It has somewhere to be; the walk is the leader's routine, which the
+        // cursor only gives to leaders in the original.  Left alone here.
+        return;
+    }
+
+    switch (entity->at0d & 0x0f) {
+    case 1:
+    case 2:
+    case 3:
+        if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_REFUSED)
+            entity->at0c = 6;
+        break;
+    default:
+        break;
     }
 }
