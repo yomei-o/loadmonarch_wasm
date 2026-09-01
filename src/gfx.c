@@ -86,3 +86,35 @@ int gfxUnpackTiles(const unsigned char *buf, unsigned bufSize, int tileSize,
     if (tilesOut) *tilesOut = tiles;
     return 1;
 }
+
+/* ------------------------------------------------------------- palettes */
+
+// 004065e0: the bank's own sixteen colours sit at 0x8000, three bytes each,
+// four bits per channel in the order blue, red, green - so each is shifted up
+// by four to fill a byte.  004065e0's caller asks for 0x10 entries starting
+// at palette index 0x10, which is exactly the bias 00406810 applies.
+int gfxTilePalette(const unsigned char *buf, unsigned bufSize,
+                   unsigned char *rgb256) {
+    if (bufSize < 0x8000u + 16u * 3u) return 0;
+    const unsigned char *src = buf + 0x8000u;
+    for (unsigned i = 0; i < 16; i++) {
+        unsigned char *dst = rgb256 + (0x10u + i) * 3u;
+        dst[0] = (unsigned char)(src[1] << 4);   // red
+        dst[1] = (unsigned char)(src[2] << 4);   // green
+        dst[2] = (unsigned char)(src[0] << 4);   // blue
+        src += 3;
+    }
+    return 1;
+}
+
+// 0040e560 with start 0x80 and count 0x30: data1.rgb's entries are already
+// eight bits per channel, red first, with a flag byte the palette ignores.
+void gfxUiPalette(const unsigned char *rgbFile, unsigned size,
+                  unsigned char *rgb256) {
+    for (unsigned i = 0; i < 0x30u && (i + 1) * 4u <= size; i++) {
+        unsigned char *dst = rgb256 + (0x80u + i) * 3u;
+        dst[0] = rgbFile[i * 4 + 0];
+        dst[1] = rgbFile[i * 4 + 1];
+        dst[2] = rgbFile[i * 4 + 2];
+    }
+}

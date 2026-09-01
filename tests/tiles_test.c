@@ -33,17 +33,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // The palette: 224 RGBQUADs starting at index 0x10, which is exactly
-    // where 00406810 puts the tile indices.
+    // Each bank carries its own sixteen colours; data1.rgb only matters for
+    // the interface sheet and is loaded here so one tool can show both.
     unsigned char pal[256][3];
     memset(pal, 0, sizeof pal);
+    if (!gfxTilePalette(raw, produced, &pal[0][0]))
+        fprintf(stderr, "no tile palette in this bank\n");
     FILE *p = fopen(argv[3], "rb");
     if (p) {
-        unsigned char e[4];
-        for (int i = 0x10; i < 0x100 && fread(e, 1, 4, p) == 4; i++) {
-            pal[i][0] = e[2]; pal[i][1] = e[1]; pal[i][2] = e[0];
-        }
+        unsigned char rgbFile[896];
+        const size_t got = fread(rgbFile, 1, sizeof rgbFile, p);
         fclose(p);
+        gfxUiPalette(rgbFile, (unsigned)got, &pal[0][0]);
     }
 
     const unsigned cols = 16, rows = tiles / cols;
