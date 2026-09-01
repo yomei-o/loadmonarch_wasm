@@ -98,9 +98,77 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
         {"m", 16, offsetof(World, bank16)},
         {"l", 32, offsetof(World, bank32)},
     };
-    // The sprite bank, whose palette 004065e0 puts at 0x30 - and which
-    // 00406c70 unpacks with a different bias, so it goes through its own
-    // routine.  A stage without one still plays; the units are just unseen.
+    // The sprite banks, whose palette 004065e0 puts at 0x30 and which
+    // 00406c70 unpacks with its own bias and rearrangements.  A stage missing
+    // one still plays; the units are drawn from whichever bank did load.
+    {
+        // 8 pixels: one file, cut into quarters.
+        char p8[256];
+        snprintf(p8, sizeof p8, "CHR/C_%03ds.BZ", world->scenerySet);
+        long size8 = 0;
+        unsigned char *f8 = slurp(host, p8, &size8);
+        if (f8) {
+            unsigned char *raw = (unsigned char *)malloc(BANK_BUFFER);
+            unsigned produced = 0;
+            if (raw && bzDecompress(f8, (unsigned)size8, raw, BANK_BUFFER,
+                                    &produced)) {
+                const unsigned bytes = CHR_TILES8 * 8u * 8u;
+                world->sprites8.pixels = (unsigned char *)malloc(bytes);
+                if (world->sprites8.pixels &&
+                    gfxUnpackSprites8(raw, produced, world->sprites8.pixels,
+                                      bytes, &world->sprites8.tiles)) {
+                    world->sprites8.tileSize = 8;
+                    gfxSpritePalette(raw, produced,
+                                     &world->sprites8.palette[0][0]);
+                } else {
+                    free(world->sprites8.pixels);
+                    world->sprites8.pixels = NULL;
+                }
+            }
+            free(raw);
+            free(f8);
+        }
+
+        // 32 pixels: four files, sixty-four tiles each, merged in fours.
+        const unsigned bytes32 = 4u * CHR_TILES32_PER_FILE * 32u * 32u;
+        world->sprites32.pixels = (unsigned char *)malloc(bytes32);
+        if (world->sprites32.pixels) {
+            unsigned tiles32 = 0;
+            for (int part = 1; part <= 4; part++) {
+                char p32[256];
+                snprintf(p32, sizeof p32, "CHR/C_%03dL%d.BZ",
+                         world->scenerySet, part);
+                long size32 = 0;
+                unsigned char *f32 = slurp(host, p32, &size32);
+                if (!f32) continue;
+                unsigned char *raw = (unsigned char *)malloc(BANK_BUFFER);
+                unsigned produced = 0;
+                if (raw && bzDecompress(f32, (unsigned)size32, raw,
+                                        BANK_BUFFER, &produced)) {
+                    unsigned made = 0;
+                    unsigned char *at = world->sprites32.pixels +
+                                        (size_t)tiles32 * 32u * 32u;
+                    if (gfxUnpackSprites32(raw, produced, at,
+                                           CHR_TILES32_PER_FILE * 1024u,
+                                           &made)) {
+                        tiles32 += made;
+                        if (part == 1)
+                            gfxSpritePalette(raw, produced,
+                                             &world->sprites32.palette[0][0]);
+                    }
+                }
+                free(raw);
+                free(f32);
+            }
+            if (tiles32) {
+                world->sprites32.tiles = tiles32;
+                world->sprites32.tileSize = 32;
+            } else {
+                free(world->sprites32.pixels);
+                world->sprites32.pixels = NULL;
+            }
+        }
+    }
     {
         char spritePath[256];
         snprintf(spritePath, sizeof spritePath, "CHR/C_%03dm.BZ",
@@ -144,11 +212,26 @@ int worldLoadStage(World *world, const Host *host, const char *mapName,
 
 void worldFree(World *world) {
     free(world->sprites.pixels);
+    free(world->sprites8.pixels);
+    free(world->sprites32.pixels);
     world->sprites.pixels = NULL;
+    world->sprites8.pixels = NULL;
+    world->sprites32.pixels = NULL;
     free(world->bank8.pixels);
     free(world->bank16.pixels);
     free(world->bank32.pixels);
     world->bank8.pixels = world->bank16.pixels = world->bank32.pixels = NULL;
+}
+
+const TileBank *worldSprites(const World *world, int zoom) {
+    if (zoom >= 2 && world->sprites32.pixels) return &world->sprites32;
+    // The 8-pixel bank is loaded and unpacked, but not used: the sprite number
+    // 1833 works out lands on letter glyphs in it, so that bank is numbered
+    // differently and how has not been read.  Drawing from the 16-pixel one
+    // scaled is wrong in a way that looks right, which is better than drawing
+    // the alphabet.
+    (void)zoom;
+    return &world->sprites;
 }
 
 const TileBank *worldBank(const World *world, int zoom) {

@@ -61,7 +61,7 @@ static unsigned spriteFor(const Entity *entity, const TileBank *bank) {
 
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                  int transpose, Surface *out) {
-    const TileBank *bank = &game->world.sprites;
+    const TileBank *bank = worldSprites(&game->world, zoom);
     if (!bank->pixels || bank->tileSize <= 0) return;
     const TileBank *ground = worldBank(&game->world, zoom);
     if (!ground->pixels || ground->tileSize <= 0) return;
@@ -83,12 +83,9 @@ void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
 
         const unsigned char *tile =
             bank->pixels + spriteFor(entity, bank) * (unsigned)(ss * ss);
-        // The original keeps a sprite bank per zoom - C_%03ds.BZ split into
-        // quarters and four C_%03dl*.BZ merged in fours - and neither of those
-        // rearrangements is ported.  Only the 16-pixel bank is, so at the
-        // other zooms the sprite is scaled to the cell instead.  That is this
-        // port's doing, not the game's.
-        const int size = ts < ss ? ts : (ts > ss ? ts : ss);
+        // A bank whose tiles match the cell draws at its own size; the
+        // 8-pixel zoom still borrows the 16-pixel bank and is scaled.
+        const int size = ss == ts ? ss : ts;
         const int drawX = cellX + (ts - size) / 2;
         const int drawY = cellY + (ts - size) / 2;
         for (int y = 0; y < size; y++) {

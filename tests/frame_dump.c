@@ -65,14 +65,14 @@ int main(int argc, char **argv) {
         if ((game.entities[i].flags & 0x80) == 0) drawn++;
     printf("%s: %ld sweeps, zoom %d, %u live entities, sprites %s\n",
            argv[2], sweeps, zoom, drawn,
-           game.world.sprites.pixels ? "loaded" : "MISSING");
+           worldSprites(&game.world, zoom)->pixels ? "loaded" : "MISSING");
 
     FILE *o = fopen(argv[3], "wb");
     fprintf(o, "P6\n%d %d\n255\n", W, H);
     for (int i = 0; i < W * H; i++) {
         const unsigned char v = indices[i];
-        const TileBank *from = (v >= 0x30 && v < 0x40) ? &game.world.sprites
-                                                       : ground;
+        const TileBank *from = (v >= 0x30 && v < 0x40)
+                                   ? worldSprites(&game.world, zoom) : ground;
         fwrite(from->palette[v], 1, 3, o);
     }
     fclose(o);

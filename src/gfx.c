@@ -149,3 +149,65 @@ int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
     if (tilesOut) *tilesOut = tiles;
     return 1;
 }
+
+// 00406c70's 8-pixel path.  The rearrangement is the whole difference: the
+// unpacked 16x16 is cut into quarters, and the halves are taken down a column
+// at a time - left top, left bottom, right top, right bottom.
+int gfxUnpackSprites8(const unsigned char *buf, unsigned bufSize,
+                      unsigned char *out, unsigned outCapacity,
+                      unsigned *tilesOut) {
+    const unsigned sources = 0x2000u / TILE_SRC;        // 64
+    if (bufSize < 0x2000u) return 0;
+    if (outCapacity < CHR_TILES8 * 64u) return 0;
+    unsigned produced = 0;
+    for (unsigned s = 0; s < sources; s++) {
+        const unsigned char *tile = buf + s * TILE_SRC;
+        unsigned char full[256];
+        for (unsigned i = 0; i < 256; i++) {
+            const unsigned char v = planarPixel(tile, i >> 3, i & 7);
+            full[i] = v == 0x0f ? CHR_TRANSPARENT : (unsigned char)(v + 0x30);
+        }
+        for (unsigned half = 0; half < 2; half++) {          // left, right
+            for (unsigned band = 0; band < 2; band++) {      // top, bottom
+                for (unsigned row = 0; row < 8; row++) {
+                    const unsigned sourceRow = band * 8 + row;
+                    for (unsigned col = 0; col < 8; col++)
+                        out[produced++] = full[sourceRow * 16 + half * 8 + col];
+                }
+            }
+        }
+    }
+    if (tilesOut) *tilesOut = produced / 64u;
+    return 1;
+}
+
+// Its 32-pixel path.  Four consecutive source tiles make one, the second
+// sitting to the right of the first and the last two beneath them.
+int gfxUnpackSprites32(const unsigned char *buf, unsigned bufSize,
+                       unsigned char *out, unsigned outCapacity,
+                       unsigned *tilesOut) {
+    if (bufSize < 0x8000u) return 0;
+    if (outCapacity < CHR_TILES32_PER_FILE * 1024u) return 0;
+    unsigned produced = 0;
+    for (unsigned s = 0; s < CHR_TILES32_PER_FILE; s++) {
+        const unsigned char *base = buf + s * 0x200u;
+        unsigned char quad[4][256];
+        for (unsigned q = 0; q < 4; q++) {
+            const unsigned char *tile = base + q * TILE_SRC;
+            for (unsigned i = 0; i < 256; i++) {
+                const unsigned char v = planarPixel(tile, i >> 3, i & 7);
+                quad[q][i] = v == 0x0f ? CHR_TRANSPARENT
+                                       : (unsigned char)(v + 0x30);
+            }
+        }
+        for (unsigned row = 0; row < 32; row++) {
+            const unsigned band = row < 16 ? 0u : 2u;
+            for (unsigned col = 0; col < 32; col++) {
+                const unsigned which = band + (col < 16 ? 0u : 1u);
+                out[produced++] = quad[which][(row & 15) * 16 + (col & 15)];
+            }
+        }
+    }
+    if (tilesOut) *tilesOut = CHR_TILES32_PER_FILE;
+    return 1;
+}

@@ -28,6 +28,22 @@ int gfxUnpackSprites(const unsigned char *buf, unsigned bufSize,
 int gfxTilePalette(const unsigned char *buf, unsigned bufSize,
                    unsigned char *rgb256);
 
+// 00406c70's 8-pixel path: each 16x16 becomes four 8x8, in the order
+// top-left, bottom-left, top-right, bottom-right.  Sixty-four source tiles
+// (0x2000 of the payload) give 256.
+#define CHR_TILES8 256
+int gfxUnpackSprites8(const unsigned char *buf, unsigned bufSize,
+                      unsigned char *out, unsigned outCapacity,
+                      unsigned *tilesOut);
+
+// Its 32-pixel path: four consecutive 16x16 tiles become one 32x32, in the
+// order top-left, top-right, bottom-left, bottom-right.  One file gives 64,
+// and the original loads four of them.
+#define CHR_TILES32_PER_FILE 64
+int gfxUnpackSprites32(const unsigned char *buf, unsigned bufSize,
+                       unsigned char *out, unsigned outCapacity,
+                       unsigned *tilesOut);
+
 // The same colours, placed where the sprite banks' pixels look for them:
 // 004065e0 is called with 0x30 for those, not 0x10.
 int gfxSpritePalette(const unsigned char *buf, unsigned bufSize,

@@ -49,7 +49,9 @@ typedef struct {
     TileBank bank8;             // B_%03ds.bz
     TileBank bank16;            // B_%03dm.bz
     TileBank bank32;            // B_%03dl.bz
+    TileBank sprites8;          // C_%03ds.bz, cut into quarters
     TileBank sprites;           // C_%03dm.bz, the 16-pixel unit sprites
+    TileBank sprites32;         // C_%03dl1..4.bz, merged in fours
     char stage[64];             // which map this is
 } World;
 
@@ -63,5 +65,9 @@ void worldFree(World *world);
 
 // The bank for a zoom level: 0 small, 1 medium, 2 large.
 const TileBank *worldBank(const World *world, int zoom);
+
+// The sprite bank for that zoom.  Never null, but its pixels can be, when the
+// stage had no such file.
+const TileBank *worldSprites(const World *world, int zoom);
 
 #endif
