@@ -565,6 +565,9 @@ int simAdvanceRoute(GameState *state, unsigned slot) {
 
 static void stepPlainUnit(Sim *sim, unsigned slot);     // 00401770, below
 static void stepOrderedUnit(Sim *sim, unsigned slot);  // 00402bc0, below
+static int trampleGround(GameState *state, unsigned index, unsigned faction);
+static int payUpkeep(GameState *state, unsigned slot, unsigned index,
+                     unsigned faction);
 
 // 0041d6d0's table, read off the sixteen words it builds on the stack.  A
 // direction is a column delta and a row delta; 5 is the one 0041d690 falls
@@ -829,6 +832,82 @@ static void stepWalkOrdered(Sim *sim, unsigned slot) {
     simAdvanceRoute(state, slot);
 }
 
+// 0041abd0 over 0041abf0.  The original's own generator is the Microsoft C
+// rand() the executable carries; this is a generator of the same shape, kept
+// here so a stage plays the same way twice rather than to match the original's
+// sequence - which it does not.
+static unsigned g_random = 1;
+
+static unsigned simRandom(unsigned limit) {
+    g_random = g_random * 1103515245u + 12345u;
+    const unsigned value = (g_random >> 16) & 0x7fffu;
+    return limit ? value % limit : 0u;
+}
+
+// 00402700, the neutral entity.  +0x0f is its wander timer: bit 7 means it is
+// resting, and it only steps on an even tick, which is what makes the little
+// figures amble rather than march.
+static void stepNeutralEntity(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+
+    entity->at0f--;
+    if (entity->at0f & 0x80) {
+        if ((entity->at0f & 0x7f) == 0)
+            entity->at0f = (unsigned char)(simRandom(0x14) * 2 + 0x14);
+        return;
+    }
+    if (entity->at0f == 0) {
+        const unsigned r = simRandom(0x14);
+        if (r < 0x0b) entity->at0f = (unsigned char)(r | 0x80);   // a rest
+        else entity->at0f = (unsigned char)(simRandom(0x14) * 2 + 0x14);
+        return;
+    }
+    if (entity->at0f & 1) return;            // it moves on even ticks only
+
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    if (!inBounds((int)col, (int)row)) return;
+    trampleGround(state, WORLD_INDEX(col, row), entity->faction);
+
+    const unsigned char dir = entity->at0c;
+    if (dir < 8 && stepInBounds(col, row, kStepDx[dir], kStepDy[dir])) {
+        const unsigned nc = (unsigned)((int)col + kStepDx[dir]);
+        const unsigned nr = (unsigned)((int)row + kStepDy[dir]);
+        WorldCell *to = &state->world.cells[WORLD_INDEX(nc, nr)];
+        // 0x1d is refused as well as anything from 0x30 up - the one terrain a
+        // wanderer will not walk onto.
+        if (to->terrain < TERRAIN_WALKABLE_MAX && to->terrain != 0x1d) {
+            if (fightAt(sim, slot, nc, nr)) return;
+            if (mergeAt(sim, slot, nc, nr)) return;
+            if (entity->flags & 0x80) return;
+            if (to->owner < ENTITY_NONE) {
+                // Somebody is in the way: turn, sometimes about face.
+                entity->at0c = (unsigned char)((simRandom(100) < 0x32 ? 4u : 2u)
+                                               + entity->at0c) & 7u;
+                return;
+            }
+            if (raidSettlement(sim, slot, nc, nr)) return;
+            entity->at0f--;
+            if (entity->at0f != 0) {
+                state->world.cells[WORLD_INDEX(col, row)].owner =
+                    CELL_NO_ENTITY;
+                to->owner = (unsigned char)slot;
+                entity->position[0] = (unsigned char)nc;
+                entity->position[1] = (unsigned char)nr;
+                return;
+            }
+        }
+    }
+
+    // It could not go that way.  The original now scans the four square
+    // directions through 0041f020 and builds a mask of which are open, falling
+    // back to all eight - neither that routine nor the mask is read, so this
+    // simply picks a new heading and tries again later.
+    entity->at0f = (unsigned char)(simRandom(10) + 1);
+    entity->at0c = (unsigned char)(simRandom(8));
+}
+
 // 004204f0: the entity cursor, the counterpart of the cell sweep.  It walks
 // 0x3f of the sixty-four entities per call and picks a behaviour by role.
 // Only the leader's walk is ported; the neutral (00402700), plain (00401770)
@@ -853,7 +932,10 @@ void simStepEntities(Sim *sim) {
             stepDying(state, slot, col, row);
             continue;
         }
-        if (entity->faction == 4) continue;             // 00402700
+        if (entity->faction == 4) {
+            stepNeutralEntity(sim, slot);               // 00402700
+            continue;
+        }
         if (entity->at0d & 0x20) {
             stepWalk(sim, slot);                        // 00401000
             continue;
