@@ -39,8 +39,9 @@ typedef struct {
     unsigned char at0f;         // +0x0f         10 on spawn
     unsigned char flags;        // +0x10         0x80 = inactive (004272b0)
     unsigned char at11[7];
-    unsigned at18;              // +0x18         0x1f0 at reset
-    unsigned char at1c[0x21c - 0x1c];
+    unsigned at18;              // +0x18         indexes route; 0x1f0 = none
+    unsigned char route[0x21c - 0x1c];   // +0x1c  the path 0041d690 reads,
+                                         //        one direction per byte
     unsigned flags21c;          // +0x21c        bit 0 cleared at reset
     unsigned char at220;        // +0x220        0xff at reset
     unsigned char at221[3];

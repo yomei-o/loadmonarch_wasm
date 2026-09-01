@@ -343,6 +343,7 @@ void simStep(Sim *sim) {
             stepCastle(sim, index, terrain - 0x14u);
         }
     }
+    simStepEntities(sim);
     sim->frames++;
 }
 
@@ -488,4 +489,115 @@ unsigned simHumanActor(const Sim *sim) {
         if (entity->faction == sim->humanFaction) return i;
     }
     return ENTITY_COUNT;
+}
+
+/* ------------------------------------------------- entities, 004204f0 */
+
+// 0041d6d0's table, read off the sixteen words it builds on the stack.  A
+// direction is a column delta and a row delta; 5 is the one 0041d690 falls
+// back on when an entity has no route.
+static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
+#define DIRECTION_DEFAULT 5
+#define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
+
+// 0041d690: the next direction comes out of the route the entity carries -
+// +0x18 indexes into the bytes from +0x1c, which is what most of the 0x224
+// record is for.
+static unsigned char nextDirection(const Entity *entity) {
+    if (entity->at18 == ROUTE_EMPTY) return DIRECTION_DEFAULT;
+    if (entity->at18 >= sizeof entity->route) return DIRECTION_DEFAULT;
+    return entity->route[entity->at18];
+}
+
+// 0041ec30: the step has to land strictly inside the border.
+static int stepInBounds(unsigned col, unsigned row, int dx, int dy) {
+    const int nc = (int)col + dx, nr = (int)row + dy;
+    return nc > 0 && nc < WORLD_GRID && nr > 0 && nr < WORLD_GRID;
+}
+
+// 00420af0: an entity marked dying gets three ticks before it is retired.
+static void stepDying(GameState *state, unsigned slot, unsigned col,
+                      unsigned row) {
+    Entity *entity = &state->entities[slot];
+    entity->at0e++;
+    if (entity->at0e > 3) simRetireEntity(state, slot, col, row);
+}
+
+// 00401000's ordinary path: face the way the route says, and only once facing
+// it, take the step.  Turning costs a tick, which is why units visibly pivot
+// before they set off.
+//
+// The original consults three more routines between deciding to move and
+// moving (00420c60, 00420610, 004208b0 - what happens when the destination
+// holds somebody).  Those are not read yet, so this only takes empty ground:
+// a unit will stop rather than resolve an encounter wrongly.
+static void stepWalk(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    const unsigned char want = nextDirection(entity);
+
+    if (entity->at0c != want) {
+        entity->at0c = want;
+        entity->at0e = entity->at0c;
+        return;
+    }
+    if (want >= 8) return;
+    const int dx = kStepDx[want], dy = kStepDy[want];
+    if (!stepInBounds(col, row, dx, dy)) {
+        if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+    const unsigned nc = (unsigned)((int)col + dx);
+    const unsigned nr = (unsigned)((int)row + dy);
+    WorldCell *to = &state->world.cells[WORLD_INDEX(nc, nr)];
+    if (to->terrain >= TERRAIN_WALKABLE_MAX) {
+        if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+    if (to->owner < ENTITY_NONE) {
+        // Somebody is standing there; resolving that is the unread part.
+        if (entity->faction != sim->humanFaction) entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+    state->world.cells[WORLD_INDEX(col, row)].owner = CELL_NO_ENTITY;
+    to->owner = (unsigned char)slot;
+    entity->position[0] = (unsigned char)nc;
+    entity->position[1] = (unsigned char)nr;
+}
+
+// 004204f0: the entity cursor, the counterpart of the cell sweep.  It walks
+// 0x3f of the sixty-four entities per call and picks a behaviour by role.
+// Only the leader's walk is ported; the neutral (00402700), plain (00401770)
+// and the two ordered behaviours (00403170, 00402bc0) are thousands of bytes
+// each and are left alone rather than approximated.
+void simStepEntities(Sim *sim) {
+    GameState *state = sim->state;
+    for (int n = 0x3f; n != 0; n--) {
+        const unsigned previous = sim->entityCursor;
+        sim->entityCursor = previous + 1;
+        if (sim->entityCursor > 0x3f) sim->entityCursor = previous - 0x3f;
+        const unsigned slot = sim->entityCursor;
+        if (slot >= ENTITY_COUNT) continue;
+
+        Entity *entity = &state->entities[slot];
+        if (entity->flags & 0x80) continue;
+        const unsigned col = entity->position[0];
+        const unsigned row = entity->position[1];
+        entity->flags &= (unsigned char)~1u;
+
+        if (entity->flags & 2) {
+            stepDying(state, slot, col, row);
+            continue;
+        }
+        if (entity->faction == 4) continue;             // 00402700
+        if (entity->at0d & 0x20) {
+            stepWalk(sim, slot);                        // 00401000
+            continue;
+        }
+        if (entity->at0d & 0x10) continue;              // 00403170 / 00402bc0
+        // 00401770, the plain unit.
+    }
 }

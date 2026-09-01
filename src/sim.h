@@ -7,6 +7,7 @@
 typedef struct {
     GameState *state;
     unsigned cursor;            // DAT_00437690 / DAT_004369fc
+    unsigned entityCursor;      // DAT_004377fc
     unsigned long long frames;
     unsigned humanFaction;      // DAT_004365cd
     int autoTax;                // DAT_0043769c == 1
@@ -15,8 +16,13 @@ typedef struct {
 
 void simInit(Sim *sim, GameState *state);
 
-// One call of 00417380: 0x8f cells from where the last one stopped.
+// One call of 00417380: 0x8f cells from where the last one stopped, then one
+// call of the entity cursor.
 void simStep(Sim *sim);
+
+// 004204f0: one call of the entity cursor, 0x3f of the sixty-four.
+void simStepEntities(Sim *sim);
+
 
 typedef enum {
     SIM_ACTION_DONE = 1,            // 0040b330's 1

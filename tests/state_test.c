@@ -138,6 +138,63 @@ int main(void) {
                state.entities[0].flags & 0x80, 0x80);
     }
 
+    // 004204f0 and 00401000: turning costs a tick, then the leader steps.
+    // Direction 5 is (+1, +1), the one 0041d690 falls back on.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim walk;
+        simInit(&walk, &state);
+        walk.humanFaction = 3;                  // so this leader is not the human's
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at0d = 0x20;                         // the leader bit
+        e->at18 = 0x1f0;                        // no route: direction 5
+        e->at0c = 0;                            // facing the wrong way
+        e->position[0] = 20;
+        e->position[1] = 20;
+        state.world.cells[WORLD_INDEX(20, 20)].owner = 1;
+        simStepEntities(&walk);
+        expect("the leader turned first", e->at0c, 5);
+        expect("and did not move yet",
+               e->position[0] * 100 + e->position[1], 20 * 100 + 20);
+        simStepEntities(&walk);
+        expect("then it stepped", e->position[0] * 100 + e->position[1],
+               21 * 100 + 21);
+        expect("it left the cell behind",
+               state.world.cells[WORLD_INDEX(20, 20)].owner, 0x40);
+        expect("and occupies the new one",
+               state.world.cells[WORLD_INDEX(21, 21)].owner, 1);
+
+        // Scenery stops it, and clears the route of anyone but the player.
+        state.world.cells[WORLD_INDEX(22, 22)].terrain = 0x60;
+        e->at18 = 0;
+        e->route[0] = 5;
+        simStepEntities(&walk);
+        expect("scenery stopped the step",
+               e->position[0] * 100 + e->position[1], 21 * 100 + 21);
+        expect("and the route was cleared", e->at18, 0x1f0);
+
+        // So does another entity standing there.
+        state.world.cells[WORLD_INDEX(22, 22)].terrain = 0;
+        state.world.cells[WORLD_INDEX(22, 22)].owner = 9;
+        simStepEntities(&walk);
+        expect("an occupied cell stopped it",
+               e->position[0] * 100 + e->position[1], 21 * 100 + 21);
+
+        // A dying entity counts three ticks and then goes.
+        Entity *d = &state.entities[2];
+        d->flags = 2;
+        d->faction = 0;
+        d->position[0] = 30;
+        d->position[1] = 30;
+        d->at0e = 0;
+        for (int i = 0; i < 4; i++) simStepEntities(&walk);
+        expect("a dying entity was retired", d->flags & 0x80, 0x80);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }
