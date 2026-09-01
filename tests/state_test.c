@@ -551,6 +551,75 @@ int main(void) {
                SIM_ACTION_NO_FUNDS);
     }
 
+    // The rest of the repertoire: 0040bc20, 0040b840, 0040b960, 0040bb10.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim work;
+        simInit(&work, &state);
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at08 = 3200;                 // a half is 1600, an eighth 400,
+        e->position[0] = 20;            // a thirty-second 100
+        e->position[1] = 20;
+        e->target[0] = 21;
+        e->target[1] = 20;
+        state.factions[0].funds = 100000;
+        WorldCell *here = &state.world.cells[WORLD_INDEX(20, 20)];
+        WorldCell *there = &state.world.cells[WORLD_INDEX(21, 20)];
+
+        // A building under the unit comes down in one blow at this strength.
+        here->terrain = 3;
+        here->value = 200;
+        expect("the building fell", (long)simDemolishBuilding(&work, 1),
+               SIM_ACTION_DONE);
+        expect("leaving bare land", here->terrain, 0);
+        expect("at the usual hundred", here->value, 100);
+
+        // A wall gives way a thirty-second at a time, then the cell is bare.
+        there->terrain = 0x7b;
+        there->value = 250;
+        expect("the wall gave", (long)simDemolishWall(&work, 1),
+               SIM_ACTION_PROGRESS);
+        expect("by a thirty-second", there->value, 150);
+        there->value = 50;
+        expect("then it came down", (long)simDemolishWall(&work, 1),
+               SIM_ACTION_DONE);
+        expect("and stopped blocking", there->blocked, 0);
+
+        // Cleared ground becomes a mine, and a mine takes feeding.
+        there->terrain = 0x24;          // inside 0x20..0x2f
+        there->value = 40;
+        expect("the mine was dug", (long)simMakeMine(&work, 1),
+               SIM_ACTION_DONE);
+        expect("and reads as one", there->terrain, 0x7a);
+        there->value = 200;
+        expect("feeding it worked", (long)simMakeMine(&work, 1),
+               SIM_ACTION_DONE);
+        expect("up to the cap", there->value, 0xff);
+
+        // A spawner takes an eighth a turn and then is gone for good.
+        there->terrain = 5;
+        there->value = 1000;
+        there->owner = 0x40;
+        expect("the spawner took damage", (long)simBreakSpawner(&work, 1),
+               SIM_ACTION_PROGRESS);
+        expect("an eighth of it", there->value, 1000 - 400);
+        there->value = 100;
+        expect("then it broke", (long)simBreakSpawner(&work, 1),
+               SIM_ACTION_DONE);
+        expect("into plain scenery", there->terrain, 0x60);
+
+        // And each refuses terrain it has no business with.
+        there->terrain = 0x60;
+        expect("a wall order refuses scenery",
+               (long)simDemolishWall(&work, 1), SIM_ACTION_REFUSED);
+        expect("a spawner order too",
+               (long)simBreakSpawner(&work, 1), SIM_ACTION_REFUSED);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }

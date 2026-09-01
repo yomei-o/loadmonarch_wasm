@@ -54,6 +54,18 @@ void simMarkDying(GameState *state, unsigned slot, unsigned char cause);
 SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
                                  unsigned row);
 
+// 0040bc20: pull down the building the unit is standing on.  Terrain 1..4.
+SimActionResult simDemolishBuilding(Sim *sim, unsigned slot);
+
+// 0040b840: tear down the wall at this unit's target.
+SimActionResult simDemolishWall(Sim *sim, unsigned slot);
+
+// 0040b960: turn cleared ground into a mine, or feed one.  Terrain 0x7a.
+SimActionResult simMakeMine(Sim *sim, unsigned slot);
+
+// 0040bb10: break the neutral spawner at this unit's target.  Terrain 5.
+SimActionResult simBreakSpawner(Sim *sim, unsigned slot);
+
 // 0040b440: raise or reinforce a wall at this unit's target.  Terrain 0x7b.
 SimActionResult simBuildWall(Sim *sim, unsigned slot);
 

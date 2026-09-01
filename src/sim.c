@@ -447,6 +447,122 @@ SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
     return SIM_ACTION_DONE;
 }
 
+// The cell a unit's target names, or null when that target is outside the
+// border - the guard every one of these actions applies first.
+static WorldCell *targetCell(GameState *state, const Entity *entity,
+                             unsigned *colOut, unsigned *rowOut) {
+    const unsigned col = entity->target[0];
+    const unsigned row = entity->target[1];
+    if (col == 0 || row == 0 || col > 0x2e || row > 0x2e) return NULL;
+    if (colOut) *colOut = col;
+    if (rowOut) *rowOut = row;
+    return &state->world.cells[WORLD_INDEX(col, row)];
+}
+
+// 0040bc20: pull down a building.  Terrain 1 to 4 is one, and half the unit's
+// strength comes off its value at a time; at nothing it goes back to bare land
+// at the usual hundred.  Unlike the others this works on the cell the unit is
+// standing on, not its target.
+SimActionResult simDemolishBuilding(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    if (!inBounds((int)entity->position[0], (int)entity->position[1]))
+        return SIM_ACTION_REFUSED;
+    WorldCell *cell = &state->world.cells[
+        WORLD_INDEX(entity->position[0], entity->position[1])];
+    if ((unsigned char)(cell->terrain - 1) > 3) return SIM_ACTION_REFUSED;
+
+    const int left = (int)cell->value - (int)(entity->at08 >> 1);
+    if (left < 1) {
+        cell->terrain = 0;
+        cell->value = CELL_VALUE_RESET;
+        return SIM_ACTION_DONE;
+    }
+    cell->value = (unsigned)left;
+    return SIM_ACTION_PROGRESS;
+}
+
+// 0040b840: tear a wall down.  A thirty-second of the unit's strength a turn,
+// and the cell is bare land when the wall is gone.
+SimActionResult simDemolishWall(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    WorldCell *cell = targetCell(state, entity, NULL, NULL);
+    if (!cell) return SIM_ACTION_REFUSED;
+    if (cell->terrain != 0x7b) return SIM_ACTION_REFUSED;
+
+    const unsigned bite = entity->at08 >> 5;
+    if (cell->value != 0) {
+        if (bite < cell->value) {
+            cell->value -= bite;
+            return SIM_ACTION_PROGRESS;
+        }
+        cell->value = 0;
+    }
+    cell->terrain = 0;
+    stateMarkBlocked(state);
+    return SIM_ACTION_DONE;
+}
+
+// 0040b960: the mine.  Ground already cleared - 0x20 to 0x2f - is worked down
+// a thirty-second of the unit's strength at a time and becomes 0x7a, the cell
+// the clearing order harvests cheaply; anybody standing on it when it turns is
+// marked dying.  A 0x7a cell that already exists is fed instead, up to 0xff.
+SimActionResult simMakeMine(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    unsigned col = 0, row = 0;
+    WorldCell *cell = targetCell(state, entity, &col, &row);
+    if (!cell) return SIM_ACTION_REFUSED;
+    const unsigned bite = entity->at08 >> 5;
+
+    if (cell->terrain == 0x7a) {
+        cell->value += bite;
+        if (cell->value > 0xffu) cell->value = 0xffu;
+        return SIM_ACTION_DONE;
+    }
+    if ((unsigned char)(cell->terrain - 0x20) > 0x0f) return SIM_ACTION_REFUSED;
+
+    unsigned amount = cell->value + 0xffu;
+    if ((int)amount > (int)bite) amount = bite;
+    const int left = (int)cell->value - (int)amount;
+    if (left > 0) {
+        cell->value = (unsigned)left;
+        return SIM_ACTION_PROGRESS;
+    }
+    cell->value = 0;
+    cell->terrain = 0x7a;
+    stateMarkBlocked(state);
+    if (cell->owner < ENTITY_NONE)
+        simMarkDying(state, cell->owner, (unsigned char)entity->faction);
+    return SIM_ACTION_DONE;
+}
+
+// 0040bb10: break a neutral spawner.  Terrain 5 is one, an eighth of the
+// unit's strength comes off it, and when it runs out the cell becomes plain
+// 0x60 scenery - the spawner is gone for good.
+SimActionResult simBreakSpawner(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    WorldCell *cell = targetCell(state, entity, NULL, NULL);
+    if (!cell) return SIM_ACTION_REFUSED;
+    if (cell->terrain != 5) return SIM_ACTION_REFUSED;
+    if (cell->owner < ENTITY_NONE) return SIM_ACTION_PROGRESS;
+
+    const int left = (int)cell->value - (int)(entity->at08 >> 3);
+    if (left >= 0) {
+        cell->value = (unsigned)left;
+        return SIM_ACTION_PROGRESS;
+    }
+    cell->terrain = 0x60;
+    stateMarkBlocked(state);
+    return SIM_ACTION_DONE;
+}
+
 // 0040b440: the wall.  Terrain 0x7b is one, and a unit raises it on bare land
 // or on ground its faction already holds - pouring work in at a quarter the
 // cost clearing charges.  A finished wall blocks movement, which is why the
@@ -1244,6 +1360,26 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_DONE) return;
         fallbackOrder(sim, slot);
         return;
+    case 8:
+    case 9:
+    case 10:
+    case 0x0b: {
+        // 00403170's cases 8 through 0x0b: pull down a building, tear down a
+        // wall, make a mine, break a neutral spawner.  All share the tail the
+        // high bits of +0x0d choose.
+        SimActionResult r;
+        switch (entity->at0d & 0x0f) {
+        case 8:  r = simDemolishBuilding(sim, slot); break;
+        case 9:  r = simDemolishWall(sim, slot); break;
+        case 10: r = simMakeMine(sim, slot); break;
+        default: r = simBreakSpawner(sim, slot); break;
+        }
+        if (r == SIM_ACTION_PROGRESS || r == SIM_ACTION_DONE) return;
+        if (entity->at0d & 0x80) return;
+        if (entity->at0d & 0x40) { entity->at0d = 0x10; return; }
+        fallbackOrder(sim, slot);
+        return;
+    }
     case 6: {
         // 00403170's case 6 is the wall, and its tail matches case 7's.
         const SimActionResult r = simBuildWall(sim, slot);
