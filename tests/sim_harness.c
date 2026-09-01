@@ -32,10 +32,14 @@ static void report(const GameState *game, const Sim *sim, const char *when) {
     printf("--- %s (sweep %llu)  empty %u  neutral %u  entities %u\n",
            when, sim->frames, empty, neutral, live);
     for (int f = 0; f < FACTION_COUNT; f++) {
+        unsigned mine = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++)
+            if ((game->entities[i].flags & 0x80) == 0 &&
+                game->entities[i].faction == (unsigned char)f) mine++;
         printf("    faction %d  funds %6u  tax %3u  castles %u  units %3u  "
-               "ground %4u%s\n",
+               "ground %4u  losses %6u  live %2u%s\n",
                f, game->factions[f].funds, game->factions[f].taxRate,
-               castles[f], units[f], ground[f],
+               castles[f], units[f], ground[f], game->factions[f].at14, mine,
                (game->factions[f].flags & 0x10) ? "  out" : "");
     }
 }

@@ -639,6 +639,22 @@ static int raidSettlement(Sim *sim, unsigned slot, unsigned col,
     return 1;
 }
 
+// 0041ef80.  Before a unit gets on with its order it looks for a fight: the
+// four square directions, starting from the one it faces, and the first
+// neighbour 00420c60 will take is struck without the unit moving at all.
+static int lashOut(Sim *sim, unsigned slot, unsigned col, unsigned row) {
+    const Entity *entity = &sim->state->entities[slot];
+    for (int turn = 0; turn < 8; turn += 2) {
+        const unsigned dir = (unsigned)((entity->at0c + turn) & 6);
+        const int dx = kStepDx[dir], dy = kStepDy[dir];
+        if (!stepInBounds(col, row, dx, dy)) continue;
+        if (fightAt(sim, slot, (unsigned)((int)col + dx),
+                    (unsigned)((int)row + dy)))
+            return 1;
+    }
+    return 0;
+}
+
 // 00401000's ordinary path: face the way the route says, and only once facing
 // it, take the step.  Turning costs a tick, which is why units visibly pivot
 // before they set off.
@@ -807,11 +823,12 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
     const unsigned onCastle = (unsigned)(state->world.cells[index].terrain
                                          - 0x14u);
     if (onCastle < 4 && onCastle != faction) {
-        // Somebody else's castle: drop everything and take the order that
-        // deals with it.
+        // Somebody else's castle: drop everything, take the order that deals
+        // with it, and strike out at whatever is next to it.
         entity->at18 = ROUTE_EMPTY;
         entity->at0c = 6;
         entity->at0d = 2;
+        lashOut(sim, slot, col, row);
         return;
     }
 
@@ -820,6 +837,10 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
         // cursor only gives to leaders in the original.  Left alone here.
         return;
     }
+
+    // 0041ef80 first: a unit with nowhere to be strikes an adjacent enemy
+    // rather than getting on with its order.
+    if (lashOut(sim, slot, col, row)) return;
 
     switch (entity->at0d & 0x0f) {
     case 1:
