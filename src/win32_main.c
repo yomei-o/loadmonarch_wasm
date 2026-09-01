@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host.h"
 #include "render.h"
 #include "sim.h"
 #include "state.h"
@@ -43,6 +44,8 @@ typedef struct {
     int showHud;
     int lastAction;             // 0040b330's return code, for the read-out
     unsigned lastCol, lastRow;
+    Host host;                  // the directory or zip the files come from
+    unsigned char *archive;     // the zip's bytes, when one was given
     char dataDir[512];
 } App;
 
@@ -77,7 +80,7 @@ static int loadStage(App *app, int stage, char *message, unsigned size) {
     if (stage < 0) stage = STAGES - 1;
     if (stage >= STAGES) stage = 0;
     World fresh;
-    if (!worldLoadStage(&fresh, app->dataDir, kStages[stage], message, size))
+    if (!worldLoadStage(&fresh, &app->host, kStages[stage], message, size))
         return 0;
     worldFree(&app->game.world);
     app->game.world = fresh;
@@ -265,12 +268,16 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
 // Looks for the extracted game beside the executable, then in orig/.
 static int findData(char *out, unsigned size) {
     static const char *candidates[] = {
-        "DS7E_WIN", "orig/DS7E_WIN", "../orig/DS7E_WIN",
-        "../../orig/DS7E_WIN",
+        "ds7e.zip", "DS7E_WIN", "orig/DS7E_WIN", "../orig/DS7E_WIN",
+        "../../orig/DS7E_WIN", "../ds7e.zip",
     };
     for (unsigned i = 0; i < sizeof candidates / sizeof candidates[0]; i++) {
         char probe[1024];
-        snprintf(probe, sizeof probe, "%s/MAP/B_000.MAP", candidates[i]);
+        const size_t length = strlen(candidates[i]);
+        if (length > 4 && _stricmp(candidates[i] + length - 4, ".zip") == 0)
+            snprintf(probe, sizeof probe, "%s", candidates[i]);
+        else
+            snprintf(probe, sizeof probe, "%s/MAP/B_000.MAP", candidates[i]);
         FILE *f = fopen(probe, "rb");
         if (f) {
             fclose(f);
@@ -292,14 +299,43 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
     app->showHud = 1;
     app->running = 1;
 
+    // Either an extracted directory or the player's own zip, named on the
+    // command line; failing that, look for the directory beside the exe.
     if (cmdLine && *cmdLine) {
         snprintf(app->dataDir, sizeof app->dataDir, "%s", cmdLine);
     } else if (!findData(app->dataDir, sizeof app->dataDir)) {
         MessageBoxA(NULL,
                     "Could not find the game's files.  Pass the DS7E_WIN "
-                    "directory on the command line.",
+                    "directory, or ds7e.zip, on the command line.",
                     "Lord Monarch", MB_OK | MB_ICONERROR);
         return 1;
+    }
+    {
+        const size_t length = strlen(app->dataDir);
+        int ok;
+        if (length > 4 && _stricmp(app->dataDir + length - 4, ".zip") == 0) {
+            FILE *f = fopen(app->dataDir, "rb");
+            if (!f) {
+                MessageBoxA(NULL, app->dataDir, "Cannot open",
+                            MB_OK | MB_ICONERROR);
+                return 1;
+            }
+            fseek(f, 0, SEEK_END);
+            const long size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            app->archive = (unsigned char *)malloc((size_t)size);
+            ok = app->archive &&
+                 fread(app->archive, 1, (size_t)size, f) == (size_t)size;
+            fclose(f);
+            ok = ok && hostUseZip(&app->host, app->archive, (unsigned)size);
+        } else {
+            ok = hostUseDirectory(&app->host, app->dataDir);
+        }
+        if (!ok) {
+            MessageBoxA(NULL, app->dataDir, "Cannot read the game's files",
+                        MB_OK | MB_ICONERROR);
+            return 1;
+        }
     }
 
     WNDCLASSA cls;

@@ -7,6 +7,8 @@
 #ifndef WORLD_H
 #define WORLD_H
 
+#include "host.h"
+
 #define WORLD_GRID 48                       // 0x30, the index stride
 #define WORLD_CELLS (WORLD_GRID * WORLD_GRID)
 
@@ -47,13 +49,13 @@ typedef struct {
     TileBank bank8;             // B_%03ds.bz
     TileBank bank16;            // B_%03dm.bz
     TileBank bank32;            // B_%03dl.bz
-    char dataDir[512];          // where the game's files were found
+    char stage[64];             // which map this is
 } World;
 
-// Loads a stage and the three background banks its trailer selects.
-// dataDir is the directory holding BG/, CHR/, DATA/ and MAP/.
+// Loads a stage and the three background banks its trailer selects, through
+// whichever host the caller set up - a directory or the player's zip.
 // Returns non-zero on success; message receives a reason on failure.
-int worldLoadStage(World *world, const char *dataDir, const char *mapName,
+int worldLoadStage(World *world, const Host *host, const char *mapName,
                    char *message, unsigned messageSize);
 
 void worldFree(World *world);

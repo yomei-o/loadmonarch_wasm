@@ -267,6 +267,24 @@ dx = {-1,1,0,0,-1,1,1,-1}、dy = {0,0,-1,1,-1,-1,1,1}。
 ただしスクリーンショットの色は当てにならない（8bit パレットアプリなので
 デスクトップ合成で色が化ける）。幾何・配置の確認には使える。
 
+## ファイルは host 経由（zip も読める）
+
+原作のデータはリポジトリに置かない方針なので、`src/host.c` が2つの供給元を
+同じ形で見せる:
+
+* `hostUseDirectory()` — 展開済みの `DS7E_WIN/`（ネイティブとハーネス）
+* `hostUseZip()` — **プレイヤー自身の `ds7e.zip` をメモリのまま**（ブラウザ、
+  ネイティブでも可）
+
+`src/zip.c` は central directory の走査と **inflate をスクラッチ実装**（fixed /
+dynamic huffman、stored も）。ブラウザに任せず C で書いたのは、ネイティブの
+ハーネスがページと同じ zip を読めるようにするため。エントリ名は**末尾一致**で
+引く（zip 内は `DS7E_WIN/MAP/B_000.MAP`、呼ぶ側は `MAP/B_000.MAP`）。
+
+確認: `tests/zip_test.exe ds7e.zip` が実アーカイブ（102 エントリ）から
+マップ・タイルバンク・UI・パレット・256色静止画を取り出してサイズを検証する。
+`tests/sim_harness.exe ds7e.zip B_003.MAP` のように**zip を直接**渡せる。
+
 ## 試験はウィンドウを出さずに
 
 `tests/sim_harness.exe <dataDir> <map> [sweeps] [build:col,row ...]` が

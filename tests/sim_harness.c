@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../src/host.h"
 #include "../src/sim.h"
 #include "../src/state.h"
 #include "../src/world.h"
@@ -47,13 +48,35 @@ static void report(const GameState *game, const Sim *sim, const char *when) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
-                "usage: sim_harness <dataDir> <map> [sweeps] "
+                "usage: sim_harness <dataDir|zip> <map> [sweeps] "
                 "[build:col,row ...]\n");
         return 2;
     }
     static GameState game;
+    static Host host;
+    // A path ending in .zip is the player's own archive; anything else is an
+    // extracted directory.  Both reach the loader the same way.
+    const size_t length = strlen(argv[1]);
+    if (length > 4 && strcmp(argv[1] + length - 4, ".zip") == 0) {
+        FILE *f = fopen(argv[1], "rb");
+        if (!f) { perror(argv[1]); return 2; }
+        fseek(f, 0, SEEK_END);
+        const long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        unsigned char *archive = malloc((size_t)size);
+        if (!archive || fread(archive, 1, (size_t)size, f) != (size_t)size)
+            return 2;
+        fclose(f);
+        if (!hostUseZip(&host, archive, (unsigned)size)) {
+            fprintf(stderr, "%s is not a readable zip\n", argv[1]);
+            return 1;
+        }
+    } else if (!hostUseDirectory(&host, argv[1])) {
+        fprintf(stderr, "cannot use %s\n", argv[1]);
+        return 1;
+    }
     char message[256];
-    if (!worldLoadStage(&game.world, argv[1], argv[2], message,
+    if (!worldLoadStage(&game.world, &host, argv[2], message,
                         sizeof message)) {
         fprintf(stderr, "%s\n", message);
         return 1;

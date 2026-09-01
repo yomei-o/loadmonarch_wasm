@@ -11,28 +11,27 @@
 #define MAP_FILE_SIZE (WORLD_CELLS + 2)     // 0x902
 #define BANK_BUFFER   0x8030u               // what 00406640 allocates
 
-static unsigned char *slurp(const char *path, long *sizeOut) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    const long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    unsigned char *buf = (unsigned char *)malloc(n > 0 ? (size_t)n : 1);
-    if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n) {
+// The largest of the game's files is a 256-colour still at 196,616 bytes.
+#define MAX_GAME_FILE 0x40000u
+
+static unsigned char *slurp(const Host *host, const char *path,
+                            long *sizeOut) {
+    unsigned char *buf = (unsigned char *)malloc(MAX_GAME_FILE);
+    if (!buf) return NULL;
+    unsigned got = 0;
+    if (!hostRead(host, path, buf, MAX_GAME_FILE, &got)) {
         free(buf);
-        fclose(f);
         return NULL;
     }
-    fclose(f);
-    *sizeOut = n;
+    *sizeOut = (long)got;
     return buf;
 }
 
-static int loadBank(TileBank *bank, const char *path, int tileSize,
-                    char *message, unsigned messageSize) {
+static int loadBank(TileBank *bank, const Host *host, const char *path,
+                    int tileSize, char *message, unsigned messageSize) {
     memset(bank, 0, sizeof *bank);
     long size = 0;
-    unsigned char *file = slurp(path, &size);
+    unsigned char *file = slurp(host, path, &size);
     if (!file) {
         snprintf(message, messageSize, "%s: cannot open", path);
         return 0;
@@ -64,15 +63,15 @@ static int loadBank(TileBank *bank, const char *path, int tileSize,
     return 1;
 }
 
-int worldLoadStage(World *world, const char *dataDir, const char *mapName,
+int worldLoadStage(World *world, const Host *host, const char *mapName,
                    char *message, unsigned messageSize) {
     memset(world, 0, sizeof *world);
-    snprintf(world->dataDir, sizeof world->dataDir, "%s", dataDir);
+    snprintf(world->stage, sizeof world->stage, "%s", mapName);
 
-    char path[1024];
-    snprintf(path, sizeof path, "%s/MAP/%s", dataDir, mapName);
+    char path[256];
+    snprintf(path, sizeof path, "MAP/%s", mapName);
     long size = 0;
-    unsigned char *map = slurp(path, &size);
+    unsigned char *map = slurp(host, path, &size);
     if (!map) {
         snprintf(message, messageSize, "%s: cannot open", path);
         return 0;
@@ -100,10 +99,11 @@ int worldLoadStage(World *world, const char *dataDir, const char *mapName,
         {"l", 32, offsetof(World, bank32)},
     };
     for (unsigned b = 0; b < sizeof banks / sizeof banks[0]; b++) {
-        snprintf(path, sizeof path, "%s/BG/B_%03d%s.BZ", dataDir,
-                 world->scenerySet, banks[b].suffix);
+        snprintf(path, sizeof path, "BG/B_%03d%s.BZ", world->scenerySet,
+                 banks[b].suffix);
         TileBank *bank = (TileBank *)((char *)world + banks[b].offset);
-        if (!loadBank(bank, path, banks[b].size, message, messageSize)) {
+        if (!loadBank(bank, host, path, banks[b].size, message,
+                      messageSize)) {
             worldFree(world);
             return 0;
         }
