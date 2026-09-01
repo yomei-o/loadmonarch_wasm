@@ -109,7 +109,7 @@
   <button class="zoom" id="z2" disabled>32px</button>
   <span class="sep"></span>
   <button id="pause" disabled>一時停止</button>
-  <button id="music" disabled>音楽</button>
+  <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
 </header>
 <main>
@@ -143,7 +143,7 @@
 </main>
 <footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / クリック: ユニットを置く / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260901083207"></script>
+<script src="loadmonarch.js?v=20260901083537"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -223,6 +223,10 @@ createLordMonarch().then(function (M) {
       canvas.focus();
       present();
       refreshPanel();
+      // Opening the zip is a user gesture, which is the one thing a browser
+      // insists on before it will make a sound - so the music starts here
+      // rather than waiting to be asked.
+      startMusic();
     });
   }
 
@@ -312,9 +316,23 @@ createLordMonarch().then(function (M) {
   function startMusic() {
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-    if (!audio) audio = new Ctx();
+    if (!audio) {
+      audio = new Ctx();
+      // Should the context still come up suspended - some browsers only trust
+      // certain gestures - let the next one revive it.
+      var revive = function () {
+        if (audio && audio.state === 'suspended') audio.resume();
+      };
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (type) {
+        document.addEventListener(type, revive, true);
+      });
+    }
     if (audio.state === 'suspended') audio.resume();
-    if (!M._lm_music_play(0, 1)) { note.textContent = '音楽が読めません'; return; }
+    if (!M._lm_music_play(0, 1)) {
+      note.textContent = '音楽が読めません';
+      musicButton.classList.remove('on');
+      return;
+    }
     var size = 2048;
     if (audio.audioWorklet === undefined || true) {
       // A ScriptProcessor is deprecated but needs no separate module file,
