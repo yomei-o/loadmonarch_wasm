@@ -54,6 +54,9 @@ void simMarkDying(GameState *state, unsigned slot, unsigned char cause);
 SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
                                  unsigned row);
 
+// 0040b440: raise or reinforce a wall at this unit's target.  Terrain 0x7b.
+SimActionResult simBuildWall(Sim *sim, unsigned slot);
+
 // 0040b680: work the obstacle at this unit's target down towards ground.
 SimActionResult simClearTarget(Sim *sim, unsigned slot);
 

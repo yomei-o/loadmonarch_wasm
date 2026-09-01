@@ -502,6 +502,55 @@ int main(void) {
                before2 - state.factions[0].funds, 100 * 2);
     }
 
+    // 0040b440: a wall goes up on bare land at a quarter what clearing costs,
+    // and once it stands the cell is blocked.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim build;
+        simInit(&build, &state);
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at08 = 1600;                 // a sixteenth is 100 of work
+        e->position[0] = 20;
+        e->position[1] = 20;
+        e->target[0] = 21;
+        e->target[1] = 20;
+        WorldCell *site = &state.world.cells[WORLD_INDEX(21, 20)];
+        site->terrain = 0;              // bare land
+        site->value = 250;
+        state.factions[0].funds = 100000;
+        unsigned before = state.factions[0].funds;
+        expect("work went into the wall", (long)simBuildWall(&build, 1),
+               SIM_ACTION_PROGRESS);
+        expect("the site came down", site->value, 150);
+        expect("at a quarter the cost of clearing",
+               before - state.factions[0].funds, 100 / 4);
+
+        site->value = 40;
+        expect("the wall went up", (long)simBuildWall(&build, 1),
+               SIM_ACTION_DONE);
+        expect("the cell is a wall", site->terrain, 0x7b);
+        expect("and it blocks movement", site->blocked, 1);
+
+        // A standing wall takes reinforcement up to 0xff.
+        site->value = 200;
+        before = state.factions[0].funds;
+        expect("reinforcing worked", (long)simBuildWall(&build, 1),
+               SIM_ACTION_DONE);
+        expect("up to the cap", site->value, 0xff);
+        expect("paying for what it took",
+               before - state.factions[0].funds, (0xff - 200) / 4);
+
+        // Somebody standing there refuses it.
+        site->terrain = 0;
+        site->owner = 9;
+        expect("an occupied site refuses", (long)simBuildWall(&build, 1),
+               SIM_ACTION_NO_FUNDS);
+    }
+
     printf(failures ? "%d check(s) failed\n" : "state checks ok\n", failures);
     return failures ? 1 : 0;
 }

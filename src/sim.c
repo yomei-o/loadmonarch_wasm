@@ -447,6 +447,58 @@ SimActionResult simBuildUnitCell(Sim *sim, unsigned slot, unsigned col,
     return SIM_ACTION_DONE;
 }
 
+// 0040b440: the wall.  Terrain 0x7b is one, and a unit raises it on bare land
+// or on ground its faction already holds - pouring work in at a quarter the
+// cost clearing charges.  A finished wall blocks movement, which is why the
+// original refreshes every cell's +0x05 the moment one goes up.
+//
+// An existing wall can be reinforced up to 0xff.  A cell with somebody
+// standing on it refuses, and anything else falls through to the raid the
+// caller handles.
+SimActionResult simBuildWall(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->target[0];
+    const unsigned row = entity->target[1];
+    if (col == 0 || row == 0 || col > 0x2e || row > 0x2e)
+        return SIM_ACTION_REFUSED;
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return SIM_ACTION_REFUSED;
+
+    WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+    if (cell->owner < ENTITY_NONE) return SIM_ACTION_NO_FUNDS;  // 0040b440's 2
+
+    const unsigned strengthWork = entity->at08 >> 4;
+
+    if (cell->terrain == 0x7b) {
+        // Reinforcing one that is already there.
+        unsigned room = cell->value < 0xffu ? 0xffu - cell->value : 0u;
+        unsigned amount = room < strengthWork ? room : strengthWork;
+        if (!simSpend(state, faction, amount >> 2)) return SIM_ACTION_NO_FUNDS;
+        cell->value = cell->value < 0xffu ? cell->value + amount : 0xffu;
+        return SIM_ACTION_DONE;
+    }
+
+    const int owned = cell->terrain >= 0x0c && cell->terrain <= 0x10;
+    if (cell->terrain != 0 && !owned) return SIM_ACTION_REFUSED;
+
+    unsigned amount = cell->value + 0xffu;
+    if (amount > strengthWork) amount = strengthWork;
+    if (!simSpend(state, faction, amount >> 2)) return SIM_ACTION_NO_FUNDS;
+
+    if (cell->value < amount) {
+        cell->value = amount - cell->value;
+        cell->terrain = 0x7b;
+        // 00405330 again: a wall is terrain at or above 0x30, so every cell's
+        // blocked flag has to be worked out afresh.
+        stateMarkBlocked(state);
+        return SIM_ACTION_DONE;
+    }
+    cell->value -= amount;
+    return SIM_ACTION_PROGRESS;
+}
+
 // 0040b680: clearing.  A unit works on the cell its target names - terrain
 // 0x30..0x5f is an obstacle, and 0x7a is the one that pays out - spending
 // funds at thirty a unit of work, or two for the 0x7a, and putting in at most
@@ -1192,6 +1244,18 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_DONE) return;
         fallbackOrder(sim, slot);
         return;
+    case 6: {
+        // 00403170's case 6 is the wall, and its tail matches case 7's.
+        const SimActionResult r = simBuildWall(sim, slot);
+        if (r == SIM_ACTION_PROGRESS || r == SIM_ACTION_DONE) return;
+        if (r == SIM_ACTION_REFUSED &&
+            raidSettlement(sim, slot, entity->target[0], entity->target[1]))
+            return;
+        if (entity->at0d & 0x80) return;
+        if (entity->at0d & 0x40) { entity->at0d = 0x10; return; }
+        fallbackOrder(sim, slot);
+        return;
+    }
     case 7: {
         // 00403170's case 7 is the clearing order, and its tail is the same
         // hunt-or-home the high bits of +0x0d choose.
