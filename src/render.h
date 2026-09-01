@@ -15,7 +15,11 @@ void surfaceInit(Surface *surface, int width, int height,
 
 // Draws the terrain with the bank for `zoom` (0 small, 1 medium, 2 large),
 // scrolled to the world pixel (viewX, viewY).  Off-map area comes out zero.
+// The original's cell index is `a * 0x30 + b`, and comparing against the
+// running game settles which is which: **a is the column, b is the row**.
+// transpose = 1 is therefore the correct one; 0 is kept only so the two can
+// be flipped side by side if the question ever comes up again.
 void renderWorld(const World *world, int zoom, int viewX, int viewY,
-                 Surface *out);
+                 int transpose, Surface *out);
 
 #endif

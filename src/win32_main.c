@@ -32,6 +32,7 @@ typedef struct {
     int zoom;                   // 0 small, 1 medium, 2 large
     int viewX, viewY;
     int stage;
+    int transpose;              // which half of the cell index is screen x
     char dataDir[512];
 } App;
 
@@ -83,7 +84,7 @@ static int loadStage(App *app, int stage, char *message, unsigned size) {
 
 static void paint(App *app, HDC dc) {
     renderWorld(&app->world, app->zoom, app->viewX, app->viewY,
-                &app->surface);
+                app->transpose, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
 }
 
@@ -91,10 +92,11 @@ static void updateTitle(HWND window, const App *app) {
     static const char *zoomName[3] = {"8px", "16px", "32px"};
     char title[256];
     snprintf(title, sizeof title,
-             "Lord Monarch - %s  scenery %u  tiles %s  (arrows scroll, "
-             "1/2/3 zoom, PgUp/PgDn stage)",
+             "Lord Monarch - %s  scenery %u  tiles %s  index %s  "
+             "(arrows, 1/2/3 zoom, PgUp/PgDn stage, T transpose)",
              kStages[app->stage], app->world.scenerySet,
-             zoomName[app->zoom]);
+             zoomName[app->zoom],
+             app->transpose ? "x*48+y" : "y*48+x");
     SetWindowTextA(window, title);
 }
 
@@ -138,6 +140,9 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         case VK_NEXT:
             if (!loadStage(app, app->stage + 1, reason, sizeof reason))
                 MessageBoxA(window, reason, "Lord Monarch", MB_OK);
+            break;
+        case 'T':
+            app->transpose = !app->transpose;
             break;
         case VK_ESCAPE:
             DestroyWindow(window);
@@ -185,6 +190,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
     (void)prev; (void)show;
     App *app = &g_app;
     app->zoom = 1;
+    // The original's cell index is `a * 0x30 + b`; taking a as the column is
+    // what matches the game on screen.  T flips it back for comparison.
+    app->transpose = 1;
 
     if (cmdLine && *cmdLine) {
         snprintf(app->dataDir, sizeof app->dataDir, "%s", cmdLine);

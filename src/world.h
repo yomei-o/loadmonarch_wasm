@@ -9,6 +9,10 @@
 
 #define WORLD_GRID 48                       // 0x30, the index stride
 #define WORLD_CELLS (WORLD_GRID * WORLD_GRID)
+
+// The cell index is column * WORLD_GRID + row - checked against the running
+// original, which draws the transpose of the naive reading.
+#define WORLD_INDEX(col, row) ((col) * WORLD_GRID + (row))
 #define TILE_BANK_TILES 128
 
 typedef struct {
