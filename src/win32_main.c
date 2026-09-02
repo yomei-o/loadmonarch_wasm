@@ -37,6 +37,14 @@ static const char *stageTitle(int stage) {
     return g_stages.count ? g_stages.name[stage] : stageFile(stage);
 }
 
+// How many of the player's units are chosen.
+static int selectedCount(const GameState *game) {
+    int n = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++)
+        if (game->entities[i].flags21c & 1) n++;
+    return n;
+}
+
 #define SIM_TIMER 1
 #define SIM_TIMER_MS 50
 
@@ -56,6 +64,7 @@ typedef struct {
     int showHud;
     int lastAction;             // 0040b330's return code, for the read-out
     unsigned lastCol, lastRow;
+    unsigned order;             // what a click sends the chosen units to do
     Host host;                  // the directory or zip the files come from
     unsigned char *archive;     // the zip's bytes, when one was given
     char dataDir[512];
@@ -143,6 +152,13 @@ static void paintHud(App *app, HDC dc) {
              neutral, entities, app->lastCol, app->lastRow,
              actionName[app->lastAction >= 0 && app->lastAction < 7
                             ? app->lastAction : 0]);
+    TextOutA(dc, 4, y, line, (int)strlen(line));
+    y += 16;
+    snprintf(line, sizeof line,
+             "chosen %d   order %u %s   (right click chooses, O cycles, "
+             "A chooses all)",
+             selectedCount(&app->game), app->order,
+             worldOrderName(&app->game.world, app->order));
     TextOutA(dc, 4, y, line, (int)strlen(line));
     y += 16;
     for (int f = 0; f < FACTION_COUNT; f++) {
@@ -235,6 +251,12 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         case 'S':                       // one sweep, for watching it step
             simStep(&app->sim);
             break;
+        case 'O':                       // the order a click sends, 0 to 15
+            app->order = (app->order + 1) & 0x0f;
+            break;
+        case 'A':                       // choose every unit, orders and all
+            simSelectAll(&app->sim, 1);
+            break;
         case VK_ESCAPE:
             DestroyWindow(window);
             return 0;
@@ -255,23 +277,35 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
                         (app->viewY + (short)HIWORD(lparam)) / ts);
         return 0;
     }
+    case WM_RBUTTONDOWN:
+        // Choose the country's idle units, the way 00409f10 does.  A second
+        // right click lets them go again.
+        if (selectedCount(&app->game) > 0) simClearSelection(&app->game);
+        else simSelectAll(&app->sim, 0);
+        InvalidateRect(window, NULL, FALSE);
+        return 0;
     case WM_LBUTTONDOWN: {
-        // The original routes an order to a chosen entity and lets it walk to
-        // the target; that selection and the movement are not ported yet, so
-        // the click applies 0040b330 directly through the player's first
-        // entity.  The action itself is the executable's.
+        // With units chosen this is where they are sent, which is the
+        // original's own flow; with none it raises a settlement here.
         const TileBank *bank = worldBank(&app->game.world, app->zoom);
         const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
         const int worldX = app->viewX + (short)LOWORD(lparam);
         const int worldY = app->viewY + (short)HIWORD(lparam);
         const unsigned col = (unsigned)(worldX / ts);
         const unsigned row = (unsigned)(worldY / ts);
-        const unsigned actor = simHumanActor(&app->sim);
         app->lastCol = col;
         app->lastRow = row;
-        app->lastAction = actor < ENTITY_COUNT
-            ? (int)simBuildUnitCell(&app->sim, actor, col, row)
-            : (int)SIM_ACTION_REFUSED;
+        if (selectedCount(&app->game) > 0) {
+            app->lastAction = simOrderSelected(&app->sim, app->order, 0,
+                                               (int)col, (int)row)
+                                  ? (int)SIM_ACTION_DONE
+                                  : (int)SIM_ACTION_REFUSED;
+        } else {
+            const unsigned actor = simHumanActor(&app->sim);
+            app->lastAction = actor < ENTITY_COUNT
+                ? (int)simBuildUnitCell(&app->sim, actor, col, row)
+                : (int)SIM_ACTION_REFUSED;
+        }
         InvalidateRect(window, NULL, FALSE);
         return 0;
     }
