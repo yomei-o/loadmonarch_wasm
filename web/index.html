@@ -98,6 +98,8 @@
 <body>
 <header>
   <span class="brand">LORD MONARCH<small>移植途中 / a port in progress</small></span>
+  <button id="langE" class="on">English</button>
+  <button id="langJ">日本語</button>
   <label class="filebtn">zip を開く<input type="file" id="file" accept=".zip" hidden></label>
   <span class="sep"></span>
   <button id="prev" disabled>&lt; 面</button>
@@ -121,11 +123,11 @@
     <canvas id="view" width="640" height="480"></canvas>
     <div id="drop">
       <div class="box">
-        <h1>ds7e.zip をここに落としてください</h1>
-        <p>Nihon Falcom の「Lord Monarch Online」を読み込んで動かします。
-           ゲームのデータはこのページには入っていないので、
-           お手元の <code>ds7e.zip</code> が必要です。</p>
-        <p>読み込んだファイルはブラウザの中だけで扱われ、どこにも送られません。</p>
+        <h1 id="dropTitle">読み込んでいます…</h1>
+        <p id="dropText">Nihon Falcom の「Lord Monarch Online」を読み込んで動かします。
+           配布中の <code>ds7e.zip</code> をこのページが取りに行きます。</p>
+        <p>お手元の zip を落とせばそちらを読みます。ファイルはブラウザの中だけで
+           扱われ、どこにも送られません。</p>
       </div>
     </div>
   </div>
@@ -163,7 +165,21 @@ createLordMonarch().then(function (M) {
   canvas.width = W;
   canvas.height = H;
 
-  var factionNames = ['緑', '赤', '青', '黄', '中立'];
+  // The countries and the sixteen orders are named in the large terrain file,
+  // differently in every scenery set, so they arrive per stage rather than
+  // being written here.  The Japanese release writes them in Shift-JIS, which
+  // is ASCII-compatible, so decoding both releases that way is right for both.
+  var sjis = new TextDecoder('shift_jis');
+  function heapString(pointer) {
+    if (!pointer) return '';
+    var end = pointer;
+    while (M.HEAPU8[end]) end++;
+    return sjis.decode(M.HEAPU8.subarray(pointer, end)).trim();
+  }
+  var fallbackNames = ['緑', '赤', '青', '黄', '中立'];
+  function countryName(f) {
+    return heapString(M._lm_country_name(f)) || fallbackNames[f];
+  }
   var factionColours = ['#4c9a3a', '#b8402f', '#3a63b8', '#c9a227', '#7a7a7a'];
 
   function present() {
@@ -171,6 +187,17 @@ createLordMonarch().then(function (M) {
     var img = new ImageData(
         new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4).slice(), W, H);
     ctx.putImageData(img, 0, 0);
+  }
+
+  // 4 sends a unit after a neighbour's settlement, 0 stops it where it is and
+  // 1 is the automatic behaviour it starts with.
+  var orderButtons = [['attack', 4], ['hold', 0], ['home', 1]];
+
+  function nameOrderButtons() {
+    orderButtons.forEach(function (pair) {
+      var name = heapString(M._lm_order_name(pair[1]));
+      if (name) document.getElementById(pair[0]).textContent = '全軍 ' + name;
+    });
   }
 
   function refreshPanel() {
@@ -183,7 +210,7 @@ createLordMonarch().then(function (M) {
       if (M._lm_out(f)) tr.className = 'out';
       var cells = [
         '<span class="swatch" style="background:' + factionColours[f] +
-            '"></span>' + factionNames[f],
+            '"></span>' + countryName(f),
         M._lm_funds(f), M._lm_tax(f), M._lm_count(f, 1),
         M._lm_count(f, 0), M._lm_count(f, 3),
       ];
@@ -209,6 +236,10 @@ createLordMonarch().then(function (M) {
   }
 
   /* ------------------------------------------------------- loading a zip */
+  // Falcom still give the game away at falcom.co.jp/monarch, and the two
+  // releases sit beside this page, so it loads one by itself and a player only
+  // has to drop a file if they would rather use their own copy.  A File and a
+  // fetched Response both answer arrayBuffer(), so this takes either.
   function openZip(file) {
     file.arrayBuffer().then(function (buffer) {
       var bytes = new Uint8Array(buffer);
@@ -228,6 +259,9 @@ createLordMonarch().then(function (M) {
         document.getElementById(id).disabled = false;
       });
       canvas.focus();
+      // The orders are named by the scenery set too - "Destroy" in one, "Now
+      // Open" in another - so the buttons say what this campaign calls them.
+      nameOrderButtons();
       present();
       refreshPanel();
       // Opening the zip is a user gesture, which is the one thing a browser
@@ -241,6 +275,32 @@ createLordMonarch().then(function (M) {
     if (e.target.files[0]) openZip(e.target.files[0]);
     e.target.value = '';
   };
+
+  var langE = document.getElementById('langE');
+  var langJ = document.getElementById('langJ');
+  var dropTitle = document.getElementById('dropTitle');
+  var dropText = document.getElementById('dropText');
+
+  function fetchRelease(which) {
+    langE.classList.toggle('on', which === 'e');
+    langJ.classList.toggle('on', which === 'j');
+    var name = which === 'j' ? 'ds7j.zip' : 'ds7e.zip';
+    if (!loaded) dropTitle.textContent = '読み込んでいます…';
+    note.textContent = '';
+    fetch('../' + name).then(function (response) {
+      if (!response.ok) throw new Error(response.status + ' ' + name);
+      return openZip(response);
+    }).catch(function (error) {
+      // Opened from a file:// path, or the release is not beside the page.
+      dropTitle.textContent = 'zip をここに落としてください';
+      dropText.textContent = 'ページから ' + name +
+          ' を取れませんでした (' + error.message + ')。' +
+          'お手元の zip を落とすか、上のボタンから開いてください。';
+    });
+  }
+
+  langE.onclick = function () { fetchRelease('e'); };
+  langJ.onclick = function () { fetchRelease('j'); };
   ['dragenter', 'dragover'].forEach(function (t) {
     document.addEventListener(t, function (e) {
       e.preventDefault();
@@ -270,13 +330,16 @@ createLordMonarch().then(function (M) {
   [0, 1, 2].forEach(function (i) {
     document.getElementById('z' + i).onclick = function () { setZoom(i); };
   });
-  document.getElementById('prev').onclick = function () {
-    M._lm_load_stage(M._lm_stage() - 1);
+  function goStage(to) {
+    M._lm_load_stage(to);
+    nameOrderButtons();         // another set, another wording
     refreshPanel();
+  }
+  document.getElementById('prev').onclick = function () {
+    goStage(M._lm_stage() - 1);
   };
   document.getElementById('next').onclick = function () {
-    M._lm_load_stage(M._lm_stage() + 1);
-    refreshPanel();
+    goStage(M._lm_stage() + 1);
   };
   var pause = document.getElementById('pause');
   pause.onclick = function () {
@@ -288,7 +351,7 @@ createLordMonarch().then(function (M) {
   // after a neighbour's settlement, 0 holds it, 1 sends it home and back to
   // building.  New units carry whichever is selected, the way DAT_004365e0
   // works in the executable.
-  [['attack', 4], ['hold', 0], ['home', 1]].forEach(function (pair) {
+  orderButtons.forEach(function (pair) {
     document.getElementById(pair[0]).onclick = function () {
       M._lm_set_order(pair[1]);
       var n = M._lm_order_all(pair[1]);
@@ -396,6 +459,10 @@ createLordMonarch().then(function (M) {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // Nothing has been clicked yet, so the browser will hold the sound until the
+  // first gesture - startMusic's revive listener picks it up then.
+  fetchRelease('e');
 });
 </script>
 </body>

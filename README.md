@@ -37,9 +37,17 @@ gcc -O2 -o tests/data1_test.exe tests/data1_test.c src/bz.c
 
 **https://yomei-o.github.io/lord_monarch_online_wasm/**
 
-お手元の `ds7e.zip` をページに落とすと動きます。ゲームのデータはこのリポジトリにも
-ページにも入っていません。読み込んだ zip はブラウザの中だけで扱われ、どこにも
-送られません（zip の展開も inflate も WebAssembly 側の C コードがやっています）。
+開くだけで動きます。ファルコムが
+[今も配布している](https://www.falcom.co.jp/monarch/) `ds7e.zip`（英語版）と
+`ds7j.zip`（日本語版）をリポジトリに置いてあり、ページが自分で取りに行きます。
+上のボタンで English / 日本語 を切り替えられます。
+
+お手元の zip を落とせばそちらを読みます。読み込んだ zip はブラウザの中だけで
+扱われ、どこにも送られません（zip の展開も inflate も WebAssembly 側の C
+コードがやっています）。
+
+国名と16種の命令名はシナリオごとに違い、大きい背景ファイルの中の表から
+読んでいます。日本語版は Shift-JIS なので、ページ側でそう復号しています。
 
 | | |
 |---|---|
