@@ -1742,7 +1742,15 @@ void simMakeRoute(GameState *state, unsigned slot, int dx, int dy) {
     Entity *entity = &state->entities[slot];
     const unsigned char row = kRouteRow[dy + 3][dx + 3];
     entity->at18 = 0;
-    entity->at14 = (unsigned)((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy));
+    // The row is three steps long and the walk stops after at14 of them, so
+    // the trailing 5s in kRouteSteps are padding that is never taken - which
+    // is why a route byte of 5 looks like "stay" in that table even though 5
+    // is south-east everywhere else.  Three is the most that can be walked;
+    // 00401000 asks for (-3, -3) in one place, where the sum would be six and
+    // the walk would run off the end of the row into whatever follows it.
+    unsigned steps = (unsigned)((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy));
+    if (steps > 3) steps = 3;
+    entity->at14 = steps;
     entity->route[0] = kRouteSteps[row][0];
     entity->route[1] = kRouteSteps[row][1];
     entity->route[2] = kRouteSteps[row][2];
@@ -2342,6 +2350,36 @@ static int kingGoesHome(Sim *sim, unsigned slot) {
     return 1;
 }
 
+// 00401000's castle branch.  A king standing on its own castle steps out of
+// it, southwards, when the two cells that way are both empty and walkable -
+// and then takes a route out to the north-west corner of its reach, which is
+// the original's own choice of where to go next.
+//
+// This is what gets a king onto the board at all: it starts inside and comes
+// out under its own power.
+static int kingLeavesCastle(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const int col = entity->position[0], row = entity->position[1];
+    if (!inBounds(col, row)) return 0;
+    if ((unsigned char)(state->world.cells[WORLD_INDEX(col, row)].terrain -
+                        entity->faction) != 0x14)
+        return 0;
+
+    for (int step = 1; step <= 2; step++) {
+        if (!inBounds(col, row + step)) return 0;
+        const WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row + step)];
+        if (cell->occupant < ENTITY_COUNT) return 0;
+        if (cell->terrain >= TERRAIN_WALKABLE_MAX) return 0;
+    }
+
+    state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+    state->world.cells[WORLD_INDEX(col, row + 1)].occupant = (unsigned char)slot;
+    entity->position[1] = (unsigned char)(row + 1);
+    simMakeRoute(state, slot, -3, -3);
+    return 1;
+}
+
 // 00401000's other half.  A king with nowhere to be tries to go home; if it
 // cannot, it raises the flag that calls its country to it and heads for the
 // nearest settlement instead.  That flag is what 00421140 answers.
@@ -2349,6 +2387,8 @@ static void kingDecides(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     const unsigned faction = state->entities[slot].faction;
     if (faction >= FACTION_COUNT) return;
+
+    if (kingLeavesCastle(sim, slot)) return;
 
     state->factions[faction].flags &= ~0x20u;
     if (kingGoesHome(sim, slot)) return;

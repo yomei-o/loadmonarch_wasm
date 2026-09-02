@@ -1042,7 +1042,10 @@ int main(void) {
                             int checked = 0;
                             for (int i = 0; i < ENTITY_COUNT && !checked; i++) {
                                 const Entity *e = &game.entities[i];
-                                if (e->at18 == 0x1f0 || e->at14 < 2) continue;
+                                // Longer than the three-step table can hold,
+                                // so it came from 00405000 rather than
+                                // 00405250 - those are the routes this checks.
+                                if (e->at18 == 0x1f0 || e->at14 < 4) continue;
                                 int c = e->position[0], r = e->position[1];
                                 for (unsigned k = 0; k < e->at14; k++) {
                                     c += sx[e->route[k] & 7];
