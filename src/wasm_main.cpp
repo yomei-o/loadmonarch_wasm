@@ -337,6 +337,9 @@ EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
 // too.
 unsigned char g_save[SAVE_SIZE];
 
+// 0041b4f0's day count: what the game's own readme asks you to keep small.
+EMSCRIPTEN_KEEPALIVE int lm_days(void) { return (int)g_sim.days; }
+
 EMSCRIPTEN_KEEPALIVE int lm_save_size(void) { return (int)SAVE_SIZE; }
 
 EMSCRIPTEN_KEEPALIVE const unsigned char *lm_save(void) {

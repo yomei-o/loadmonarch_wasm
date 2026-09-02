@@ -484,6 +484,12 @@ void simStep(Sim *sim) {
             stepCastle(sim, index, terrain - 0x14u);
         }
     }
+    // 0041b4f0: the clocks move on every other tick.
+    if ((sim->state->frame & 1) == 0) {
+        if (sim->days < 999999u) sim->days++;
+        if (sim->countdown) sim->countdown--;
+    }
+
     sim->shortOfFunds = 0;              // DAT_0043451c, cleared per sweep
     simStepEntities(sim);
     simUpdateBalloons(sim);             // 0040a5e0's 0041f790

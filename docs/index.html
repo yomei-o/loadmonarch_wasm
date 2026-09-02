@@ -176,7 +176,7 @@
 </main>
 <footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902034044"></script>
+<script src="loadmonarch.js?v=20260902034258"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -347,6 +347,7 @@ createLordMonarch().then(function (M) {
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
     world.innerHTML =
+        row('日数', M._lm_days()) +
         row('掃引', Math.round(M._lm_sweeps())) +
         row('背景セット', M._lm_scenery()) +
         row('最後のクリック', M._lm_last_col() + ',' + M._lm_last_row() + ' ' +

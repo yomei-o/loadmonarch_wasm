@@ -23,6 +23,13 @@ typedef struct {
     // for, cleared at the top of every entity sweep, and read by the balloon
     // pass - which is the only way the game tells you that you are broke.
     int shortOfFunds;
+
+    // 0041b4f0's two clocks, which move on every other tick.  DAT_004365c8
+    // counts up and is what the game scores you on - its own README asks for
+    // the fewest days - and DAT_004365c4 counts down, which is what a stage
+    // with a limit runs out of.
+    unsigned days;
+    unsigned countdown;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);
