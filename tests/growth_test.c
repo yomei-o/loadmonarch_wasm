@@ -72,16 +72,18 @@ int main(int argc, char **argv) {
 // Every stage the campaign lists, in its own order, and whether the four
 // countries can be expected to find each other without a player.
 //
-// Two of them cannot.  "Saint Steed" and "Moon and Stars" put their countries
-// in pockets of bare ground with scenery between, and scenery in the range
-// 0x30 to 0x5f is cleared by order 7 and by nothing else.  Order 7 reaches a
-// unit exactly two ways: 00401770 gives it to one that walks into a mine, and
-// 00421d30 gives it to one 0041c8e0 has found a mine for - and 0041c8e0 looks
-// for terrain 0x7a alone, of which those maps have none.  0041c410, the wide
-// search, does not weigh scenery at all.  Every at0d assignment in the
-// executable was read to be sure of this: a machine country never opens a way
-// through scenery, so those two stages wait for the player, and a port whose
-// countries dug their own way out would be the wrong one.
+// Three of them cannot: "Saint Steed", "Strange Islands" and "Moon and Stars".
+// Each puts its countries in pockets with terrain from 0x30 to 0x5f between -
+// scenery on the first and the last, open water on the islands - and that
+// whole range is cleared by order 7 and by nothing else.  Clearing water is
+// how a bridge gets built, and order 7 reaches a unit exactly two ways:
+// 00401770 gives it to one that walks into a mine, and 00421d30 gives it to
+// one 0041c8e0 has found a mine for - and 0041c8e0 looks for terrain 0x7a
+// alone, of which those maps have none.  0041c410, the wide search, does not
+// weigh that range at all.  Every at0d assignment in the executable was read
+// to be sure: a country the machine plays never opens a way through it, so
+// those three stages wait for the player to bridge them, and a port whose
+// machine bridged them would be the wrong one.
 static const struct {
     const char *file;
     int meets;
@@ -91,7 +93,7 @@ static const struct {
     {"B_004.MAP", 1},   // Ancient Kingdom
     {"B_006.MAP", 1},   // Steel Brain
     {"S_201.MAP", 1},   // Candy Waltz
-    {"B_104.MAP", 1},   // Strange Islands
+    {"B_104.MAP", 0},   // Strange Islands
     {"B_002.MAP", 1},   // Precious Nature
     {"B_005.MAP", 0},   // Saint Steed
     {"S_115.MAP", 1},   // Geo Port Flash
@@ -181,7 +183,7 @@ static const struct {
         if (settled >= 0) printf(", settled at sweep %ld", settled);
         putchar(10);
         if (!stages[s].meets) {
-            printf("  %-10s is walled apart by scenery no country clears,"
+            printf("  %-10s waits for a player to bridge it,"
                    " and the original is the same\n", stages[s].file);
             worldFree(&game.world);
             continue;

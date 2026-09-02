@@ -2249,7 +2249,28 @@ static int raidSettlement(Sim *sim, unsigned slot, unsigned col,
     if (me->faction < FACTION_COUNT &&
         state->factions[me->faction].at1e == owner) return 0;
 
-    unsigned damage = me->at08;
+    // 004209a0 first, and this port had it missing altogether: the raider
+    // pays the settlement's worth out of its own strength, and that goes on
+    // its own country's losses.  A raider that cannot pay dies on the
+    // settlement, credited to whoever held it.  Razing a country's villages
+    // was free before this, which is not a small difference - it is why one
+    // country used to roll over the board.
+    const unsigned before = me->at08;
+    {
+        unsigned toll = cell->value;
+        if (me->at08 < toll) toll = me->at08;
+        Faction *mine = &state->factions[me->faction];
+        // The original's saturating add: it writes all ones first and puts the
+        // sum back only when the sum is not all ones.
+        const unsigned was = mine->at14;
+        mine->at14 = 0xffffffffu;
+        if (was + toll != 0xffffffffu) mine->at14 = was + toll;
+        if (me->at08 <= toll) simMarkDying(state, slot, owner);
+        else me->at08 -= toll;
+    }
+
+    // And then the settlement, by what the raider was worth before it paid.
+    unsigned damage = before;
     if (damage > cell->value) damage = cell->value;
     state->factions[owner].at14 += damage;
     if (damage < cell->value) {
@@ -3179,7 +3200,13 @@ static int findMineToDig(Sim *sim, unsigned slot, Approach *out) {
 //
 // What is found then decides the order: bare ground is built on, a spawn is
 // broken, an enemy settlement attacked, and anything else pulled down.
-static int generalStrategy(Sim *sim, unsigned slot) {
+// 0041c410 itself, with the fill already laid: the cheapest thing on the board
+// worth walking to, and what kind of thing it is.  Non-zero when it found one,
+// and `cost` comes back as the original's own score - the distance plus eight,
+// except for a den, which is scored by distance alone and so beats anything
+// else at the same range.
+static int wideSearch(Sim *sim, unsigned slot, int *outCol, int *outRow,
+                      unsigned *outCost, unsigned char *outTerrain) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
     const unsigned faction = entity->faction;
@@ -3190,11 +3217,9 @@ static int generalStrategy(Sim *sim, unsigned slot) {
     const int canBuild = canAffordFor(sim, slot, 100);
     const unsigned char ally = state->factions[faction].at1e;
 
-    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
-
     unsigned best = FILL_INFINITE + 9;              // 0x1f9, as the original
     int bestCol = 0, bestRow = 0;
-    unsigned bestTerrain = 0;
+    unsigned char bestTerrain = 0;
     for (int i = 0; i < WORLD_CELLS; i++) {
         const WorldCell *cell = &state->world.cells[i];
         if (cell->cost >= FILL_INFINITE) continue;
@@ -3222,7 +3247,61 @@ static int generalStrategy(Sim *sim, unsigned slot) {
         bestRow = row;
         bestTerrain = terrain;
     }
-    if (best >= FILL_INFINITE) {
+    if (best >= FILL_INFINITE) return 0;
+    // 0041c410 hands the score back with the eight taken off again.
+    *outCost = best >= 8 ? best - 8 : 0;
+    *outCol = bestCol;
+    *outRow = bestRow;
+    *outTerrain = bestTerrain;
+    return 1;
+}
+
+// 00421ba0.  The plain form of the wide search, and the one every unit falls
+// to in the end - the machine's own and the player's alike, since 00421ae0
+// runs this part without asking whose unit it is.  `limit` is how far it will
+// look; its only caller passes the fill's own infinity.  Unlike 00421d30 it
+// gives up on anything it has no order for rather than trying to knock it
+// down, and it wants the unit to be worth twice the walk.
+static int nearestWorth(Sim *sim, unsigned slot, unsigned limit) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    int col = 0, row = 0;
+    unsigned cost = 0;
+    unsigned char terrain = 0;
+    if (!wideSearch(sim, slot, &col, &row, &cost, &terrain)) return 0;
+    if (limit <= cost) return 0;
+    if (entity->at08 < cost * 2) return 0;
+
+    unsigned char order;
+    if (terrain == 0 || (terrain >= 0x0c && terrain < 0x10)) order = 5;
+    else if (terrain >= 1 && terrain <= 4) order = 8;
+    else if (terrain == 5) order = 0x0b;
+    else if (terrain >= 8 && terrain <= 0x0b) order = 4;
+    else return 0;
+
+    entity->target[0] = (unsigned char)col;
+    entity->target[1] = (unsigned char)row;
+    entity->at0f = 4;
+    entity->at0d = order;
+    if (simRouteTo(state, slot, col, row) == 0) return 0;
+    if ((entity->at0d & 0x0f) == 0x0b) simShortenRoute(state, slot);
+    return 1;
+}
+
+static int generalStrategy(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    int bestCol = 0, bestRow = 0;
+    unsigned bestCost = 0;
+    unsigned char bestTerrain = 0;
+    if (!wideSearch(sim, slot, &bestCol, &bestRow, &bestCost, &bestTerrain)) {
         // 00421d30's other half.  Nothing worth walking to in the open, so the
         // country asks after the two things it can dig through instead: a wall
         // first, then a mine, the mine judged twenty steps worse than it is so
@@ -3253,12 +3332,15 @@ static int generalStrategy(Sim *sim, unsigned slot) {
         return simRouteTo(state, slot, pick.standCol, pick.standRow) != 0;
     }
 
+    // 00421d30 knocks anything else down rather than giving up, which is the
+    // one place it differs from 00421ba0.
     unsigned char order;
     if (bestTerrain == 0 || (bestTerrain >= 0x0c && bestTerrain < 0x10))
         order = 5;
     else if (bestTerrain == 5) order = 0x0b;
     else if (bestTerrain >= 8 && bestTerrain <= 0x0b) order = 4;
     else order = 8;
+    (void)bestCost;
 
     entity->target[0] = (unsigned char)bestCol;
     entity->target[1] = (unsigned char)bestRow;
@@ -3280,21 +3362,30 @@ static int generalStrategy(Sim *sim, unsigned slot) {
 // settlement - and 0041c8e0 remain unread.
 static int thinkStrategically(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
-    if (state->entities[slot].faction == sim->humanFaction) return 0;
+    if (state->entities[slot].faction != sim->humanFaction) {
+        if (answerRivalFind(sim, slot)) return 1;
+        if (rallyToLeader(sim, slot)) return 1;
+        if (state->entities[slot].at08 > 1000 && huntEnemyLeader(sim, slot))
+            return 1;
 
-    if (answerRivalFind(sim, slot)) return 1;
-    if (rallyToLeader(sim, slot)) return 1;
-    if (state->entities[slot].at08 > 1000 && huntEnemyLeader(sim, slot))
-        return 1;
-
-    const unsigned roll = simRandom(100);
-    if (roll > 0x59) {
-        if (generalStrategy(sim, slot)) return 1;
-        if (mergeWithBigger(sim, slot)) return 1;
-        return settleAtHome(sim, slot);
+        const unsigned roll = simRandom(100);
+        if (roll > 0x59) {
+            if (generalStrategy(sim, slot)) return 1;
+            if (mergeWithBigger(sim, slot)) return 1;
+            return settleAtHome(sim, slot);
+        }
+        if (roll > 0x50 && openGround(sim, slot)) return 1;
     }
-    if (roll > 0x50) return openGround(sim, slot);
-    return 0;
+
+    // 00421ae0's tail, which this port had dropped.  Everything that has not
+    // found something to do falls through to here - and the country the player
+    // has falls straight into it, because the block above is the only part
+    // that asks whose unit this is.  So a player's spare units do find work of
+    // their own: the nearest thing worth walking to, then somebody bigger to
+    // join, then home.
+    if (nearestWorth(sim, slot, FILL_INFINITE)) return 1;
+    if (mergeWithBigger(sim, slot)) return 1;
+    return settleAtHome(sim, slot);
 }
 
 // 00402bc0: the other order handler, the one a unit born with a standing order

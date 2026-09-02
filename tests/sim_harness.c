@@ -119,6 +119,10 @@ int main(int argc, char **argv) {
     Sim sim;
     simInit(&sim, &game);
     simSeedLeaders(&sim);
+    // DAT_004365cd holding four is none of the countries, so all four
+    // are played by the machine.
+    for (int a = 4; a < argc; a++)
+        if (strcmp(argv[a], "nohuman") == 0) sim.humanFaction = 4;
     printf("stage %s, scenery set %u\n", argv[2], game.world.scenerySet);
     report(&game, &sim, "start");
 
@@ -127,6 +131,7 @@ int main(int argc, char **argv) {
     for (int a = 4; a < argc; a++) {
         unsigned col = 0, row = 0;
         if (strcmp(argv[a], "map") == 0) continue;
+        if (strcmp(argv[a], "nohuman") == 0) continue;
         if (sscanf(argv[a], "clear:%u,%u", &col, &row) == 2) {
             // What a player does: gather the army, point it at a square of
             // scenery with the clearing order, and watch.
@@ -184,6 +189,26 @@ int main(int argc, char **argv) {
     report(&game, &sim, "end");
     for (int a = 4; a < argc; a++)
         if (strcmp(argv[a], "map") == 0) drawMap(&game);
+    // What every live unit is carrying, per country: a country whose units
+    // all sit on one order is a country that has stopped playing.
+    for (unsigned f = 0; f < FACTION_COUNT; f++) {
+        unsigned tally[16];
+        memset(tally, 0, sizeof tally);
+        unsigned live = 0, routed = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++) {
+            const Entity *e = &game.entities[i];
+            if (e->flags & 0x80) continue;
+            if (e->faction != f) continue;
+            live++;
+            tally[e->at0d & 0x0f]++;
+            if (e->at18 != 0x1f0) routed++;
+        }
+        if (!live) continue;
+        printf("  faction %u  live %2u  walking %2u  orders", f, live, routed);
+        for (int o = 0; o < 16; o++)
+            if (tally[o]) printf("  %d:%u", o, tally[o]);
+        putchar(10);
+    }
     worldFree(&game.world);
     return 0;
 }

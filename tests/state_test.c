@@ -1099,11 +1099,13 @@ int main(void) {
                         // Send them to a cell one of them can reach, and see a
                         // route appear.
                         int sent = 0, routed = 0;
+                        int sentCol = -1, sentRow = -1;
                         for (int col = 4; col < 44 && !sent; col += 5)
                             for (int row = 4; row < 44 && !sent; row += 5) {
                                 if (game.world.cells[WORLD_INDEX(col, row)]
                                         .terrain >= 0x30) continue;
                                 sent = simOrderSelected(&sim, 8, 0, col, row);
+                                if (sent) { sentCol = col; sentRow = row; }
                             }
                         expect("an order reaches somebody", sent > 0, 1);
                         for (int i = 0; i < ENTITY_COUNT; i++)
@@ -1132,6 +1134,12 @@ int main(void) {
                                 // so it came from 00405000 rather than
                                 // 00405250 - those are the routes this checks.
                                 if (e->at18 == 0x1f0 || e->at14 < 4) continue;
+                                // 00421ae0's tail lets any idle unit find work
+                                // of its own, so most routes on the board were
+                                // never aimed by this test.  Only the ones
+                                // pointing where the order pointed count.
+                                if (e->target[0] != sentCol ||
+                                    e->target[1] != sentRow) continue;
                                 int c = e->position[0], r = e->position[1];
                                 for (unsigned k = 0; k < e->at14; k++) {
                                     c += sx[e->route[k] & 7];
@@ -1216,6 +1224,34 @@ int main(void) {
                             if (e->at0d & 0x20) continue;
                             mine = i;
                             break;
+                        }
+                        // A unit that raises a settlement it cannot afford
+                        // spends itself doing it, and now that the player's
+                        // own units find work of their own there may be none
+                        // left by here.  One is put down for the check.
+                        if (mine < 0) {
+                            for (int i = 1; i < ENTITY_COUNT && mine < 0; i++)
+                                if (game.entities[i].flags & 0x80) mine = i;
+                            Entity *e = &game.entities[mine];
+                            memset(e, 0, sizeof *e);
+                            e->faction = (unsigned char)sim.humanFaction;
+                            e->at08 = 4000;
+                            e->at0c = 6;
+                            e->at0d = 1;
+                            e->at0f = 10;
+                            e->at18 = 0x1f0;
+                            for (int i = 0; i < WORLD_CELLS && mine >= 0; i++)
+                                if (game.world.cells[i].occupant == 0x40 &&
+                                    game.world.cells[i].terrain < 0x30) {
+                                    e->position[0] = (unsigned char)(i / WORLD_GRID);
+                                    e->position[1] = (unsigned char)(i % WORLD_GRID);
+                                    e->target[0] = e->position[0];
+                                    e->target[1] = e->position[1];
+                                    game.world.cells[i].occupant = (unsigned char)mine;
+                                    break;
+                                }
+                            printf("  (the player had none left; put one at"
+                                   " %u,%u)\n", e->position[0], e->position[1]);
                         }
                         expect("the player has a unit to choose", mine >= 0, 1);
                         if (mine >= 0) {
