@@ -364,7 +364,8 @@ createLordMonarch().then(function (M) {
   function fitView() {
     var stage = document.getElementById('stage');
     var w = Math.max(320, Math.min(800, Math.floor(stage.clientWidth)));
-    var h = Math.max(240, Math.min(800, Math.floor(stage.clientHeight)));
+    var bar = M._lm_bar_height ? M._lm_bar_height() : 0;
+    var h = Math.max(240, Math.min(780, Math.floor(stage.clientHeight) - bar));
     M._lm_set_view(w, h);
     W = M._lm_width();
     H = M._lm_height();
@@ -772,8 +773,41 @@ createLordMonarch().then(function (M) {
   var dragFrom = null;          // a left-drag gathers an army
   var dragTo = null;
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  // What the host still owns: loading and saving, and the two boxes that say
+  // what happened.  Everything else in MENU 101 the game does itself.
+  function hostCommand(id) {
+    if (id === 40051) { document.getElementById('loadBtn').onclick(); return; }
+    if (id === 40021) { document.getElementById('saveBtn').onclick(); return; }
+    if (id === 40020 || id === 40117) {
+      say('面は上の 前/次 で選べます');
+      return;
+    }
+    if (id === 40111) { fitView(); say('窓を並べ直しました'); return; }
+    if (id === 40037) {
+      say('部隊をドラッグかクリックで選び、行かせたいマスをクリックすると' +
+          'そのマスに出せる命令が出ます');
+      return;
+    }
+    if (id === 40055) { say('Lord Monarch Online - 移植版'); return; }
+    if (id === 60001 || id === 60002 || id === 60003) {
+      say('その窓はページの右側に出ています');
+      return;
+    }
+    if (id === 60005) { say('道具箱の出し入れは未実装です'); return; }
+  }
+
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
+    // The menu bar, which is the game's own and drawn in the canvas: a click
+    // there never reaches the map.
+    var b = viewPoint(e);
+    var cmd = M._lm_bar_click(b[0], b[1]);
+    if (cmd >= 0) {
+      if (cmd > 0 && !M._lm_command(cmd)) hostCommand(cmd);
+      if (cmd > 0) refreshPanel();
+      e.preventDefault();
+      return;
+    }
     if (M._lm_menu_up()) {
       var q = viewPoint(e);
       var took = M._lm_menu_click(q[0], q[1]);
@@ -868,6 +902,7 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
+    if (M._lm_bar_hover(p[0], p[1])) return;
     if (M._lm_menu_up()) {
       M._lm_menu_hover(p[0], p[1]);
       return;

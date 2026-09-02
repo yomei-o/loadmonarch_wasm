@@ -62,6 +62,20 @@ int main(int argc, char **argv) {
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
     renderStatus(&game, &surface);
 
+    // bar:<n> draws MENU 101 across the top with its nth menu dropped, which
+    // is the only way to look at the chrome without opening a window.
+    for (int a = 6; a < argc; a++) {
+        int which = -1;
+        if (sscanf(argv[a], "bar:%d", &which) != 1) continue;
+        MenuBar bar;
+        uiBarInit(&bar);
+        bar.open = which;
+        bar.hotMenu = which;
+        bar.hotItem = 0;
+        uiBarDraw(&surface, &game, 1, &bar);
+        printf("menu bar with menu %d down\n", which);
+    }
+
     // menu:<col>,<row> opens 00423940's order menu over the picture, at the
     // place the pointer would be for that square, so the chrome can be looked
     // at against the map it sits on.

@@ -217,3 +217,236 @@ int uiOrderClick(OrderMenu *menu, const GameState *game, int x, int y,
     menu->hot = r;
     return 0;
 }
+
+/* ------------------------------------------------------------ the menu bar */
+
+// MENU 101 and the string table beside it, out of the executable's .rsrc.  The
+// submenus the original nests - Load Map, Leader Position, Resize Map - are
+// spelled out in their parent here, because a menu bar with one level of
+// dropdown is the whole of what the game needs and a second level is a lot of
+// hit-testing for two items.
+//
+// enabled = 0 draws greyed: the command is in the original and this port has
+// nothing to do for it yet.
+static const BarMenu kBar[UI_MENU_MAX] = {
+    {"System", {
+        {"Load",              40051, 1, 0},
+        {"Save",              40021, 1, 0},
+        {"Load Quest Map",    40020, 1, 0},
+        {"Load Single Map",   40117, 1, 0},
+        {NULL, 0, 0, 0},
+        {"Restart",           40110, 1, 0},
+        {"New",               40114, 1, 0},
+        {NULL, 0, 0, 0},
+        {"Quit",              40044, 0, 0},
+    }, 9},
+    {"Controls", {
+        {"Start",             40045, 1, 1},
+        {"Pause",             40030, 1, 1},
+        {NULL, 0, 0, 0},
+        {"Small",             40048, 1, 1},
+        {"Medium",            40049, 1, 1},
+        {"Large",             40050, 1, 1},
+        {NULL, 0, 0, 0},
+        {"Alliance Setting",  40012, 0, 0},
+        {"System Setting",    40033, 0, 0},
+        {"Sound Setting",     40116, 0, 0},
+    }, 10},
+    {"Display", {
+        {"Unit Window",       60001, 1, 1},
+        {"Progress Window",   60002, 1, 1},
+        {"Graph Window",      60003, 1, 1},
+        {NULL, 0, 0, 0},
+        {"Hide Tool Bar",     60005, 1, 1},
+        {"Hide Title Bar",    40108, 0, 0},
+        {"Float Tool Bar",    40109, 0, 0},
+        {NULL, 0, 0, 0},
+        {"Set Windows to default", 40111, 1, 0},
+    }, 9},
+    {"Orders", {
+        {"Overall Order(For new units)", 40062, 1, 0},
+        {"Overall Order(Override all)",  40061, 1, 0},
+        {NULL, 0, 0, 0},
+        {"Recall Leader",     40113, 1, 0},
+        {"Leader Position",   40119, 0, 0},
+        {NULL, 0, 0, 0},
+        {"Default Orders",    40038, 1, 0},
+    }, 7},
+    {"Help", {
+        {"Quick Rules",       40037, 1, 0},
+        {"Version",           40055, 1, 0},
+    }, 2},
+};
+
+void uiBarInit(MenuBar *bar) {
+    memset(bar, 0, sizeof *bar);
+    bar->open = -1;
+    bar->hotMenu = -1;
+    bar->hotItem = -1;
+}
+
+int uiBarOpen(const MenuBar *bar) { return bar->open >= 0; }
+
+// Where each title sits.  Measured rather than stored, so the wording can
+// change with the release without moving anything.
+static void barPlaces(int *x) {
+    int at = 4;
+    for (int m = 0; m < UI_MENU_MAX; m++) {
+        x[m] = at;
+        at += fontTextWidth(kBar[m].text) + 12;
+    }
+    x[UI_MENU_MAX] = at;
+}
+
+static int barTitleAt(const int *x, int px, int py) {
+    if (py < 0 || py >= UI_BAR_H) return -1;
+    for (int m = 0; m < UI_MENU_MAX; m++)
+        if (px >= x[m] - 4 && px < x[m + 1] - 4) return m;
+    return -1;
+}
+
+static int dropWidth(int menu) {
+    int widest = 0;
+    for (int i = 0; i < kBar[menu].count; i++) {
+        const char *t = kBar[menu].item[i].text;
+        if (!t) continue;
+        const int w = fontTextWidth(t);
+        if (w > widest) widest = w;
+    }
+    return widest + 40;
+}
+
+static int dropHeight(int menu) {
+    int h = 4;
+    for (int i = 0; i < kBar[menu].count; i++)
+        h += kBar[menu].item[i].text ? UI_ITEM_H : 6;
+    return h;
+}
+
+static int dropItemAt(int menu, const int *x, int px, int py) {
+    if (px < x[menu] - 4 || px >= x[menu] - 4 + dropWidth(menu)) return -1;
+    int at = UI_BAR_H + 2;
+    for (int i = 0; i < kBar[menu].count; i++) {
+        const int h = kBar[menu].item[i].text ? UI_ITEM_H : 6;
+        if (py >= at && py < at + h) return kBar[menu].item[i].text ? i : -1;
+        at += h;
+    }
+    return -1;
+}
+
+// What carries a tick just now.  The original ticks the map size that is on,
+// the windows that are showing, and Start or Pause depending on which way the
+// clock is going.
+static int barTicked(int running, unsigned command) {
+    switch (command) {
+    case 40045: return running;
+    case 40030: return !running;
+    default: return 0;
+    }
+}
+
+void uiBarDraw(Surface *out, const GameState *game, int running,
+               const MenuBar *bar) {
+    (void)game;
+    int x[UI_MENU_MAX + 1];
+    barPlaces(x);
+
+    fill(out, 0, 0, out->width, UI_BAR_H, (unsigned char)UI_FACE);
+    fill(out, 0, UI_BAR_H - 1, out->width, 1, (unsigned char)UI_SHADOW);
+    for (int m = 0; m < UI_MENU_MAX; m++) {
+        const int lit = (m == bar->open) || (m == bar->hotMenu);
+        if (lit)
+            fill(out, x[m] - 4, 1, x[m + 1] - x[m], UI_BAR_H - 2,
+                 (unsigned char)UI_PICK);
+        fontDrawText(out, x[m], 2,
+                     (unsigned char)(lit ? UI_PICK_TEXT : UI_DARK),
+                     kBar[m].text);
+    }
+    if (bar->open < 0) return;
+
+    const int menu = bar->open;
+    const int w = dropWidth(menu), h = dropHeight(menu);
+    raised(out, x[menu] - 4, UI_BAR_H, w, h);
+    int at = UI_BAR_H + 2;
+    for (int i = 0; i < kBar[menu].count; i++) {
+        const BarItem *item = &kBar[menu].item[i];
+        if (!item->text) {
+            fill(out, x[menu], at + 2, w - 12, 1, (unsigned char)UI_SHADOW);
+            fill(out, x[menu], at + 3, w - 12, 1, (unsigned char)UI_LIGHT);
+            at += 6;
+            continue;
+        }
+        const int picked = (i == bar->hotItem) && item->enabled;
+        if (picked)
+            fill(out, x[menu] - 2, at, w - 4, UI_ITEM_H,
+                 (unsigned char)UI_PICK);
+        unsigned char ink = (unsigned char)UI_DARK;
+        if (!item->enabled) ink = (unsigned char)UI_GREY_TEXT;
+        else if (picked) ink = (unsigned char)UI_PICK_TEXT;
+        fontDrawText(out, x[menu] + 16, at + 1, ink, item->text);
+        if (item->tick && barTicked(running, item->command)) {
+            // A tick, drawn rather than taken from a font: two strokes.
+            for (int k = 0; k < 4; k++)
+                fill(out, x[menu] + 3 + k, at + 8 + k, 1, 2, ink);
+            for (int k = 0; k < 6; k++)
+                fill(out, x[menu] + 7 + k, at + 10 - k, 1, 2, ink);
+        }
+        at += UI_ITEM_H;
+    }
+}
+
+int uiBarHover(MenuBar *bar, int x, int y) {
+    int places[UI_MENU_MAX + 1];
+    barPlaces(places);
+    const int title = barTitleAt(places, x, y);
+    if (title >= 0) {
+        bar->hotMenu = title;
+        bar->hotItem = -1;
+        // Sliding along the bar with a menu down opens the next one, which is
+        // what a menu bar does.
+        if (bar->open >= 0) bar->open = title;
+        return 1;
+    }
+    bar->hotMenu = -1;
+    if (bar->open < 0) return y < UI_BAR_H;
+    bar->hotItem = dropItemAt(bar->open, places, x, y);
+    return bar->hotItem >= 0 ||
+           (x >= places[bar->open] - 4 &&
+            x < places[bar->open] - 4 + dropWidth(bar->open) &&
+            y < UI_BAR_H + dropHeight(bar->open));
+}
+
+unsigned uiBarClick(MenuBar *bar, int x, int y, int *inside) {
+    int places[UI_MENU_MAX + 1];
+    barPlaces(places);
+    *inside = 0;
+
+    const int title = barTitleAt(places, x, y);
+    if (title >= 0) {
+        *inside = 1;
+        bar->open = (bar->open == title) ? -1 : title;
+        bar->hotItem = -1;
+        return 0;
+    }
+    if (y < UI_BAR_H) {                     // the bar, but not on a title
+        *inside = 1;
+        bar->open = -1;
+        return 0;
+    }
+    if (bar->open < 0) return 0;            // nothing of ours down there
+
+    const int item = dropItemAt(bar->open, places, x, y);
+    const int over = x >= places[bar->open] - 4 &&
+                     x < places[bar->open] - 4 + dropWidth(bar->open) &&
+                     y < UI_BAR_H + dropHeight(bar->open);
+    if (!over) {                            // a click away closes it
+        bar->open = -1;
+        return 0;
+    }
+    *inside = 1;
+    if (item < 0) return 0;
+    const BarItem *chosen = &kBar[bar->open].item[item];
+    bar->open = -1;
+    bar->hotItem = -1;
+    return chosen->enabled ? chosen->command : 0;
+}

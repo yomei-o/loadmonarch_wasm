@@ -67,4 +67,44 @@ void uiOrderHover(OrderMenu *menu, const GameState *game, int x, int y);
 int uiOrderClick(OrderMenu *menu, const GameState *game, int x, int y,
                  unsigned *order, int *strength);
 
+
+/* ------------------------------------------------------------ the menu bar */
+
+// MENU 101 out of the executable's .rsrc, item for item and command for
+// command, with the wording from its string table.  A command the port cannot
+// carry out yet is marked so it draws greyed, the way Windows draws one.
+#define UI_BAR_H 20
+#define UI_MENU_MAX 5
+#define UI_MENU_ITEMS 12
+
+typedef struct {
+    const char *text;           // NULL for a separator
+    unsigned command;
+    unsigned char enabled;
+    unsigned char tick;         // 1 when this item can carry a tick
+} BarItem;
+
+typedef struct {
+    const char *text;
+    BarItem item[UI_MENU_ITEMS];
+    int count;
+} BarMenu;
+
+typedef struct {
+    int open;                   // which menu is down, or -1
+    int hotMenu;                // which title the pointer is over, or -1
+    int hotItem;
+    int x[UI_MENU_MAX + 1];     // where each title starts, measured on draw
+    int width;                  // of the open menu
+} MenuBar;
+
+void uiBarInit(MenuBar *bar);
+// `running` is what the host's own clock is doing, which is what ticks
+// Start or Pause.
+void uiBarDraw(Surface *out, const GameState *game, int running,
+               const MenuBar *bar);
+int uiBarHover(MenuBar *bar, int x, int y);
+unsigned uiBarClick(MenuBar *bar, int x, int y, int *inside);
+int uiBarOpen(const MenuBar *bar);
+
 #endif

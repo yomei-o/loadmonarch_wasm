@@ -57,7 +57,9 @@ char g_message[256];
 // the native build hands to a DIB section.
 unsigned char g_indices[VIEW_MAX_W * VIEW_MAX_H];
 unsigned g_pixels[VIEW_MAX_W * VIEW_MAX_H];
-Surface g_surface;
+Surface g_surface;              // the map, which starts under the menu bar
+Surface g_screen;               // all of it, bar included
+MenuBar g_bar;
 int g_viewW = 640, g_viewH = 480;
 
 void clampView() {
@@ -127,22 +129,32 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
-    surfaceInit(&g_surface, g_viewW, g_viewH, g_indices);
+    surfaceInit(&g_screen, g_viewW, g_viewH + UI_BAR_H, g_indices);
+    surfaceInit(&g_surface, g_viewW, g_viewH,
+                g_indices + (size_t)UI_BAR_H * g_viewW);
     return stageCount();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *lm_message(void) { return g_message; }
 EMSCRIPTEN_KEEPALIVE int lm_width(void) { return g_viewW; }
-EMSCRIPTEN_KEEPALIVE int lm_height(void) { return g_viewH; }
+EMSCRIPTEN_KEEPALIVE int lm_height(void) {
+    return g_viewH + UI_BAR_H;
+}
+
+// How much of the top belongs to the chrome, so a host can leave room for it.
+EMSCRIPTEN_KEEPALIVE int lm_bar_height(void) { return UI_BAR_H; }
 
 // How big a view to draw.  The original's is fixed at what a 1997 screen had;
 // a page can have as much as it can show, up to the whole 48-cell map at the
 // middle zoom.
 EMSCRIPTEN_KEEPALIVE void lm_set_view(int w, int h) {
-    if (w < 160 || h < 120 || w > VIEW_MAX_W || h > VIEW_MAX_H) return;
+    if (w < 160 || h < 120 || w > VIEW_MAX_W || h > VIEW_MAX_H - UI_BAR_H)
+        return;
     g_viewW = w;
     g_viewH = h;
-    surfaceInit(&g_surface, g_viewW, g_viewH, g_indices);
+    surfaceInit(&g_screen, g_viewW, g_viewH + UI_BAR_H, g_indices);
+    surfaceInit(&g_surface, g_viewW, g_viewH,
+                g_indices + (size_t)UI_BAR_H * g_viewW);
     clampView();
 }
 EMSCRIPTEN_KEEPALIVE const char *lm_stage_name(void) {
@@ -170,12 +182,13 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderStatus(&g_game, &g_surface);
-    uiOrderDraw(&g_surface, &g_game, &g_menu);      // 00423940's own menu
+    uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
+    uiBarDraw(&g_screen, &g_game, g_running, &g_bar);   // MENU 101
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
     unsigned char colours[256][3];
     renderPalette(&g_game, g_zoom, colours);
-    for (int i = 0; i < g_viewW * g_viewH; i++) {
+    for (int i = 0; i < g_viewW * (g_viewH + UI_BAR_H); i++) {
         const unsigned char *rgb = colours[g_indices[i]];
         g_pixels[i] = 0xff000000u | (unsigned)rgb[0] |
                       ((unsigned)rgb[1] << 8) | ((unsigned)rgb[2] << 16);
@@ -229,7 +242,7 @@ EMSCRIPTEN_KEEPALIVE void lm_set_cursor(int x, int y) {
         stateMoveCursor(&g_game, -1, -1);
         return;
     }
-    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y) / ts);
+    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y - UI_BAR_H) / ts);
 }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_col(void) { return g_game.cursorCol; }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_row(void) { return g_game.cursorRow; }
@@ -242,7 +255,7 @@ EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     g_lastCol = (unsigned)((g_viewX + x) / ts);
-    g_lastRow = (unsigned)((g_viewY + y) / ts);
+    g_lastRow = (unsigned)((g_viewY + y - UI_BAR_H) / ts);
     const unsigned actor = simHumanActor(&g_sim);
     g_lastAction = actor < ENTITY_COUNT
         ? (int)simBuildUnitCell(&g_sim, actor, g_lastCol, g_lastRow)
@@ -313,7 +326,7 @@ EMSCRIPTEN_KEEPALIVE int lm_select_at(int x, int y, int force) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y) / ts;
+    const int row = (g_viewY + y - UI_BAR_H) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     const unsigned char slot =
         g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
@@ -329,8 +342,8 @@ EMSCRIPTEN_KEEPALIVE int lm_select_rect(int x0, int y0, int x1, int y1,
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     int c0 = (g_viewX + (x0 < x1 ? x0 : x1)) / ts;
     int c1 = (g_viewX + (x0 < x1 ? x1 : x0)) / ts;
-    int r0 = (g_viewY + (y0 < y1 ? y0 : y1)) / ts;
-    int r1 = (g_viewY + (y0 < y1 ? y1 : y0)) / ts;
+    int r0 = (g_viewY + (y0 < y1 ? y0 : y1) - UI_BAR_H) / ts;
+    int r1 = (g_viewY + (y0 < y1 ? y1 : y0) - UI_BAR_H) / ts;
     if (c0 < 0) c0 = 0;
     if (r0 < 0) r0 = 0;
     if (c1 > WORLD_GRID - 1) c1 = WORLD_GRID - 1;
@@ -354,7 +367,7 @@ EMSCRIPTEN_KEEPALIVE int lm_unit_here(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y) / ts;
+    const int row = (g_viewY + y - UI_BAR_H) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     const unsigned char slot =
         g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
@@ -380,7 +393,7 @@ EMSCRIPTEN_KEEPALIVE int lm_aim(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y) / ts;
+    const int row = (g_viewY + y - UI_BAR_H) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     return simAimSelection(&g_sim, col, row);
 }
@@ -391,7 +404,7 @@ EMSCRIPTEN_KEEPALIVE int lm_order_at(int order, int modifier, int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y) / ts;
+    const int row = (g_viewY + y - UI_BAR_H) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     return simOrderSelected(&g_sim, (unsigned)order, modifier, col, row);
 }
@@ -409,8 +422,9 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_open(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y) / ts;
-    return uiOrderOpen(&g_menu, &g_game, col, row, x, y, g_viewW, g_viewH);
+    const int row = (g_viewY + y - UI_BAR_H) / ts;
+    return uiOrderOpen(&g_menu, &g_game, col, row, x, y, g_viewW,
+                       g_viewH + UI_BAR_H);
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_menu_up(void) { return g_menu.open; }
@@ -431,6 +445,57 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_click(int x, int y) {
     if (done < 0) return -1;
     if (done == 0) return 0;
     return simOrderSelected(&g_sim, order, strength, col, row);
+}
+
+/* -------------------------------------------------- MENU 101, the menu bar */
+
+// A click on the bar or in a dropped menu.  Answers the command number the
+// original's menu would have sent, 0 for "the click was ours but nothing came
+// of it", and leaves *inside zero when the click was not on the chrome at all
+// - which is how a host knows to pass it to the map instead.
+EMSCRIPTEN_KEEPALIVE int lm_bar_click(int x, int y) {
+    int inside = 0;
+    const unsigned command = uiBarClick(&g_bar, x, y, &inside);
+    if (!inside && !command) return -1;
+    return (int)command;
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_bar_hover(int x, int y) {
+    return uiBarHover(&g_bar, x, y);
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_bar_open(void) { return uiBarOpen(&g_bar); }
+
+// Carries out the ones that are the game's own business.  Non-zero when it
+// did; the rest - loading, saving, the help - belong to the host, which reads
+// the number and does its own thing.
+EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
+    switch (command) {
+    case 40045:                                     // Start
+        g_running = 1;
+        return 1;
+    case 40030:                                     // Pause
+        g_running = 0;
+        return 1;
+    case 40048: lm_set_zoom(0); return 1;           // Resize Map: Small
+    case 40049: lm_set_zoom(1); return 1;           // Medium
+    case 40050: lm_set_zoom(2); return 1;           // Large
+    case 40110:                                     // Restart
+        return lm_load_stage(lm_stage());
+    case 40114:                                     // New
+        return lm_load_stage(0);
+    case 40113:                                     // Recall Leader
+        return simRecallLeader(&g_sim, g_sim.humanFaction);
+    case 40062:                                     // Overall Order, new units
+        return lm_select_all(0);
+    case 40061:                                     // Overall Order, all
+        return lm_select_all(1);
+    case 40038:                                     // Default Orders
+        g_sim.pendingOrder = 1u;
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_last_action(void) { return g_lastAction; }

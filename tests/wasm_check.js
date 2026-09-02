@@ -52,7 +52,9 @@ createLordMonarch().then((M) => {
     // A frame comes back as RGBA the canvas can take, and it is not blank.
     const W = M._lm_width(), H = M._lm_height();
     expect('view width', W, 640);
-    expect('view height', H, 480);
+    // The map is 480 tall and the menu bar sits above it, so the surface the
+    // page shows is taller than the view.
+    expect('view height', H, 480 + M._lm_bar_height());
     const frame = M._lm_frame();
     const pixels = new Uint8Array(M.HEAPU8.buffer, frame, W * H * 4);
     let distinct = new Set();
