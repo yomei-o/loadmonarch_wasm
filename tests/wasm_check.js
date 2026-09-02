@@ -32,7 +32,11 @@ createLordMonarch().then((M) => {
     expect('first stage', M.UTF8ToString(M._lm_stage_name()), 'B_000.MAP');
     expect('its scenery set', M._lm_scenery(), 10);
     expect('starting funds', M._lm_funds(0), 5000);
-    expect('claimed ground on B_000', M._lm_count(0, 1), 242);
+    // 241 rather than the map's 242: seeding turns one of them into the first
+    // settlement, on the seven maps that ship without any.
+    expect('claimed ground on B_000', M._lm_count(0, 1), 241);
+    expect('and it has a settlement to start from', M._lm_count(0, 0),
+           (n) => n > 0);
 
     // A frame comes back as RGBA the canvas can take, and it is not blank.
     const W = M._lm_width(), H = M._lm_height();

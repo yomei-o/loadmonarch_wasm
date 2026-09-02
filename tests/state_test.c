@@ -71,7 +71,10 @@ int main(void) {
     expect("cell owner after place", state.world.cells[0].occupant, 0x40);
     expect("blocked at terrain 0x2f", state.world.cells[0x2f].blocked, 0);
     expect("blocked at terrain 0x30", state.world.cells[0x30].blocked, 1);
-    // Every playable faction starts with no strength, so all four are marked.
+    // The stage start no longer marks anybody - see stateStartStage - but the
+    // marking itself still does what it says.
+    expect("nobody is marked at the start", state.factions[0].flags & 0x10, 0);
+    stateMarkDefeated(&state);
     expect("defeated flag with no strength", state.factions[0].flags & 0x10,
            0x10);
     expect("fifth faction untouched", state.factions[4].flags & 0x10, 0);
@@ -680,6 +683,46 @@ int main(void) {
                             if (n > highest) highest = n;
                         }
         expect("no sprite number leaves the bank", highest < 0xcc, 1);
+    }
+
+    // 0041f0d0 and 0041f4c0: a country falls, and the stage ends.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim end;
+        simInit(&end, &state);
+        end.humanFaction = 0;
+
+        // Give faction 1 a castle, a purse and a leader to lose.
+        state.factions[1].at08[0] = 12;
+        state.factions[1].at08[1] = 12;
+        state.factions[1].funds = 4000;
+        state.factions[1].at1f = 0;             // faction 0 inherits
+        state.factions[1].flags |= 0x10;        // nothing left
+        state.world.cells[WORLD_INDEX(12, 12)].terrain = 0x15;
+        state.world.cells[WORLD_INDEX(13, 12)].terrain = 9;
+        state.factions[0].funds = 1000;
+
+        simConquerFaction(&end, 1);
+        expect("the fallen country is out", state.factions[1].flags & 0x40,
+               0x40);
+        expect("its castle is gone",
+               state.world.cells[WORLD_INDEX(12, 12)].terrain, 0);
+        expect("and the ground beside it",
+               state.world.cells[WORLD_INDEX(13, 12)].terrain, 0);
+        expect("its purse went to the heir", state.factions[0].funds, 5000);
+        expect("and it has none left", state.factions[1].funds, 0);
+
+        // Three out and the player still in is a win; the player out is a
+        // loss, whatever anyone else has done.
+        expect("still playing", simStageOutcome(&end), 0);
+        for (int f = 1; f < 4; f++)
+            state.factions[f].flags |= 0x40 | 0x10 | 1;
+        expect("three gone and the player left is a win",
+               simStageOutcome(&end), 1);
+        state.factions[0].flags |= 0x40;
+        expect("the player out is a loss", simStageOutcome(&end), 2);
     }
 
     // 00422290: a unit born under a standing order looks across the whole map

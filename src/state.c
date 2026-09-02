@@ -209,5 +209,12 @@ void stateStartStage(GameState *state) {
     stateResetEntitiesAndFactions(state);
     statePlaceEntities(state);
     stateRecomputeTotals(state);
-    stateMarkDefeated(state);
+
+    // The original's chain ends with the marking too, and can afford to: by
+    // the time it runs, the scenario it loaded has already put every country's
+    // leader and opening units on the board, so nobody has zero strength.
+    // Here the leaders are seeded afterwards, so marking now would condemn all
+    // four before the stage began - and 0041f090 would then wipe them out on
+    // the first tick.  The tick does the marking, once there is somebody to
+    // mark.
 }

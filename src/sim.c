@@ -493,6 +493,9 @@ void simStep(Sim *sim) {
     // is only marked when it really is finished.
     stateRecomputeTotals(state);
     stateMarkDefeated(state);
+    simCheckConquest(sim);              // 0041f090, the same tick
+    // 0041f4c0 recomputes the shares every fourth tick.
+    if ((state->frame & 3) == 3) stateComputeAreas(state);
     sim->frames++;
 }
 
@@ -502,6 +505,74 @@ void simStep(Sim *sim) {
 static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
 static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
 #define DIRECTION_DEFAULT 5
+
+/* ---------------------------------------------------- the end of a country */
+
+// 0041f0d0.  Finishes a country off.  Its leader dies if it still has one, the
+// castle and the eight cells round it are wiped back to bare ground, and what
+// is left in its purse goes to whoever +0x1f names - so taking a country pays.
+void simConquerFaction(Sim *sim, unsigned faction) {
+    GameState *state = sim->state;
+    if (faction >= PLAYABLE_FACTIONS) return;
+    Faction *gone = &state->factions[faction];
+
+    if ((gone->flags & 1) == 0) {
+        // Bit 0 not set means the leader is still standing; it does not
+        // survive the country.
+        const unsigned slot = gone->at0c;
+        if (slot < ENTITY_COUNT) simMarkDying(state, slot, 4);
+    }
+
+    const int col = gone->at08[0], row = gone->at08[1];
+    for (int dc = -1; dc <= 1; dc++)
+        for (int dr = -1; dr <= 1; dr++) {
+            const int c = col + dc, r = row + dr;
+            if (inBounds(c, r))
+                state->world.cells[WORLD_INDEX(c, r)].terrain = 0;
+        }
+
+    const unsigned char heir = gone->at1f;
+    if (heir < PLAYABLE_FACTIONS) {
+        Faction *to = &state->factions[heir];
+        to->funds += gone->funds;
+        if (to->funds > FACTION_STRENGTH_CAP) to->funds = FACTION_STRENGTH_CAP;
+    }
+    gone->funds = 0;
+    gone->taxRate = 0;
+    gone->flags |= 0x40;
+    stateMarkBlocked(state);
+}
+
+// 0041f090.  Once a tick: any country not yet out that has lost its leader
+// (bit 0) or its strength (bit 4) is finished off.
+void simCheckConquest(Sim *sim) {
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        const unsigned flags = sim->state->factions[f].flags;
+        if (flags & 0x40) continue;
+        if ((flags & 1) || (flags & 0x10)) simConquerFaction(sim, f);
+    }
+}
+
+// 0041f4c0's decision.  The stage is over when the player is out, or when the
+// player is in and three of the four countries are not.  0 while it is still
+// being played.
+//
+// The original also refuses to end while any cell still carries something in
+// +0x14 - the field the cursor is parked in - which is not understood and is
+// left out here.
+int simStageOutcome(Sim *sim) {
+    const GameState *state = sim->state;
+    if (sim->humanFaction < PLAYABLE_FACTIONS &&
+        (state->factions[sim->humanFaction].flags & 0x40))
+        return 2;
+
+    int out = 0;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        const unsigned flags = state->factions[f].flags;
+        if ((flags & 0x40) && (flags & 1) && (flags & 0x10)) out++;
+    }
+    return out >= 3 ? 1 : 0;
+}
 
 /* ------------------------------------------------ looking for somewhere */
 
@@ -1549,6 +1620,49 @@ void simSeedLeaders(Sim *sim) {
             state->factions[faction].at08[0] = entity->position[0];
             state->factions[faction].at08[1] = entity->position[1];
         }
+    }
+
+    // And one settlement each, where a map does not supply any.
+    //
+    // Seven of the fifteen maps start every country with a castle and nothing
+    // else, and by 0041b370 a country with no settlement has no strength at
+    // all - a leader's own strength is not counted.  0041b370 then marks it,
+    // and 0041f090 finishes it off on the first tick.  Taken literally, those
+    // seven maps end before they begin.
+    //
+    // That is the third thing pointing the same way: nothing writes the
+    // faction record's capital or leader either.  A .MAP is not a whole stage
+    // - the original loads a scenario that supplies the entities and those
+    // fields, and this port has never had one.  So this hands each country the
+    // first settlement a player would build anyway.  Ours, like the rest of
+    // this function.
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        int has = 0;
+        for (int i = 0; i < WORLD_CELLS && !has; i++)
+            if (state->world.cells[i].terrain == (unsigned char)(f + 8)) has = 1;
+        if (has) continue;
+
+        const int col = state->factions[f].at08[0];
+        const int row = state->factions[f].at08[1];
+        if (!inBounds(col, row)) continue;
+        // Outward in rings: a castle covers more than one cell, so its
+        // immediate neighbours are usually castle too.
+        int placed = 0;
+        for (int ring = 1; ring <= 6 && !placed; ring++)
+            for (int dc = -ring; dc <= ring && !placed; dc++)
+                for (int dr = -ring; dr <= ring && !placed; dr++) {
+                    if (dc > -ring && dc < ring && dr > -ring && dr < ring)
+                        continue;               // only the ring's edge
+                    const int c = col + dc, r = row + dr;
+                    if (!inBounds(c, r)) continue;
+                    WorldCell *cell = &state->world.cells[WORLD_INDEX(c, r)];
+                    if (cell->terrain != 0 &&
+                        !(cell->terrain >= 0x0c && cell->terrain < 0x10))
+                        continue;
+                    cell->terrain = (unsigned char)(f + 8);
+                    cell->value = 100;
+                    placed = 1;
+                }
     }
     (void)sim;
 }

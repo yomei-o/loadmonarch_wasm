@@ -91,6 +91,14 @@ void simSeedLeaders(Sim *sim);
 unsigned simHumanActor(const Sim *sim);
 
 
+// 0041f0d0, 0041f090 and 0041f4c0: the end of a country and the end of a
+// stage.  A country that has lost its leader or its strength is finished off -
+// its castle wiped, its purse handed to whoever +0x1f names - and the stage is
+// over when the player is out, or when three of the four are.
+void simConquerFaction(Sim *sim, unsigned faction);
+void simCheckConquest(Sim *sim);
+int simStageOutcome(Sim *sim);      // 0 playing, 1 the player won, 2 lost
+
 // 0041f790.  Puts a balloon over each of the player's units that has something
 // to say: under orders, out of money, too small for the job, or - over the
 // leader - away from home.  Runs every tick and clears the rest.

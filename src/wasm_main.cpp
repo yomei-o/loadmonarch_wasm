@@ -304,6 +304,10 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+// 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
+// outlasted the rest, 2 when the player is out.
+EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }
+
 /* ------------------------------------------- what is under the cursor */
 
 // 00426900, the Unit Window: it shows the cell the cursor is on - its terrain

@@ -169,6 +169,7 @@ createLordMonarch().then(function (M) {
   var drop = document.getElementById('drop');
   var note = document.getElementById('note');
   var loaded = false;
+  var said = false;      // the stage's verdict, announced once
 
   var W = M._lm_width(), H = M._lm_height();
   canvas.width = W;
@@ -275,6 +276,13 @@ createLordMonarch().then(function (M) {
           row(num, M._lm_cursor_value()) +
           row('部隊', unit < 0 ? '-' :
               countryName(M._lm_cursor_unit_faction()) + ' ' + unit);
+    }
+
+    // 0041f4c0 says when a stage is over.
+    var over = M._lm_outcome();
+    if (over && !said) {
+      said = true;
+      say(over === 1 ? countryName(0) + ' の勝利' : countryName(0) + ' は敗れた');
     }
 
     var world = document.querySelector('#world tbody');
@@ -388,6 +396,7 @@ createLordMonarch().then(function (M) {
   });
   function goStage(to) {
     M._lm_load_stage(to);
+    said = false;
     nameOrderButtons();         // another set, another wording
     refreshPanel();
   }
