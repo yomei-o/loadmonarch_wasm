@@ -323,6 +323,8 @@ createLordMonarch().then(function (M) {
     if (over && !said) {
       said = true;
       say(over === 1 ? countryName(0) + ' の勝利' : countryName(0) + ' は敗れた');
+      // The game's own ending picture for a win; the interlude for a loss.
+      showPicture(over === 1 ? 'END' : 'GAKU');
     }
 
     var world = document.querySelector('#world tbody');
