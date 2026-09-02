@@ -11,6 +11,8 @@ for t in bz_test tiles_test map_test data1_test; do
 done
 sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/unit_window.exe    tests/unit_window.c src/world.c src/host.c src/zip.c src/bz.c src/gfx.c
 echo "built tests/unit_window.exe"
+sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/progress_window.exe tests/progress_window.c src/world.c src/host.c src/zip.c src/bz.c src/gfx.c
+echo "built tests/progress_window.exe"
 SIM="src/sim.c src/state.c src/world.c src/render.c src/bz.c src/gfx.c src/host.c src/zip.c"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/state_test.exe     tests/state_test.c $SIM
 echo "built tests/state_test.exe"

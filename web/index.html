@@ -156,6 +156,9 @@
       <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
       <tbody></tbody>
     </table>
+    <h2>PROGRESS WINDOW</h2>
+    <canvas id="progwin" width="176" height="176"
+            style="width:100%;image-rendering:pixelated"></canvas>
     <h2>UNIT WINDOW</h2>
     <canvas id="unitwin" width="176" height="176"
             style="width:100%;image-rendering:pixelated"></canvas>
@@ -250,6 +253,27 @@ createLordMonarch().then(function (M) {
     for (var i = 0; i < n && i < 10; i++)
       blitSheet(g, (i % 10) * 8, (Math.floor(i / 10) + 4) * 16, 8, 16,
                 72 + i * 8, 96);
+  }
+
+  // The Progress Window, the other 176-wide panel on the sheet - rows 288 to
+  // 463, where the border closes cleanly and every fitting sits inside it.
+  // Its slots were measured off the art, and what belongs in each is written
+  // on the panel itself: a money bag beside one, a per-cent sign and a pair of
+  // scales beside another, a sun and an hourglass beside the last two.
+  var progWin = document.getElementById('progwin');
+  var PROG_WIN_TOP = 288;
+
+  function drawProgressWindow() {
+    var g = progWin.getContext('2d');
+    g.clearRect(0, 0, 176, 176);
+    blitSheet(g, 0, PROG_WIN_TOP, 176, 96, 0, 0);
+    blitSheet(g, 0, PROG_WIN_TOP + 96, 176, 80, 0, 96);
+
+    var me = M._lm_human();
+    blitNumber(g, M._lm_funds(me), 80, 40);         // the money bag's slot
+    blitNumber(g, M._lm_tax(me), 144, 40);          // the one marked per cent
+    blitNumber(g, M._lm_days(), 80, 104);           // the sun
+    blitNumber(g, M._lm_days_left(), 144, 104);     // the hourglass
   }
 
   // 00426900's gauge, drawn from the game's own art: up to thirty pieces of
@@ -441,6 +465,7 @@ createLordMonarch().then(function (M) {
     }
 
     drawUnitWindow();
+    drawProgressWindow();
 
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
