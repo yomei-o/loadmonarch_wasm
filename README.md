@@ -1,4 +1,4 @@
-# loadmonarch_wasm
+# lord_monarch_online_wasm
 
 Nihon Falcom の「Lord Monarch Online」(DS7E_WIN) を読み解いて、
 ネイティブ、そしてブラウザで動かすための作業場。
@@ -35,7 +35,7 @@ gcc -O2 -o tests/data1_test.exe tests/data1_test.c src/bz.c
 
 ## ブラウザで動かす
 
-**https://yomei-o.github.io/loadmonarch_wasm/**
+**https://yomei-o.github.io/lord_monarch_online_wasm/**
 
 お手元の `ds7e.zip` をページに落とすと動きます。ゲームのデータはこのリポジトリにも
 ページにも入っていません。読み込んだ zip はブラウザの中だけで扱われ、どこにも
