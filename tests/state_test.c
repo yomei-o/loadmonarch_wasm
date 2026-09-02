@@ -146,7 +146,9 @@ int main(void) {
     }
 
     // 004204f0 and 00401000: turning costs a tick, then the leader steps.
-    // Direction 5 is (+1, +1), the one 0041d690 falls back on.
+    // Direction 5 is (+1, +1) - and it has to be given as a route, because
+    // 00401000 walks only in the branch it takes when it has one.  A king with
+    // nowhere to be faces south and stands.
     memset(&state, 0, sizeof state);
     stateResetEntitiesAndFactions(&state);
     statePlaceEntities(&state);
@@ -158,7 +160,9 @@ int main(void) {
         e->flags = 0;
         e->faction = 0;
         e->at0d = 0x20;                         // the leader bit
-        e->at18 = 0x1f0;                        // no route: direction 5
+        e->at18 = 0;                            // a route, so it walks
+        e->at14 = 8;
+        for (unsigned i = 0; i < 8; i++) e->route[i] = 5;   // south-east
         e->at0c = 0;                            // facing the wrong way
         e->position[0] = 20;
         e->position[1] = 20;
@@ -178,6 +182,7 @@ int main(void) {
         // Scenery stops it, and clears the route of anyone but the player.
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 0x60;
         e->at18 = 0;
+        e->at14 = 8;
         e->route[0] = 5;
         simStepEntities(&walk);
         expect("scenery stopped the step",
@@ -191,6 +196,7 @@ int main(void) {
         state.entities[9].faction = 1;          // an enemy
         state.entities[9].at08 = 5000;
         e->at18 = 0;
+        e->at14 = 8;
         e->route[0] = 5;
         e->at08 = 8000;
         simStepEntities(&walk);
@@ -327,7 +333,7 @@ int main(void) {
         war.humanFaction = 3;
         Entity *a = &state.entities[1];
         a->flags = 0; a->faction = 0; a->at0d = 0x20;
-        a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
+        a->at08 = 4000; a->at0c = 5; a->at18 = 0; a->at14 = 4; a->route[0] = 5;   // walking south-east
         a->position[0] = 15; a->position[1] = 15;
         state.world.cells[WORLD_INDEX(15, 15)].terrain = 0x14;   // on a castle
         state.world.cells[WORLD_INDEX(15, 15)].occupant = 1;
@@ -353,7 +359,7 @@ int main(void) {
         raid.humanFaction = 3;
         Entity *a = &state.entities[1];
         a->flags = 0; a->faction = 0; a->at0d = 0x20;
-        a->at08 = 4000; a->at0c = 5; a->at18 = 0x1f0;
+        a->at08 = 4000; a->at0c = 5; a->at18 = 0; a->at14 = 4; a->route[0] = 5;   // walking south-east
         a->position[0] = 18; a->position[1] = 18;
         state.world.cells[WORLD_INDEX(18, 18)].terrain = 8;   // its own ground
         state.world.cells[WORLD_INDEX(18, 18)].occupant = 1;
@@ -377,7 +383,7 @@ int main(void) {
         join.humanFaction = 3;
         Entity *a = &state.entities[1];
         a->flags = 0; a->faction = 0; a->at0d = 0x20;
-        a->at08 = 1000; a->at0c = 5; a->at18 = 0x1f0;
+        a->at08 = 1000; a->at0c = 5; a->at18 = 0; a->at14 = 4; a->route[0] = 5;   // walking south-east
         a->position[0] = 22; a->position[1] = 22;
         state.world.cells[WORLD_INDEX(22, 22)].terrain = 8;
         state.world.cells[WORLD_INDEX(22, 22)].occupant = 1;

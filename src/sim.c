@@ -1770,6 +1770,8 @@ static void stepPlainUnit(Sim *sim, unsigned slot);     // 00401770, below
 static void stepOrderedUnit(Sim *sim, unsigned slot);   // 00403170, below
 static void stepStandingOrder(Sim *sim, unsigned slot); // 00402bc0, below
 static void fallbackOrder(Sim *sim, unsigned slot);     // 00403100, below
+static void kingDecides(Sim *sim, unsigned slot);       // 00401000's other half
+static int settleAtHome(Sim *sim, unsigned slot);       // 00422110, below
 static int trampleGround(GameState *state, unsigned index, unsigned faction);
 static int payUpkeep(GameState *state, unsigned slot, unsigned index,
                      unsigned faction);
@@ -1938,6 +1940,36 @@ static void stepWalk(Sim *sim, unsigned slot) {
     Entity *entity = &state->entities[slot];
     const unsigned col = entity->position[0];
     const unsigned row = entity->position[1];
+
+    // 00401000 splits on whether the king has anywhere to be.  With a route it
+    // walks, and on the way it notices things; without one it strikes at
+    // whatever is beside it and then - only for the countries the machine
+    // plays - decides what to do next.  The player's king waits to be told.
+    if (entity->at18 == ROUTE_EMPTY) {
+        if (lashOut(sim, slot, col, row)) return;
+        entity->at0c = 6;
+        if (entity->faction != sim->humanFaction) kingDecides(sim, slot);
+        // And that is all a king with nowhere to be does.  00401000 puts the
+        // walking in the other branch entirely, so a king without a route
+        // stands and faces south - it does not amble off in whatever direction
+        // 0041d690 hands back, which is what this port had it doing.
+        return;
+    }
+    if (entity->faction < FACTION_COUNT) {
+        // A king that is out of its castle and standing on a seam of ore tells
+        // the country where it is: the position into +0x20, and flag 4 to say
+        // there is something to say.  Flag 2 is what "out of the castle" means,
+        // and 00423cc0 sets it when the king is sent anywhere else.
+        const unsigned char terrain =
+            state->world.cells[WORLD_INDEX(col, row)].terrain;
+        Faction *mine = &state->factions[entity->faction];
+        if (terrain > 0x1f && terrain < 0x30 && (mine->flags & 2)) {
+            mine->at20[0] = (unsigned char)col;
+            mine->at20[1] = (unsigned char)row;
+            mine->flags |= 4;
+        }
+    }
+
     const unsigned char want = nextDirection(entity);
 
     if (entity->at0c != want) {
@@ -2248,6 +2280,44 @@ static int lookForWork(Sim *sim, unsigned slot) {
 }
 
 /* ------------------------------------------- what the machine plays for */
+
+// 00421660.  The king goes home: a route to the capital, taken only if the
+// king is worth twice the walk.  Getting one clears both the flag that says it
+// is out and the flag that says it has something to report.
+static int kingGoesHome(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+    Faction *mine = &state->factions[faction];
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    const int col = mine->at08[0], row = mine->at08[1];
+    if (!inBounds(col, row)) return 0;
+    const unsigned cost = state->world.cells[WORLD_INDEX(col, row)].cost;
+    if (cost >= FILL_INFINITE) return 0;
+    if (entity->at08 < cost * 2u) return 0;
+    if (simRouteTo(state, slot, col, row) == 0) return 0;
+
+    entity->at0f = 4;
+    mine->flags &= ~2u;
+    mine->flags &= ~4u;
+    return 1;
+}
+
+// 00401000's other half.  A king with nowhere to be tries to go home; if it
+// cannot, it raises the flag that calls its country to it and heads for the
+// nearest settlement instead.  That flag is what 00421140 answers.
+static void kingDecides(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    const unsigned faction = state->entities[slot].faction;
+    if (faction >= FACTION_COUNT) return;
+
+    state->factions[faction].flags &= ~0x20u;
+    if (kingGoesHome(sim, slot)) return;
+    state->factions[faction].flags |= 0x20;
+    settleAtHome(sim, slot);
+}
 
 // 00421140.  Rally to the king: when a country's flags carry 0x20 - which
 // 00401000 sets when the leader wants help - its units head for wherever the
