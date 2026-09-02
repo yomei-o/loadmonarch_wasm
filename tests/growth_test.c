@@ -22,6 +22,41 @@ static unsigned held(const GameState *game, unsigned faction) {
     return n;
 }
 
+// How much of the walking is a unit stepping straight back where it came from.
+//
+// This is the shape of the bug that made the port unplayable once: units in a
+// settled area shuttled between two cells for the length of a stage, because
+// the finder that says where a settlement may go was not asking 0041e670.  It
+// looks like purposeful movement one frame at a time and is obvious over a
+// thousand, so it is measured rather than watched.
+typedef struct {
+    unsigned char here[ENTITY_COUNT][2];
+    unsigned char before[ENTITY_COUNT][2];
+    unsigned char known[ENTITY_COUNT];
+    unsigned long moves, backwards;
+} Wandering;
+
+static void watchWandering(const GameState *game, Wandering *w) {
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        const Entity *e = &game->entities[i];
+        if (e->flags & 0x80) { w->known[i] = 0; continue; }
+        const unsigned char c = e->position[0], r = e->position[1];
+        if (!w->known[i]) {
+            w->known[i] = 1;
+            w->here[i][0] = w->before[i][0] = c;
+            w->here[i][1] = w->before[i][1] = r;
+            continue;
+        }
+        if (c == w->here[i][0] && r == w->here[i][1]) continue;
+        w->moves++;
+        if (c == w->before[i][0] && r == w->before[i][1]) w->backwards++;
+        w->before[i][0] = w->here[i][0];
+        w->before[i][1] = w->here[i][1];
+        w->here[i][0] = c;
+        w->here[i][1] = r;
+    }
+}
+
 int main(int argc, char **argv) {
     static Host host;
     FILE *f = fopen(argc > 1 ? argv[1] : "ds7e.zip", "rb");
@@ -88,7 +123,12 @@ static const struct {
 
         unsigned before[4], after[4];
         for (int i = 0; i < 4; i++) before[i] = held(&game, (unsigned)i);
-        for (int i = 0; i < 4000; i++) simStep(&sim);
+        static Wandering wander;
+        memset(&wander, 0, sizeof wander);
+        for (int i = 0; i < 4000; i++) {
+            simStep(&sim);
+            watchWandering(&game, &wander);
+        }
         for (int i = 0; i < 4; i++) after[i] = held(&game, (unsigned)i);
 
         int grew = 0;
@@ -97,7 +137,17 @@ static const struct {
             printf(" %u->%-4u", before[i], after[i]);
             if (after[i] > before[i]) grew++;
         }
-        printf("  (%d of 4 grew)\n", grew);
+        const double back = wander.moves
+            ? 100.0 * (double)wander.backwards / (double)wander.moves : 0.0;
+        printf("  (%d of 4 grew, %.0f%% of %lu steps went straight back)\n", grew, back, wander.moves);
+        // A country walking its units to work turns round now and then; one
+        // shuttling between two cells does nothing else.  Half would be the
+        // pure shuttle, and the port did once sit near it.
+        if (wander.moves > 1000 && back > 30.0) {
+            printf("  FAIL %s: the units are shuffling on the spot\n",
+                   stages[s].file);
+            failures++;
+        }
         // Three of the four ought to be bigger after four thousand sweeps.  A
         // country that is boxed in or losing a war may not be, but three
         // standing still means the units are not working.
