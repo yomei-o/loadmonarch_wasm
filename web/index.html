@@ -158,6 +158,8 @@
     </table>
     <h2>CURSOR</h2>
     <table id="cursor"><tbody></tbody></table>
+    <canvas id="gauge" width="240" height="16"
+            style="width:100%;image-rendering:pixelated;margin-top:4px"></canvas>
     <h2>WORLD</h2>
     <table id="world"><tbody></tbody></table>
     <h2>移植の状況</h2>
@@ -186,6 +188,31 @@ createLordMonarch().then(function (M) {
   var note = document.getElementById('note');
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
+
+  // 00426900's gauge, drawn from the game's own art: up to thirty pieces of
+  // eight by sixteen at row (n / 10 + 4) * 16, column (n % 10) * 8 - which is
+  // three rows of ten on the sheet, blue then green then yellow, so a full bar
+  // changes colour as it fills.  A settlement's bar is its worth over 0x90,
+  // anything else's over 0xff.
+  var gaugeCanvas = document.getElementById('gauge');
+  function drawGauge() {
+    var g = gaugeCanvas.getContext('2d');
+    g.clearRect(0, 0, gaugeCanvas.width, gaugeCanvas.height);
+    var t = M._lm_cursor_terrain();
+    if (t < 0) return;
+    var value = M._lm_cursor_value();
+    var over = (t >= 8 && t < 12) ? 0x90 : 0xff;
+    var n = Math.min(30, Math.floor(value * 30 / over));
+    for (var i = 0; i < n; i++) {
+      var sx = (i % 10) * 8;
+      var sy = (Math.floor(i / 10) + 4) * 16;
+      var ptr = M._lm_ui_region(sx, sy, 8, 16);
+      if (!ptr) return;
+      var img = new ImageData(
+          new Uint8ClampedArray(M.HEAPU8.buffer, ptr, 8 * 16 * 4).slice(), 8, 16);
+      g.putImageData(img, i * 8, 0);
+    }
+  }
 
   // DATA/*.256: the title, the five interludes and the ending.  Shown over
   // the map, cleared by a click.
@@ -349,6 +376,8 @@ createLordMonarch().then(function (M) {
         M._lm_music_play(playing, M._lm_tune_loops(playing));
       }
     }
+
+    drawGauge();
 
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];

@@ -330,6 +330,39 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+/* ------------------------------------------------- the interface's art */
+
+// A rectangle of data1.bz's sheet, in the interface's own colours, as RGBA the
+// page can put straight into an ImageData.  0x70 is the sheet's transparent
+// index and comes back with an alpha of zero.
+//
+// It is here so a page can draw the game's own furniture where it wants it -
+// the gauge in the Unit Window, for instance, whose pieces 00426900 takes from
+// ((n / 10 + 4) * 0x200 + n % 10) * 8, eight wide and sixteen tall.
+unsigned g_uiPixels[256 * 256];
+
+EMSCRIPTEN_KEEPALIVE const unsigned *lm_ui_region(int x, int y, int w, int h) {
+    if (!g_game.world.ui.pixels) return NULL;
+    if (w <= 0 || h <= 0 || w > 256 || h > 256) return NULL;
+    for (int row = 0; row < h; row++) {
+        for (int col = 0; col < w; col++) {
+            const int sx = x + col, sy = y + row;
+            unsigned out = 0;
+            if (sx >= 0 && sy >= 0 && sx < UI_SHEET_W && sy < UI_SHEET_H) {
+                const unsigned char v =
+                    g_game.world.ui.pixels[(size_t)sy * UI_SHEET_W + sx];
+                if (v != UI_TRANSPARENT) {
+                    const unsigned char *rgb = g_game.world.ui.palette[v];
+                    out = 0xff000000u | rgb[0] | ((unsigned)rgb[1] << 8) |
+                          ((unsigned)rgb[2] << 16);
+                }
+            }
+            g_uiPixels[(size_t)row * w + col] = out;
+        }
+    }
+    return g_uiPixels;
+}
+
 /* --------------------------------------------------------- saved games */
 
 // The original's own save: three blocks and no header.  The page keeps the

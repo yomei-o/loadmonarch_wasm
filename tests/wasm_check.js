@@ -178,6 +178,19 @@ createLordMonarch().then((M) => {
     expect('but not a fifth', M._lm_human(), 2);
     M._lm_set_human(0);
 
+    // The interface's own art, by the rectangle: the gauge pieces sit in three
+    // rows of ten from row 64, and each is eight by sixteen.
+    {
+        const ptr = M._lm_ui_region(0, 64, 8, 16);
+        expect('a piece of the sheet comes back', ptr, (p) => p !== 0);
+        const pix = new Uint32Array(M.HEAPU8.buffer, ptr, 8 * 16);
+        let painted = 0;
+        for (let i = 0; i < pix.length; i++) if (pix[i] >>> 24) painted++;
+        expect('and it is not empty', painted, (n) => n > 20);
+        expect('a rectangle off the sheet is refused',
+               M._lm_ui_region(0, 0, 999, 8), 0);
+    }
+
     // DATA/*.256: the title and the interludes.
     {
         const stem = 'LOGO';
