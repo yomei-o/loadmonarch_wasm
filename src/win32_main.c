@@ -17,13 +17,25 @@
 
 #define VIEW_W 640
 #define VIEW_H 480
+// The campaign is MAP/NAME.TXT's; this is only the fallback if it is missing.
 #define STAGES 15
 
-static const char *kStages[STAGES] = {
-    "B_000.MAP", "B_002.MAP", "B_003.MAP", "B_004.MAP", "B_005.MAP",
-    "B_006.MAP", "B_009.MAP", "B_103.MAP", "B_104.MAP", "B_105.MAP",
-    "S_101.MAP", "S_105.MAP", "S_115.MAP", "S_201.MAP", "T_000.MAP",
+static const char *kFallbackStages[STAGES] = {
+    "B_000.MAP", "B_003.MAP", "B_004.MAP", "B_006.MAP", "S_201.MAP",
+    "B_104.MAP", "B_002.MAP", "B_005.MAP", "S_115.MAP", "B_009.MAP",
+    "S_101.MAP", "T_000.MAP", "S_105.MAP", "B_105.MAP", "B_103.MAP",
 };
+static StageList g_stages;
+
+static int stageCount(void) {
+    return g_stages.count ? (int)g_stages.count : STAGES;
+}
+static const char *stageFile(int stage) {
+    return g_stages.count ? g_stages.file[stage] : kFallbackStages[stage];
+}
+static const char *stageTitle(int stage) {
+    return g_stages.count ? g_stages.name[stage] : stageFile(stage);
+}
 
 #define SIM_TIMER 1
 #define SIM_TIMER_MS 50
@@ -78,10 +90,10 @@ static void clampView(App *app) {
 }
 
 static int loadStage(App *app, int stage, char *message, unsigned size) {
-    if (stage < 0) stage = STAGES - 1;
-    if (stage >= STAGES) stage = 0;
+    if (stage < 0) stage = stageCount() - 1;
+    if (stage >= stageCount()) stage = 0;
     World fresh;
-    if (!worldLoadStage(&fresh, &app->host, kStages[stage], message, size))
+    if (!worldLoadStage(&fresh, &app->host, stageFile(stage), message, size))
         return 0;
     worldFree(&app->game.world);
     app->game.world = fresh;
@@ -164,7 +176,7 @@ static void updateTitle(HWND window, const App *app) {
              "Lord Monarch - %s  scenery %u  tiles %s  index %s  "
              "(click to raise a unit, arrows, 1/2/3 zoom, PgUp/PgDn stage, "
              "Space run, H hud)",
-             kStages[app->stage], app->game.world.scenerySet,
+             stageTitle(app->stage), app->game.world.scenerySet,
              zoomName[app->zoom],
              app->transpose ? "x*48+y" : "y*48+x");
     SetWindowTextA(window, title);
@@ -351,6 +363,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prev, LPSTR cmdLine,
                         MB_OK | MB_ICONERROR);
             return 1;
         }
+        worldReadStages(&g_stages, &app->host);     // MAP/NAME.TXT
     }
 
     WNDCLASSA cls;

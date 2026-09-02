@@ -21,18 +21,20 @@ extern "C" {
 
 #define VIEW_W 640
 #define VIEW_H 480
-#define STAGES 15
-
-static const char *kStages[STAGES] = {
-    "B_000.MAP", "B_002.MAP", "B_003.MAP", "B_004.MAP", "B_005.MAP",
-    "B_006.MAP", "B_009.MAP", "B_103.MAP", "B_104.MAP", "B_105.MAP",
-    "S_101.MAP", "S_105.MAP", "S_115.MAP", "S_201.MAP", "T_000.MAP",
+// The campaign comes out of MAP/NAME.TXT - its order, which is not the order
+// the file names sort in, and its titles.  The list below is only what to fall
+// back on if that file is missing.
+static const char *kFallbackStages[] = {
+    "B_000.MAP", "B_003.MAP", "B_004.MAP", "B_006.MAP", "S_201.MAP",
+    "B_104.MAP", "B_002.MAP", "B_005.MAP", "S_115.MAP", "B_009.MAP",
+    "S_101.MAP", "T_000.MAP", "S_105.MAP", "B_105.MAP", "B_103.MAP",
 };
 
 namespace {
 
 GameState g_game;
 Sim g_sim;
+StageList g_stages;
 Host g_host;
 unsigned char *g_archive;
 unsigned g_archiveSize;
@@ -61,11 +63,22 @@ void clampView() {
     if (g_viewY < 0) g_viewY = 0;
 }
 
+int stageCount() {
+    return g_stages.count ? (int)g_stages.count
+                          : (int)(sizeof kFallbackStages /
+                                  sizeof kFallbackStages[0]);
+}
+
+const char *stageFile(int stage) {
+    return g_stages.count ? g_stages.file[stage] : kFallbackStages[stage];
+}
+
 int loadStage(int stage) {
-    if (stage < 0) stage = STAGES - 1;
-    if (stage >= STAGES) stage = 0;
+    const int count = stageCount();
+    if (stage < 0) stage = count - 1;
+    if (stage >= count) stage = 0;
     World fresh;
-    if (!worldLoadStage(&fresh, &g_host, kStages[stage], g_message,
+    if (!worldLoadStage(&fresh, &g_host, stageFile(stage), g_message,
                         sizeof g_message)) {
         return 0;
     }
@@ -104,17 +117,27 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
                  "that file is not a zip this can read");
         return 0;
     }
+    worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     if (!loadStage(0)) return 0;
     surfaceInit(&g_surface, VIEW_W, VIEW_H, g_indices);
-    return STAGES;
+    return stageCount();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *lm_message(void) { return g_message; }
 EMSCRIPTEN_KEEPALIVE int lm_width(void) { return VIEW_W; }
 EMSCRIPTEN_KEEPALIVE int lm_height(void) { return VIEW_H; }
 EMSCRIPTEN_KEEPALIVE const char *lm_stage_name(void) {
-    return kStages[g_stage];
+    return stageFile(g_stage);
 }
+
+// What the game calls this stage, from MAP/NAME.TXT.
+EMSCRIPTEN_KEEPALIVE const char *lm_stage_title(void) {
+    return g_stages.count ? g_stages.name[g_stage] : "";
+}
+EMSCRIPTEN_KEEPALIVE const char *lm_quest_name(void) {
+    return g_stages.quest;
+}
+EMSCRIPTEN_KEEPALIVE int lm_stage_count(void) { return stageCount(); }
 EMSCRIPTEN_KEEPALIVE int lm_stage(void) { return g_stage; }
 
 EMSCRIPTEN_KEEPALIVE void lm_step(int times) {

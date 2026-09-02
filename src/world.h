@@ -63,6 +63,25 @@ typedef struct {
     int loaded;
 } NameTable;
 
+// MAP/NAME.TXT: the campaign itself.  An [entry] header giving the quest's
+// name and how many stages there are, then one [n] block per stage with a
+// NAME= and a FILE=.  The order in this file is the order the stages are
+// played in, which is not the order their file names sort in - and the names
+// are the ones the game shows.  The Japanese release writes them in Shift-JIS.
+#define STAGE_MAX   32
+#define STAGE_NAME  40
+#define STAGE_FILE  20
+
+typedef struct {
+    unsigned count;
+    char quest[STAGE_NAME];
+    char name[STAGE_MAX][STAGE_NAME];
+    char file[STAGE_MAX][STAGE_FILE];
+} StageList;
+
+// Reads it, or returns 0 and leaves the list empty.
+int worldReadStages(StageList *stages, const Host *host);
+
 // data1.bz, laid out by 00407560: a 256-wide sheet of everything the
 // interface is drawn from, with 0x70 standing for transparent.
 #define UI_SHEET_W 256

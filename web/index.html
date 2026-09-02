@@ -224,8 +224,11 @@ createLordMonarch().then(function (M) {
   }
 
   function refreshPanel() {
+    // MAP/NAME.TXT gives the campaign its order and its titles.
+    const title = heapString(M._lm_stage_title());
     document.getElementById('stageName').textContent =
-        M.UTF8ToString(M._lm_stage_name());
+        (M._lm_stage() + 1) + '/' + M._lm_stage_count() + ' ' +
+        (title || M.UTF8ToString(M._lm_stage_name()));
     var body = document.querySelector('#factions tbody');
     body.innerHTML = '';
     M._lm_update_areas();       // 0041b640, for the panel rather than the tick

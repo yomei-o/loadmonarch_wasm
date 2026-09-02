@@ -1109,6 +1109,29 @@ B_000 では6000掃引ほどで中立の魔物（湧き点6個）が53体まで�
 滅びる。移植した規則の帰結であって規則の誤りではないが、**開始条件が
 原作より弱い可能性が高い**ことは意識しておくこと。
 
+## MAP/NAME.TXT = キャンペーンそのもの
+
+小さな ini。`[entry]` に `QESTNAME=` と `MAP=`（面数）、続いて `[0]`, `[1]`, ...
+に `NAME=`（**ゲームが表示する面名**）と `FILE=`。`//` 行はコメントで、
+英語版には日本語の原題が残っている。
+
+**この並びが実際のプレイ順で、ファイル名の辞書順ではない。**
+移植は辞書順だった（誤り）。正しい順:
+
+```
+0 Conqueror's trial  B_000    8 Geo Port Flash    S_115
+1 Backroad Euromap   B_003    9 Triple Attack     B_009
+2 Ancient Kingdom    B_004   10 Forest War        S_101
+3 Steel Brain        B_006   11 Number One!       T_000
+4 Candy Waltz        S_201   12 Sleeping Dragon   S_105
+5 Strange Islands    B_104   13 Space Colony      B_105
+6 Precious Nature    B_002   14 Moon and Stars    B_103
+```
+
+`worldReadStages()` が読む。ファイル名は小文字で書かれているが書庫は大文字
+なので大文字に直す（ホストは名前の末尾で照合するため）。日本語版の面名は
+Shift-JIS なので、ページ側で他の名前と同じように復号する。
+
 ## 引き継ぎ (2026-09-01 時点)
 
 **動いているもの**: マップ・スプライト（3ズームすべて正しい番号で）・

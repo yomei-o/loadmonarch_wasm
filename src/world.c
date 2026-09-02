@@ -56,6 +56,61 @@ static void loadNames(NameTable *names, const unsigned char *raw,
     names->loaded = 1;
 }
 
+// MAP/NAME.TXT.  A tiny ini: [entry] carries QESTNAME and MAP, then [0], [1]
+// and so on carry NAME and FILE.  Lines beginning // are comments - in the
+// Japanese release they are the Japanese titles, and in the English one they
+// are what the English titles were translated from.
+int worldReadStages(StageList *stages, const Host *host) {
+    memset(stages, 0, sizeof *stages);
+    static unsigned char text[8192];
+    unsigned size = 0;
+    if (!hostRead(host, "MAP/NAME.TXT", text, sizeof text - 1, &size)) return 0;
+    text[size] = 0;
+
+    int at = -1;                        // which stage block we are inside
+    const char *p = (const char *)text;
+    while (*p) {
+        const char *end = p;
+        while (*end && *end != '\n' && *end != '\r') end++;
+        const size_t length = (size_t)(end - p);
+
+        if (length > 2 && p[0] == '[') {
+            // [entry] or [n]
+            at = (p[1] >= '0' && p[1] <= '9') ? atoi(p + 1) : -1;
+        } else if (length > 9 && strncmp(p, "QESTNAME=", 9) == 0) {
+            const char *value = p + 9;
+            const size_t n = length - 9;
+            const size_t take = n < STAGE_NAME - 1 ? n : STAGE_NAME - 1;
+            memcpy(stages->quest, value, take);
+            stages->quest[take] = 0;
+        } else if (length > 5 && strncmp(p, "NAME=", 5) == 0) {
+            const char *value = p + 5;
+            const size_t n = length - 5;
+            char *into = at >= 0 && at < STAGE_MAX ? stages->name[at] : NULL;
+            if (into) {
+                const size_t take = n < STAGE_NAME - 1 ? n : STAGE_NAME - 1;
+                memcpy(into, value, take);
+                into[take] = 0;
+            }
+        } else if (length > 5 && strncmp(p, "FILE=", 5) == 0 &&
+                   at >= 0 && at < STAGE_MAX) {
+            const size_t n = length - 5;
+            const size_t take = n < STAGE_FILE - 1 ? n : STAGE_FILE - 1;
+            memcpy(stages->file[at], p + 5, take);
+            stages->file[at][take] = 0;
+            // The file names are written in lower case here and upper case in
+            // the archive; the host matches by tail, so make them agree.
+            for (char *c = stages->file[at]; *c; c++)
+                if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
+            if ((unsigned)at + 1 > stages->count) stages->count = (unsigned)at + 1;
+        }
+
+        p = end;
+        while (*p == '\n' || *p == '\r') p++;
+    }
+    return stages->count > 0;
+}
+
 static int loadBank(TileBank *bank, const Host *host, const char *path,
                     int tileSize, NameTable *names, char *message,
                     unsigned messageSize) {

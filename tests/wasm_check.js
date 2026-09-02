@@ -30,6 +30,17 @@ createLordMonarch().then((M) => {
     }
     expect('stage count', stages, 15);
     expect('first stage', M.UTF8ToString(M._lm_stage_name()), 'B_000.MAP');
+    // MAP/NAME.TXT gives the campaign its order and its titles.
+    expect('the quest has a name',
+           M.UTF8ToString(M._lm_quest_name()).length, (n) => n > 0);
+    expect('and the stage does too',
+           M.UTF8ToString(M._lm_stage_title()).length, (n) => n > 0);
+    expect('the second stage is the one the list names', (() => {
+        M._lm_load_stage(1);
+        const name = M.UTF8ToString(M._lm_stage_name());
+        M._lm_load_stage(0);
+        return name;
+    })(), 'B_003.MAP');
     expect('its scenery set', M._lm_scenery(), 10);
     expect('starting funds', M._lm_funds(0), 5000);
     // 241 rather than the map's 242: seeding turns one of them into the first
@@ -84,7 +95,7 @@ createLordMonarch().then((M) => {
     }
 
     // Orders: giving the whole army one takes and shows up in their state.
-    M._lm_load_stage(2);                    // B_003, which starts with units
+    M._lm_load_stage(1);                    // B_003, which starts with units
     for (let i = 0; i < 200; i++) M._lm_step(1);
     M._lm_set_order(4);
     // lm_set_order composes the byte the menu at 0x434444 would: the order
@@ -119,7 +130,7 @@ createLordMonarch().then((M) => {
     expect('not every block was silent', silentBlocks, (v) => v < 40);
     // 0040a110: which tune the war calls for.  One country against three is
     // behind all of them put together, so a stage opens on its first tune.
-    M._lm_load_stage(2);
+    M._lm_load_stage(1);
     const set = M._lm_scenery();
     expect('the war asks for the stage tune', M._lm_music_wanted(), set);
     console.log(`  music wanted: ${M._lm_music_wanted()} (set ${set})`);
@@ -146,7 +157,7 @@ createLordMonarch().then((M) => {
     expect('orders show by default', M._lm_orders_shown(), 1);
 
     // Choosing units and sending them: the original's own flow.
-    M._lm_load_stage(2);
+    M._lm_load_stage(1);                    // B_003 again
     for (let i = 0; i < 300; i++) M._lm_step(1);
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
