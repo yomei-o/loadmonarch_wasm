@@ -506,6 +506,25 @@ static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
 static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
 #define DIRECTION_DEFAULT 5
 
+// 0040a110.  Which tune the war calls for.  It adds up the other three
+// countries and compares:  behind them, the stage's first tune; ahead of all
+// three put together by eight to one, its second.  Anywhere between, it leaves
+// whatever is playing alone - so the music only changes when the war does.
+//
+// Returns 0 or 1 for those two, and -1 for "no change".
+int simMusicWanted(const Sim *sim) {
+    const GameState *state = sim->state;
+    if (sim->humanFaction >= PLAYABLE_FACTIONS) return -1;
+    unsigned rest = 0;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++)
+        if (f != sim->humanFaction) rest += state->factions[f].strength;
+    const unsigned mine = state->factions[sim->humanFaction].strength;
+
+    if (mine < rest) return 0;
+    if (rest < mine >> 3) return 1;
+    return -1;
+}
+
 /* ---------------------------------------------------- the end of a country */
 
 // 0041f0d0.  Finishes a country off.  Its leader dies if it still has one, the

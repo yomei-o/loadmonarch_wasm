@@ -91,6 +91,11 @@ void simSeedLeaders(Sim *sim);
 unsigned simHumanActor(const Sim *sim);
 
 
+// 0040a110.  Which of the stage's two tunes the war calls for: 0 while the
+// player is behind the other three put together, 1 while it is eight times
+// their combined strength, -1 anywhere between - leave what is playing alone.
+int simMusicWanted(const Sim *sim);
+
 // 0041f0d0, 0041f090 and 0041f4c0: the end of a country and the end of a
 // stage.  A country that has lost its leader or its strength is finished off -
 // its castle wiped, its purse handed to whoever +0x1f names - and the stage is

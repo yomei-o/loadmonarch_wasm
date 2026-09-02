@@ -117,6 +117,13 @@ createLordMonarch().then((M) => {
     expect('the music is audible', rms, (v) => v > 0.01);
     expect('and stays in range', peak, (v) => v > 0 && v <= 1.001);
     expect('not every block was silent', silentBlocks, (v) => v < 40);
+    // 0040a110: which tune the war calls for.  One country against three is
+    // behind all of them put together, so a stage opens on its first tune.
+    M._lm_load_stage(2);
+    const set = M._lm_scenery();
+    expect('the war asks for the stage tune', M._lm_music_wanted(), set);
+    console.log(`  music wanted: ${M._lm_music_wanted()} (set ${set})`);
+
     M._lm_music_stop();
     expect('stopping stops it', M._lm_music_playing(), 0);
 

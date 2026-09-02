@@ -278,6 +278,8 @@ createLordMonarch().then(function (M) {
               countryName(M._lm_cursor_unit_faction()) + ' ' + unit);
     }
 
+    followTheWar();             // 0040a110
+
     // 0041f4c0 says when a stage is over.
     var over = M._lm_outcome();
     if (over && !said) {
@@ -513,6 +515,18 @@ createLordMonarch().then(function (M) {
   // spent an afternoon on.
   var audio = null, node = null, musicOn = false;
   var musicButton = document.getElementById('music');
+  // 0040a110 chooses between a stage's two tunes by how the war is going, and
+  // leaves the one that is playing alone in between.  0 is the opening tune,
+  // which is what plays before a stage is under way.
+  var playing = 0;
+
+  function followTheWar() {
+    if (!musicOn) return;
+    var want = M._lm_music_wanted();
+    if (want < 0 || want === playing) return;
+    playing = want;
+    M._lm_music_play(playing, 1);
+  }
 
   function startMusic() {
     var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -529,7 +543,7 @@ createLordMonarch().then(function (M) {
       });
     }
     if (audio.state === 'suspended') audio.resume();
-    if (!M._lm_music_play(0, 1)) {
+    if (!M._lm_music_play(playing, 1)) {
       note.textContent = '音楽が読めません';
       musicButton.classList.remove('on');
       return;
@@ -546,7 +560,7 @@ createLordMonarch().then(function (M) {
         var src = new Float32Array(M.HEAPU8.buffer, ptr, frames);
         out.set(src.subarray(0, out.length));
         if (frames < out.length) out.fill(0, frames);
-        if (!M._lm_music_playing()) M._lm_music_play(0, 1);
+        if (!M._lm_music_playing()) M._lm_music_play(playing, 1);
       };
       node.connect(audio.destination);
     }

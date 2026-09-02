@@ -430,6 +430,15 @@ EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop) {
     return g_tuneLoaded;
 }
 
+// 0040a110's choice, as a file number.  Each scenery set ships three tunes
+// numbered after it - 10, 11, 12 for the first - and the war picks between the
+// first two.  -1 means leave what is playing alone.
+EMSCRIPTEN_KEEPALIVE int lm_music_wanted(void) {
+    const int which = simMusicWanted(&g_sim);
+    if (which < 0) return -1;
+    return (int)g_game.world.scenerySet + which;
+}
+
 EMSCRIPTEN_KEEPALIVE void lm_music_stop(void) {
     midiStop();
     g_tuneLoaded = 0;
