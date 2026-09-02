@@ -1984,6 +1984,24 @@ void simSeedLeaders(Sim *sim) {
 // The human faction's first active entity, which is what the click below acts
 // through.  The original routes an order to a chosen entity and lets it walk
 // there; that selection and movement live in code not read yet.
+// The Orders menu's "Recall Leader" (40113).  Whichever of this country's
+// entities carries the leader bit is sent back to its castle by 00421660, the
+// same routine the machine's own kings use to go home.
+static int kingGoesHome(Sim *sim, unsigned slot);        // 00421660, below
+
+int simRecallLeader(Sim *sim, unsigned faction) {
+    GameState *state = sim->state;
+    if (faction >= FACTION_COUNT) return 0;
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &state->entities[i];
+        if (entity->flags & 0x80) continue;
+        if (entity->faction != faction) continue;
+        if ((entity->at0d & 0x20) == 0) continue;
+        return kingGoesHome(sim, i);
+    }
+    return 0;
+}
+
 unsigned simHumanActor(const Sim *sim) {
     for (unsigned i = 0; i < ENTITY_COUNT; i++) {
         const Entity *entity = &sim->state->entities[i];

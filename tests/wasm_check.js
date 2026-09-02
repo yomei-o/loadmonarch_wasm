@@ -252,6 +252,75 @@ createLordMonarch().then((M) => {
     M._lm_clear_selection();
     expect('a choice can be dropped', M._lm_selected(), 0);
 
+    // The page's own flow, with the clock running between every step - which
+    // is where an order can quietly be dropped, because 0041f790 rewrites the
+    // balloon 00423cc0 reads to decide whether a unit answers.
+    {
+        let at = null;
+        for (let y = 40; y < 420 && !at; y += 8)
+            for (let x = 40; x < 580 && !at; x += 8)
+                if (M._lm_unit_here(x, y)) at = [x, y];
+        expect('one of the player units is on screen', at !== null, true);
+        expect('clicking it chooses it', M._lm_select_at(at[0], at[1], 1), 1);
+        for (let i = 0; i < 20; i++) M._lm_step(1);
+        expect('and it stays chosen while the clock runs',
+               M._lm_selected(), 1);
+
+        // Where the page points before it clicks.  00423cc0 answers only for a
+        // unit whose balloon says it can get there, so the aim decides.
+        let to = null;
+        for (let y = 8; y < 460 && !to; y += 16)
+            for (let x = 8; x < 620 && !to; x += 16)
+                if (M._lm_aim(x, y)) to = [x, y];
+        expect('and it can be aimed somewhere', to !== null, true);
+        for (let i = 0; i < 20; i++) M._lm_step(1);
+        M._lm_aim(to[0], to[1]);
+        const went = M._lm_order_at(1, 0, to[0], to[1]);
+        expect('and takes the order afterwards', went, (n) => n > 0);
+        expect('which spends the choice', M._lm_selected(), 0);
+
+        // And the drag that gathers an army.
+        const many = M._lm_select_rect(0, 0, 620, 460, 1);
+        expect('a drag over the map gathers units', many, (n) => n > 0);
+        console.log(`  a click chose 1 and it took an order; a drag chose ${many}`);
+        M._lm_clear_selection();
+    }
+
+    // Cutting a path, which is what a player spends most of a stage doing:
+    // choose an army, point it at a square of scenery with order 7, and let
+    // the clock run until 0040b680 has worked it down.  Scenery is 0x30 to
+    // 0x5f and what it leaves behind is 0x20 to 0x2f, walkable.
+    {
+        let spot = null;
+        for (let y = 8; y < 460 && !spot; y += 8)
+            for (let x = 8; x < 620 && !spot; x += 8) {
+                M._lm_set_cursor(x, y);
+                const t = M._lm_cursor_terrain();
+                const c = M._lm_cursor_col(), r = M._lm_cursor_row();
+                // 0040b680 bounds its target to 1..46, so the outer ring is
+                // not a square anybody can be told to clear.
+                if (t >= 0x30 && t < 0x60 && c > 0 && c < 47 && r > 0 && r < 47)
+                    spot = [x, y];
+            }
+        expect('there is scenery on screen', spot !== null, true);
+        M._lm_select_all(1);
+        const sent = M._lm_order_at(7, 0, spot[0], spot[1]);
+        expect('an army takes the clearing order', sent, (n) => n > 0);
+        let cut = false;
+        for (let i = 0; i < 4000 && !cut; i++) {
+            M._lm_step(1);
+            M._lm_set_cursor(spot[0], spot[1]);
+            const t = M._lm_cursor_terrain();
+            if (t >= 0x20 && t < 0x30) cut = true;
+        }
+        M._lm_set_cursor(spot[0], spot[1]);
+        expect('and the scenery is cut through', cut, true);
+        console.log('  ' + sent + ' sent to cut ' + M._lm_cursor_col() + ',' +
+                    M._lm_cursor_row() + '; it is now terrain ' +
+                    M._lm_cursor_terrain().toString(16));
+        M._lm_clear_selection();
+    }
+
     // The original's own save: write it, change the world, read it back.
     {
         const size = M._lm_save_size();

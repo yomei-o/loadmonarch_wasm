@@ -199,9 +199,13 @@ void stateLoad(GameState *state, const unsigned char *in) {
 // worldLoadStage has already put the map's terrain in place, so the cell
 // reset that opens the original's chain is deliberately not repeated here -
 // it runs before a map is read, not after.
-// 0040b270.  The original drives this from the keyboard, a direction at a
-// time; a cell is a cell however it was chosen, so the hosts point it at
-// whatever the player is pointing at.
+// 0040b270.  Not a keyboard routine, whatever this port assumed at first: the
+// executable carries exactly one accelerator (I, command 40001) and compares
+// nothing against VK_LEFT, VK_UP, VK_RIGHT or VK_DOWN anywhere in its 792
+// functions.  What 0040b270 does is slide the cursor one cell per tick toward
+// somewhere the game wants the player to look - 00424520 parks it on another
+// country when that country does something worth seeing.  A cell is a cell
+// however it was chosen, so the hosts point this at the mouse.
 #define CURSOR_SPRITE 0xccu
 
 void stateMoveCursor(GameState *state, int col, int row) {

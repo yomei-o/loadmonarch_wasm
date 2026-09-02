@@ -294,8 +294,9 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
     case WM_MOUSEMOVE: {
-        // 0040b270 moves the cursor a cell at a time from the keyboard.  A cell
-        // is a cell however it is chosen, so it follows the pointer here.
+        // 0040b270 slides the cursor a cell at a time - the original does it to
+        // show the player something, not from a key; the game is mouse-driven.
+        // A cell is a cell however it is chosen, so it follows the pointer.
         const TileBank *bank = worldBank(&app->game.world, app->zoom);
         const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
         stateMoveCursor(&app->game, (app->viewX + (short)LOWORD(lparam)) / ts,

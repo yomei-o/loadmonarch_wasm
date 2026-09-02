@@ -139,6 +139,7 @@
            style="vertical-align:middle;width:90px">
     <span id="speedRead" style="color:var(--ink)"></span>
   </label>
+  <button id="recall" disabled title="Orders メニューの Recall Leader (40113)">王を呼び戻す</button>
   <button id="watch" disabled title="4か国すべてを機械にまかせて見物する">観戦</button>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
@@ -392,6 +393,16 @@ createLordMonarch().then(function (M) {
     var img = new ImageData(
         new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4).slice(), W, H);
     ctx.putImageData(img, 0, 0);
+    if (dragFrom && dragTo) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(Math.min(dragFrom[0], dragTo[0]) + 0.5,
+                     Math.min(dragFrom[1], dragTo[1]) + 0.5,
+                     Math.abs(dragTo[0] - dragFrom[0]),
+                     Math.abs(dragTo[1] - dragFrom[1]));
+      ctx.setLineDash([]);
+    }
   }
 
   // 4 sends a unit after a neighbour's settlement, 0 stops it where it is and
@@ -547,7 +558,7 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       drop.classList.add('hide');
-      ['prev', 'next', 'pause', 'watch', 'music', 'attack', 'hold', 'home',
+      ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
        'saveBtn', 'loadBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
@@ -736,6 +747,8 @@ createLordMonarch().then(function (M) {
   // the map is 48 cells across and the window shows a part of it, so getting
   // about has to be easy.
   var panning = null;
+  var dragFrom = null;          // a left-drag gathers an army
+  var dragTo = null;
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
@@ -745,21 +758,56 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
-    var p = viewPoint(e);
-    // With units chosen, a click is where they are being sent - that is the
-    // original's flow.  With none chosen it puts a new unit down.
-    if (M._lm_selected() > 0) {
-      var order = parseInt(orderPick.value, 10) || 0;
-      var went = M._lm_order_at(order, 0, p[0], p[1]);
-      say(went + ' 部隊が向かいます');
-    } else {
-      M._lm_click(p[0], p[1]);
-    }
-    refreshPanel();
+    dragFrom = viewPoint(e);
+    dragTo = dragFrom;
+    canvas.setPointerCapture(e.pointerId);
   });
 
+  // The whole of the flow, decided when the button comes back up so a drag and
+  // a click can be told apart:
+  //
+  //   drag over the map          gather every unit of yours inside it
+  //   click one of your units    choose that one
+  //   click anywhere, chosen     send them there with the order in the box
+  //   click bare ground, none    put a settlement down
+  //
+  // Both ways of choosing are deliberate, so both pick a unit up even when it
+  // already carries an order - 00409e90 rather than 00409f10.  The 待機中 button
+  // is the other one.  Shift adds to what is already chosen.
+  function finishDrag(e) {
+    var p = viewPoint(e);
+    var moved = dragFrom &&
+        (Math.abs(p[0] - dragFrom[0]) > 6 || Math.abs(p[1] - dragFrom[1]) > 6);
+
+    if (moved) {
+      if (!e.shiftKey) M._lm_clear_selection();
+      var n = M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
+      say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : 'その範囲に部隊がいません');
+    } else if (M._lm_selected() > 0) {
+      var order = parseInt(orderPick.value, 10) || 0;
+      var went = M._lm_order_at(order, 0, p[0], p[1]);
+      say(went ? went + ' 部隊が向かいます' : 'そこへは行けません');
+    } else if (M._lm_unit_here(p[0], p[1])) {
+      if (!e.shiftKey) M._lm_clear_selection();
+      M._lm_select_at(p[0], p[1], 1);
+      say('1 部隊を選択 - 地図をクリックで送る');
+    } else {
+      var placed = M._lm_click(p[0], p[1]);
+      var word = ['', '置いた', '資金不足', '置けない', '', '', '使い切った'];
+      say(word[placed] || '置けない');
+    }
+    dragFrom = null;
+    dragTo = null;
+    refreshPanel();
+  }
+
   canvas.addEventListener('pointerup', function (e) {
-    if (panning) { panning = null; e.preventDefault(); }
+    if (panning) { panning = null; e.preventDefault(); return; }
+    if (dragFrom) finishDrag(e);
+  });
+  canvas.addEventListener('pointercancel', function () {
+    dragFrom = null;
+    dragTo = null;
   });
   canvas.addEventListener('wheel', function (e) {
     if (!loaded) return;
@@ -784,8 +832,9 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
+    if (dragFrom) dragTo = p;
     M._lm_set_cursor(p[0], p[1]);
-    if (M._lm_selected() > 0) {
+    if (!dragFrom && M._lm_selected() > 0) {
       var col = M._lm_cursor_col(), row = M._lm_cursor_row();
       if (col !== aimCol || row !== aimRow) {
         aimCol = col;
@@ -916,6 +965,10 @@ createLordMonarch().then(function (M) {
   // Watching.  Handing the player's country to nobody leaves all four to the
   // machine; the country the player had is remembered so the button gives it
   // back.
+  document.getElementById('recall').onclick = function () {
+    say(M._lm_recall_leader() ? '王が城へ戻ります' : '王は戻れません');
+  };
+
   var watchBtn = document.getElementById('watch');
   var watchedFrom = 0;
   watchBtn.onclick = function () {

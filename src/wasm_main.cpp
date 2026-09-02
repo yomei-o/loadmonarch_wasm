@@ -280,11 +280,72 @@ EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
 
 /* --------------------------------------------- choosing units and sending */
 
+// The Orders menu's Recall Leader (40113).
+EMSCRIPTEN_KEEPALIVE int lm_recall_leader(void) {
+    return simRecallLeader(&g_sim, g_sim.humanFaction);
+}
+
 // The original's own flow: choose units, which puts a balloon over each, then
 // point at a cell to say where the order is to be carried out.  `force` picks
 // up units that already have orders as well as the idle ones.
 EMSCRIPTEN_KEEPALIVE int lm_select_all(int force) {
     return simSelectAll(&g_sim, force);
+}
+
+// The same, for the one unit under a view pixel.  Without it the only way to
+// choose anybody is all of them at once, which is not how the game is played:
+// you pick the units near the thing you want done.
+EMSCRIPTEN_KEEPALIVE int lm_select_at(int x, int y, int force) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y) / ts;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
+    const unsigned char slot =
+        g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
+    if (slot >= ENTITY_COUNT) return 0;
+    return simSelect(&g_sim, slot, col, row, force);
+}
+
+// Every unit of the player's inside a rectangle of view pixels - the drag the
+// original uses to gather up an army before sending it anywhere.
+EMSCRIPTEN_KEEPALIVE int lm_select_rect(int x0, int y0, int x1, int y1,
+                                        int force) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    int c0 = (g_viewX + (x0 < x1 ? x0 : x1)) / ts;
+    int c1 = (g_viewX + (x0 < x1 ? x1 : x0)) / ts;
+    int r0 = (g_viewY + (y0 < y1 ? y0 : y1)) / ts;
+    int r1 = (g_viewY + (y0 < y1 ? y1 : y0)) / ts;
+    if (c0 < 0) c0 = 0;
+    if (r0 < 0) r0 = 0;
+    if (c1 > WORLD_GRID - 1) c1 = WORLD_GRID - 1;
+    if (r1 > WORLD_GRID - 1) r1 = WORLD_GRID - 1;
+    int chosen = 0;
+    for (int col = c0; col <= c1; col++)
+        for (int row = r0; row <= r1; row++) {
+            const unsigned char slot =
+                g_game.world.cells[WORLD_INDEX((unsigned)col,
+                                               (unsigned)row)].occupant;
+            if (slot >= ENTITY_COUNT) continue;
+            if (g_game.entities[slot].at0d & 0x20) continue;   // not the king
+            if (simSelect(&g_sim, slot, col, row, force)) chosen++;
+        }
+    return chosen;
+}
+
+// Whether the cell under a view pixel holds one of the player's own units, so
+// a page can tell a click meant to choose from a click meant to build.
+EMSCRIPTEN_KEEPALIVE int lm_unit_here(int x, int y) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y) / ts;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
+    const unsigned char slot =
+        g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
+    if (slot >= ENTITY_COUNT) return 0;
+    return g_game.entities[slot].faction == g_sim.humanFaction;
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_selected(void) {

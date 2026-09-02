@@ -127,6 +127,44 @@ int main(int argc, char **argv) {
     for (int a = 4; a < argc; a++) {
         unsigned col = 0, row = 0;
         if (strcmp(argv[a], "map") == 0) continue;
+        if (sscanf(argv[a], "clear:%u,%u", &col, &row) == 2) {
+            // What a player does: gather the army, point it at a square of
+            // scenery with the clearing order, and watch.
+            // The four seeded leaders are all there is at sweep zero, and
+            // 00409e90 never picks a leader up, so let the countries raise an
+            // army first.
+            for (int i = 0; i < 2000; i++) simStep(&sim);
+            const int chosen = simSelectAll(&sim, 1);
+            const int sent = simOrderSelected(&sim, 7, 0, (int)col, (int)row);
+            printf("clear %u,%u: %d chosen, %d sent, terrain %02x\n",
+                   col, row, chosen, sent,
+                   game.world.cells[WORLD_INDEX(col, row)].terrain);
+            for (int t = 1; t <= 20; t++) {
+                for (int i = 0; i < 100; i++) simStep(&sim);
+                const WorldCell *c = &game.world.cells[WORLD_INDEX(col, row)];
+                unsigned near = 0;
+                int who = -1;
+                for (int dc = -1; dc <= 1; dc++)
+                    for (int dr = -1; dr <= 1; dr++) {
+                        const int cc = (int)col + dc, rr = (int)row + dr;
+                        if (cc < 0 || rr < 0 || cc > 47 || rr > 47) continue;
+                        const unsigned char o =
+                            game.world.cells[WORLD_INDEX(cc, rr)].occupant;
+                        if (o < ENTITY_COUNT) { near++; who = o; }
+                    }
+                printf("  +%4d  terrain %02x  value %u  beside %u",
+                       t * 100, c->terrain, c->value, near);
+                if (who >= 0) {
+                    const Entity *e = &game.entities[who];
+                    printf("  (slot %d order %02x at %u,%u target %u,%u"
+                           " route %s)", who, e->at0d, e->position[0],
+                           e->position[1], e->target[0], e->target[1],
+                           e->at18 == 0x1f0 ? "none" : "yes");
+                }
+                putchar(10);
+            }
+            continue;
+        }
         if (sscanf(argv[a], "build:%u,%u", &col, &row) != 2) {
             fprintf(stderr, "cannot read %s\n", argv[a]);
             continue;

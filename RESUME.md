@@ -1364,6 +1364,56 @@ Progress Window は絵そのものが中身を教えてくれる — 金袋・%�
 * ページ: 国一覧が1行ずれて印を付けていた（`mine` を代入の1行前で読んでいた）。
 * ページ: **観戦ボタン**。`lm_set_human(4)` で4か国とも機械にまかせる。
 
+## 原作はマウス専用。メニューの全項目（.rsrc から実測）
+
+「キーだけで操作できるか」を実行ファイルで確かめた。**できない**。
+
+* アクセラレータ表は**1個だけ** — `I` -> コマンド 40001。他にキー割り当ては無い
+* 792個の関数のどこにも `VK_LEFT`/`VK_UP`/`VK_RIGHT`/`VK_DOWN` (0x25..0x28) との
+  比較が**1つも無い**
+* カーソルを動かす唯一の関数 `0040b270` はキー入力ではない。`00424520` が
+  他国で何か起きたときに 0xcc のカーソルをそこへ立て、`0040b270` が
+  1ティック1マスずつ滑らせる**演出**。RESUME と `src/state.c` に
+  「原作はキーボードで動かす」と書いてあったのは誤りで、直した
+
+メニューバーは普通の Windows メニューなので Alt+英字でメニュー操作はできる。
+`.rsrc` の MENU 101 の中身（コマンド ID つき）:
+
+    [System]   Load(40051) / Save(40021) / Load Map[Quest Map(40020), Single Map(40117)]
+               Restart(40110) / New(40114) / Quit(40044)
+    [Controls] Start(40045) / Pause(40030)
+               Leader Position[????(40080), 1(40081), 2(40082), 3(40083)]
+               Resize Map[Small(40048), Medium(40049), Large(40050)]
+               Alliance(40012) / Customize System(40033) / Customize Sounds(40116)
+    [Display]  Hide Title Bar(40108) / Hide Tool Bar(60005) / Float Tool Bar(40109)
+               Unit Window(60001) / Progress Window(60002) / Graph Window(60003)
+               Set Windows to default(40111)
+    [Orders]   Overall Order(For new units)(40062) / Overall Order(Override all)(40061)
+               Recall Leader(40113) / Default Orders(40038)
+    [Help]     Help(40037) / Version(40055)
+
+移植の対応:
+
+| メニュー | 移植 |
+|---|---|
+| Load / Save | `lm_save` / `lm_load`（localStorage）|
+| Load Map / Restart / New | 面の前後ボタン |
+| Start / Pause | 一時停止 |
+| Resize Map S/M/L | ズーム3段 |
+| Unit / Progress / Graph Window | ページが3つとも描いている |
+| Overall Order (For new units) | `lm_set_order`（`DAT_004365e0`）|
+| Overall Order (Override all) | `lm_order_all` |
+| **Recall Leader** | **`lm_recall_leader`（`00421660` を王に掛ける）— 実装した** |
+| Alliance | 下記のとおり「解消」しか実装のしようがない |
+| Leader Position, Customize, Help | 未実装 |
+
+**同盟について**: `at1e`（+0x1e、0x80 で同盟なし）に**国番号を書く場所が
+実行ファイル中に1つも無い**。書き込みは `= 0x80`（解消）の2箇所だけで、
+片方が `00411eb0`、"Break alliance" と描く UI ハンドラ。
+つまり同盟は `at08`（首都）や `at0c`（王の実体番号）と同じで
+**シナリオ／セーブが与えるもの**で、ゲーム中に結べるものではない。
+メニューの Alliance は解消専用。
+
 ## 引き継ぎ (2026-09-02 時点)
 
 **動いているもの**: 上の「国が伸びて…」を含めて一式。マップ・スプライト（3ズーム）・パレットの脈動・

@@ -97,6 +97,10 @@ void simSeedLeaders(Sim *sim);
 // The entity the human player's orders act through.
 unsigned simHumanActor(const Sim *sim);
 
+// The Orders menu's Recall Leader (40113): send this country's leader back to
+// its castle through 00421660.  Non-zero when a route came back.
+int simRecallLeader(Sim *sim, unsigned faction);
+
 
 // 0040a110.  Which of the stage's two tunes the war calls for: 0 while the
 // player is behind the other three put together, 1 while it is eight times
