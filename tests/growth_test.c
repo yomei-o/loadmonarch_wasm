@@ -115,14 +115,21 @@ static const struct {
         // And then they have to meet.  A stage that never resolves is not a
         // game: run it out and look for casualties and for somebody knocked
         // out of it.
-        for (int i = 0; i < 60000; i++) simStep(&sim);
+        long settled = -1;
+        for (int i = 0; i < 60000; i++) {
+            simStep(&sim);
+            if (settled < 0 && simStageOutcome(&sim)) settled = 4000 + i;
+        }
         unsigned losses = 0, out = 0;
         for (int i = 0; i < 4; i++) {
             losses += game.factions[i].at14;
             if (game.factions[i].flags & 0x40) out++;
         }
-        printf("  %-10s after 64000: losses %u, %u knocked out\n",
-               stages[s].file, losses, out);
+        printf("  %-10s after 64000: losses %u, %u knocked out", stages[s].file,
+               losses, out);
+        // 0041f4c0 calls a stage over once three of the four are gone.
+        if (settled >= 0) printf(", settled at sweep %ld", settled);
+        putchar(10);
         if (!stages[s].meets) {
             printf("  %-10s is walled apart by scenery no country clears,"
                    " and the original is the same\n", stages[s].file);
