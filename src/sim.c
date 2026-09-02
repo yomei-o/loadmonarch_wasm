@@ -1577,8 +1577,9 @@ SimActionResult simBuildWall(Sim *sim, unsigned slot) {
 // a sixteenth of its own strength.  When the cell's value runs out it becomes
 // 0x20, which is walkable.
 //
-// The original gates this on 0041ac10, which is not read; here the target has
-// to be inside the border, which is the guard 0040b680 itself applies next.
+// The original gates this on 0041ac10 - a Manhattan distance - as well; here
+// the target has to be inside the border, which is the guard 0040b680 itself
+// applies next.
 SimActionResult simClearTarget(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
@@ -1889,9 +1890,11 @@ static int fightAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
     return 1;
 }
 
-// 00420610: two of the same faction meeting merge, and the leader is the one
-// that absorbs.  The original has a further branch for the two ordered roles
-// (+0x0d bit 4) which is not read; those pairs are left to pass by instead.
+// 00420610: two of the same faction meeting merge into one, so long as neither
+// is dying and the pair stays under the hundred thousand.  A king always
+// absorbs and is never absorbed; below that, an ordered unit takes up a plain
+// one, the heavier takes the lighter, and when neither is under orders the one
+// standing still takes up the one that walked into it.
 static int mergeAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
     GameState *state = sim->state;
     const unsigned char other = state->world.cells[WORLD_INDEX(col, row)].occupant;
@@ -1912,7 +1915,27 @@ static int mergeAt(Sim *sim, unsigned slot, unsigned col, unsigned row) {
         simRetireEntity(state, slot, me->position[0], me->position[1]);
         return 1;
     }
-    return 0;
+
+    // Neither is a king, so who absorbs whom turns on orders.  If either is
+    // under one, an ordered unit takes up a plain one, and otherwise the
+    // heavier takes the lighter.  If neither is under orders at all, the one
+    // standing still takes up the one that walked into it - so an army
+    // gathers where it is going rather than where it came from.
+    if ((me->at0d & 0x10) || (them->at0d & 0x10)) {
+        if ((them->at0d & 0x0f) == 1) {
+            me->at08 += them->at08;
+            simRetireEntity(state, other, col, row);
+            return 0;
+        }
+        if (them->at08 <= me->at08) {
+            me->at08 += them->at08;
+            simRetireEntity(state, other, col, row);
+            return 0;
+        }
+    }
+    them->at08 += me->at08;
+    simRetireEntity(state, slot, me->position[0], me->position[1]);
+    return 1;
 }
 
 // 004208b0: walking into another faction's settlement raids it.  The cell's
@@ -2824,9 +2847,7 @@ static int thinkStrategically(Sim *sim, unsigned slot) {
 //
 // Each case is the same three questions: can I do it right here; if not, is
 // there somewhere within reach; if not, may I look further afield.  The last
-// of those needs 00421050 and the 004223xx family, which are unread, so a unit
-// that gets that far falls back instead - it will try again next tick, which
-// is close to what the original does when its own wider search fails.
+// of those is 00421ae0, the machine's own strategy, which is ported below.
 static void stepStandingOrder(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
