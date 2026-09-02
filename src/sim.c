@@ -3056,37 +3056,70 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
     if (lashOut(sim, slot, col, row)) return;
 
     // A plain unit's +0x0d is a preference, not an order: it says what this
-    // unit went looking for, and once it has arrived it does that here.  If
-    // the work will not go, it looks for something else.
-    SimActionResult did = SIM_ACTION_REFUSED;
-    switch (entity->at0d & 0x0f) {
+    // unit set out to do, and having arrived it does it here.
+    //
+    // 00401770 handles the cases in two shapes.  The plain preferences - 1, 2
+    // and 3 - build where the unit stands, and when that will not go the unit
+    // looks around (004219b0) and then, if the machine is playing it, thinks
+    // (00421ae0).  Every other case does its own work and, when that work is
+    // done or refused, drops back to the plain preference and heads for its
+    // own country's ground; if there is none within reach it faces south and
+    // waits.
+    const unsigned char preference = entity->at0d & 0x0f;
+    switch (preference) {
     case 1:
     case 2:
-    case 3:
-    case 5:
-        did = simBuildUnitCell(sim, slot, col, row);
+    case 3: {
+        const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
+        if (r == SIM_ACTION_DONE || r == SIM_ACTION_SPENT_ENTITY) return;
+        entity->at0c = 6;
+        if ((entity->flags & 8) == 0 && lookForWork(sim, slot)) return;
+        if (workBudget(sim, slot)) thinkStrategically(sim, slot);
+        return;
+    }
+    case 5: {
+        // A builder that succeeds looks for the next site rather than
+        // stopping, which is what makes a country spread rather than sprawl
+        // from one place.
+        const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
+        signed char dx = 0, dy = 0;
+        if (r == SIM_ACTION_DONE &&
+            lookAround(sim, slot, LOOK_ROOM_TO_BUILD, &dx, &dy)) {
+            simMakeRoute(state, slot, dx, dy);
+            return;
+        }
+        if (r == SIM_ACTION_SPENT_ENTITY) return;
+        break;
+    }
+    case 6:
+        if (simBuildWall(sim, slot) == SIM_ACTION_PROGRESS) return;
+        break;
+    case 7:
+        if (simClearTarget(sim, slot) == SIM_ACTION_PROGRESS) return;
         break;
     case 8:
-        did = simDemolishBuilding(sim, slot);
+        if (simDemolishBuilding(sim, slot) == SIM_ACTION_PROGRESS) return;
         break;
     case 9:
-        did = simDemolishWall(sim, slot);
+        if (simDemolishWall(sim, slot) == SIM_ACTION_PROGRESS) return;
+        break;
+    case 10:
+        if (simMakeMine(sim, slot) == SIM_ACTION_PROGRESS) return;
         break;
     case 0x0b:
-        did = simBreakSpawner(sim, slot);
+        if (simBreakSpawner(sim, slot) == SIM_ACTION_PROGRESS) return;
         break;
+    case 4:
     default:
         break;
     }
-    if (did == SIM_ACTION_DONE || did == SIM_ACTION_SPENT_ENTITY ||
-        did == SIM_ACTION_PROGRESS)
-        return;
 
-    // Nothing doing where it stands.  004219b0 looks around - and without this
-    // a country stops growing the moment the ring around its first settlements
-    // is full, which is what this port did until now.
+    // Done, or nothing to do: back to the plain preference and home.
+    entity->at0d = 1;
+    signed char dx = 0, dy = 0;
+    if (lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+        simMakeRoute(state, slot, dx, dy);
+        return;
+    }
     entity->at0c = 6;
-    if ((entity->flags & 8) == 0 && lookForWork(sim, slot)) return;
-    // 00421ae0: nothing nearby, so the machine falls back on strategy.
-    if (workBudget(sim, slot)) thinkStrategically(sim, slot);
 }
