@@ -6,3 +6,5 @@ ghidra_proj/
 !web/*.png
 loadmonarch*.exe
 *.obj
+*.ppm
+/tests/*.exe
