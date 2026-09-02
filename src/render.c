@@ -326,6 +326,22 @@ void renderPalette(const GameState *game, int zoom,
         table[0x71 + f][1] = from[1];
         table[0x71 + f][2] = from[2];
     }
+    // The chrome the port draws its menus with.  Nothing in the game's own art
+    // uses 0xf0 and up, and these are the Windows 95 system colours the
+    // original's menus were drawn in - it is an MFC application, so its menus
+    // were whatever the desktop's scheme said, and this is that scheme.
+    static const unsigned char chrome[7][3] = {
+        {192, 192, 192},        // UI_FACE
+        {255, 255, 255},        // UI_LIGHT
+        {128, 128, 128},        // UI_SHADOW
+        {0, 0, 0},              // UI_DARK
+        {0, 0, 128},            // UI_PICK
+        {255, 255, 255},        // UI_PICK_TEXT
+        {128, 128, 128},        // UI_GREY_TEXT
+    };
+    for (unsigned i = 0; i < 7; i++)
+        for (int c = 0; c < 3; c++) table[0xf0 + i][c] = chrome[i][c];
+
     for (int c = 0; c < 3; c++) {
         table[0x1f][c] =
             (unsigned char)(ground->palette[0x1f][c] * scale / 100u);

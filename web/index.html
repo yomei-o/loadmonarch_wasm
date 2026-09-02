@@ -128,7 +128,8 @@
   <button id="pickIdle" disabled>手空きを選択</button>
   <button id="pickAll" disabled>全部選択</button>
   <button id="pickNone" disabled>選択解除</button>
-  <select id="orderPick" disabled></select>
+  <select id="orderPick" disabled
+          title="新しい部隊が持つ命令（原作の Default Orders）。選択中の部隊への命令はマップをクリックしたときに出るメニューで選びます"></select>
   <select id="strengthPick" disabled
           title="原作の命令メニューは6つの命令をそれぞれ3段で並べている（+0x00 / +0x50 / +0x90）">
     <option value="0">終わったら帰る</option>
@@ -773,6 +774,15 @@ createLordMonarch().then(function (M) {
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
+    if (M._lm_menu_up()) {
+      var q = viewPoint(e);
+      var took = M._lm_menu_click(q[0], q[1]);
+      if (took > 0) say(took + ' 部隊が向かいます');
+      else if (took < 0) say('やめました');
+      refreshPanel();
+      e.preventDefault();
+      return;
+    }
     if (e.button === 2 || e.button === 1) {
       panning = { x: e.clientX, y: e.clientY };
       canvas.setPointerCapture(e.pointerId);
@@ -805,9 +815,14 @@ createLordMonarch().then(function (M) {
       var n = M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
       say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : 'その範囲に部隊がいません');
     } else if (M._lm_selected() > 0) {
-      var order = parseInt(orderPick.value, 10) || 0;
-      var went = M._lm_order_at(order, strength(), p[0], p[1]);
-      say(went ? went + ' 部隊が向かいます' : 'そこへは行けません');
+      // 00423940: the order is chosen *after* the square, from a menu that
+      // comes up where the pointer is and offers only what that square
+      // accepts.  Click water and the one thing on it is 踏切を作る.
+      if (M._lm_menu_open(p[0], p[1])) {
+        say('命令を選んでください');
+      } else {
+        say('そのマスには出せる命令がありません');
+      }
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_at(p[0], p[1], 1);
@@ -853,6 +868,10 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
+    if (M._lm_menu_up()) {
+      M._lm_menu_hover(p[0], p[1]);
+      return;
+    }
     if (dragFrom) dragTo = p;
     M._lm_set_cursor(p[0], p[1]);
     if (!dragFrom && M._lm_selected() > 0) {

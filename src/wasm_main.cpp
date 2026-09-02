@@ -16,6 +16,7 @@ extern "C" {
 #include "picture.h"
 #include "render.h"
 #include "sim.h"
+#include "ui.h"
 #include "state.h"
 #include "world.h"
 }
@@ -37,6 +38,7 @@ namespace {
 
 GameState g_game;
 Sim g_sim;
+OrderMenu g_menu;
 StageList g_stages;
 TuneList g_tunes;
 Host g_host;
@@ -168,6 +170,7 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderStatus(&g_game, &g_surface);
+    uiOrderDraw(&g_surface, &g_game, &g_menu);      // 00423940's own menu
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
     unsigned char colours[256][3];
@@ -391,6 +394,43 @@ EMSCRIPTEN_KEEPALIVE int lm_order_at(int order, int modifier, int x, int y) {
     const int row = (g_viewY + y) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     return simOrderSelected(&g_sim, (unsigned)order, modifier, col, row);
+}
+
+/* ------------------------------------------- 00423940, the order menu */
+
+// The original's flow: units are chosen, the player clicks the square, and a
+// menu comes up at the cursor offering the orders that square accepts.  Two
+// tables in the executable decide which; on water it is order 7 alone, which
+// is how a bridge gets built.
+//
+// Non-zero when a menu opened.  Zero means the square accepts nothing, and the
+// caller can get on with whatever else a click there means.
+EMSCRIPTEN_KEEPALIVE int lm_menu_open(int x, int y) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y) / ts;
+    return uiOrderOpen(&g_menu, &g_game, col, row, x, y, g_viewW, g_viewH);
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_menu_up(void) { return g_menu.open; }
+
+EMSCRIPTEN_KEEPALIVE void lm_menu_close(void) { uiOrderClose(&g_menu); }
+
+EMSCRIPTEN_KEEPALIVE void lm_menu_hover(int x, int y) {
+    uiOrderHover(&g_menu, &g_game, x, y);
+}
+
+// A click while the menu is up.  Answers how many units took the order, -1
+// when the menu was dismissed, and 0 while the pointer is still in it.
+EMSCRIPTEN_KEEPALIVE int lm_menu_click(int x, int y) {
+    unsigned order = 0;
+    int strength = 0;
+    const int col = g_menu.col, row = g_menu.row;
+    const int done = uiOrderClick(&g_menu, &g_game, x, y, &order, &strength);
+    if (done < 0) return -1;
+    if (done == 0) return 0;
+    return simOrderSelected(&g_sim, order, strength, col, row);
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_last_action(void) { return g_lastAction; }
