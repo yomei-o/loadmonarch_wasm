@@ -214,11 +214,12 @@ static int fillOpen(const GameState *state, int col, int row) {
 // 0041a680.  A breadth-first fill from one cell, leaving each cell's distance
 // from it in +0x08.
 //
-// The queue is two 256-byte arrays with byte-wide head and tail, so it holds
-// 255 cells at most and wraps silently on a map of 2304.  That is not a
-// mistake to correct: a fill that outruns its queue overwrites cells it has
-// not visited and stops early, and the game is balanced on whatever that
-// produces.  Reproduced here, byte wrap and all.
+// The queue is two 256-byte arrays with byte-wide head and tail, which looks
+// alarming on a map of 2304 cells and turns out not to be: what it holds is
+// the frontier, not the visited set, and a frontier on a 48 by 48 board never
+// approaches 255.  An open board fills 2116 cells, which is every one of the
+// 2304 except the 188 of the outer ring that 0041ebb0 refuses.  The byte
+// arithmetic is reproduced anyway, since it costs nothing to be exact.
 #define FILL_QUEUE 256
 
 void simFillFrom(GameState *state, int col, int row) {
@@ -672,6 +673,96 @@ static int lookAround(Sim *sim, unsigned slot, LookFor what,
         return 1;
     }
     return 0;
+}
+
+// 00405510.  Paints the fill with what one particular unit should keep away
+// from, before that unit's route is worked out.  Only stationary entities
+// count - something already walking will not be where it is by the time
+// anyone arrives.
+//
+// An ally, or a friend too large to merge with, blocks its own cell: you
+// cannot pass through it.  Anything dangerous blocks the four cells *around*
+// it instead, leaving its own cell open - so a unit may walk into a fight but
+// may not slip past one.  Dangerous means an enemy holding its own castle
+// that this unit cannot beat two-fold (four-fold if a leader stands there), or
+// an ordinary enemy this unit cannot beat by a quarter.  Anything above
+// 0xcccc is dangerous outright, whoever is asking.
+static void blockDanger(GameState *state, unsigned slot) {
+    const Entity *me = &state->entities[slot];
+    const unsigned faction = me->faction;
+    if (faction >= FACTION_COUNT) return;
+    const unsigned char ally = state->factions[faction].at1e;
+
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        if (i == slot) continue;
+        const Entity *other = &state->entities[i];
+        if (other->flags & 0x80) continue;
+        if (other->at18 != ROUTE_EMPTY) continue;       // it is on its way
+
+        const int col = other->position[0], row = other->position[1];
+        if (!inBounds(col, row)) continue;
+        const unsigned char terrain =
+            state->world.cells[WORLD_INDEX(col, row)].terrain;
+
+        int how = 0;
+        if (ally == other->faction) {
+            how = 1;
+        } else if (other->faction == faction) {
+            if (other->at08 + me->at08 > ENTITY_STRENGTH_CAP) how = 1;
+        } else if ((unsigned char)(terrain - other->faction) == 0x14) {
+            const unsigned times = (other->at0d & 0x20) ? 4u : 2u;
+            if (other->at08 * times > 99999u ||
+                me->at08 < other->at08 * times) how = 4;
+        } else {
+            if (other->at08 > 0xccccu ||
+                me->at08 < other->at08 + (other->at08 >> 2)) how = 4;
+        }
+        if (how == 0) continue;
+
+        if (how == 1) {
+            state->world.cells[WORLD_INDEX(col, row)].marked = 1;
+            continue;
+        }
+        static const int dc[4] = {0, 0, -1, 1};
+        static const int dr[4] = {-1, 1, 0, 0};
+        for (int d = 0; d < 4; d++) {
+            const int c = col + dc[d], r = row + dr[d];
+            if (inBounds(c, r)) state->world.cells[WORLD_INDEX(c, r)].marked = 1;
+        }
+    }
+}
+
+// 0041a9f0.  The fill one unit sees: cleared, painted with what that unit must
+// avoid, then flooded from where it stands.
+void simPrepareFill(GameState *state, unsigned slot, int col, int row) {
+    state->entities[slot].at18 = ROUTE_EMPTY;
+    simResetFill(state);
+    blockDanger(state, slot);
+    simFillFrom(state, col, row);
+}
+
+// 0041cc30.  Across the whole map, the nearest cell held by somebody this
+// country is at war with - nearest by the fill, so it is the shortest walk
+// rather than the shortest line, and unreachable ground is simply never the
+// smallest.
+static int nearestEnemyCell(const GameState *state, unsigned faction,
+                            int *colOut, int *rowOut, unsigned *costOut) {
+    unsigned best = FILL_INFINITE;
+    const unsigned char ally = faction < FACTION_COUNT
+                                   ? state->factions[faction].at1e : 0x80;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const WorldCell *cell = &state->world.cells[i];
+        if (cell->cost >= best) continue;
+        const unsigned char terrain = cell->terrain;
+        if (terrain < 8 || terrain > 0x0b) continue;
+        if ((unsigned char)(terrain - faction) == 8) continue;
+        if ((unsigned char)(ally - terrain) == (unsigned char)-8) continue;
+        best = cell->cost;
+        *colOut = i / WORLD_GRID;
+        *rowOut = i % WORLD_GRID;
+    }
+    *costOut = best;
+    return best < FILL_INFINITE;
 }
 
 /* -------------------------------------------------------------- routing */
@@ -1710,6 +1801,31 @@ void simStepEntities(Sim *sim) {
     }
 }
 
+// 00422290.  The wide hunt: see the map as this unit sees it, take the nearest
+// enemy cell, and go - but only if the unit is worth at least twice the walk.
+// That one comparison is the whole of the caution: a small unit stays near
+// home simply because it cannot afford a long march.
+//
+// Arriving sets order 4 afresh, keeping the high bits that say how the order
+// was given, and fills the patience counter.
+static int huntFarEnemy(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    int col = 0, row = 0;
+    unsigned cost = FILL_INFINITE;
+    if (!nearestEnemyCell(state, entity->faction, &col, &row, &cost)) return 0;
+    if (entity->at08 < cost * 2u) return 0;
+
+    entity->target[0] = (unsigned char)col;
+    entity->target[1] = (unsigned char)row;
+    if (simRouteTo(state, slot, col, row) == 0) return 0;
+    entity->at0d = (unsigned char)((entity->at0d & 0xd4) | 4);
+    entity->at0f = 4;
+    return 1;
+}
+
 // 00402bc0: the other order handler, the one a unit born with a standing order
 // runs.  Where 00403170 carries an order out at a place it was sent, this one
 // goes looking for somewhere to carry it out - and once it has found one, it
@@ -1795,10 +1911,13 @@ static void stepStandingOrder(Sim *sim, unsigned slot) {
         entity->flags &= (unsigned char)~4u;
         return;
     }
-    if (workBudget(sim, slot)) {
-        // Here the original searches the whole map for somewhere to go.  That
-        // search is not ported; giving up costs the unit only this tick.
-        fallbackOrder(sim, slot);
+    // 00422290 and its siblings: with a work permit in hand, look across the
+    // whole map.  Only the hunt is ported; the other orders' wide searches
+    // (00421050, 00422370, 00422460, 00422530) are unread, so those units give
+    // up for this tick and try again on the next.
+    if (workBudget(sim, slot) && what == LOOK_ENEMY &&
+        huntFarEnemy(sim, slot)) {
+        entity->flags &= (unsigned char)~4u;
         return;
     }
     fallbackOrder(sim, slot);

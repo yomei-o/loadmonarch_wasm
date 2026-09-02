@@ -682,6 +682,62 @@ int main(void) {
         expect("no sprite number leaves the bank", highest < 0xcc, 1);
     }
 
+    // 00422290: a unit born under a standing order looks across the whole map
+    // for an enemy and marches.  On an open board with one enemy cell far
+    // away, so the near finder cannot see it and only the wide hunt can.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim hunt;
+        simInit(&hunt, &state);
+        hunt.humanFaction = 0;
+
+        Entity *h = &state.entities[3];
+        h->flags = 4;                   // born with a standing order
+        h->faction = 0;
+        h->at0d = 0x14;                 // order 4, standing
+        h->at08 = 50000;
+        h->at0f = 10;
+        h->at18 = 0x1f0;
+        h->position[0] = 4;
+        h->position[1] = 4;
+        statePlaceEntities(&state);
+        state.world.cells[WORLD_INDEX(30, 30)].terrain = 9;   // faction 1's
+
+        simPrepareFill(&state, 3, 4, 4);
+        expect("the far cell is reachable",
+               state.world.cells[WORLD_INDEX(30, 30)].cost < 0x1f0, 1);
+
+        int took = 0;
+        for (int i = 0; i < 200 && !took; i++) {
+            simStep(&hunt);
+            if (h->at18 != 0x1f0) took = 1;
+        }
+        expect("the hunter set out", took, 1);
+        if (took) {
+            expect("for the enemy cell", h->target[0] == 30 && h->target[1] == 30,
+                   1);
+            printf("  hunter at %d,%d heading for %d,%d, %u steps\n",
+                   h->position[0], h->position[1], h->target[0], h->target[1],
+                   h->at14);
+        }
+
+        // Too small to be worth the walk: 00422290 wants twice the distance.
+        Entity *small = &state.entities[4];
+        small->flags = 4;
+        small->faction = 0;
+        small->at0d = 0x14;
+        small->at08 = 4;                // the walk is far longer than that
+        small->at0f = 10;
+        small->at18 = 0x1f0;
+        small->position[0] = 4;
+        small->position[1] = 6;
+        statePlaceEntities(&state);
+        for (int i = 0; i < 20; i++) simStep(&hunt);
+        expect("a small unit stays home", small->at18, 0x1f0);
+    }
+
     // The name table out of the large terrain file.  It needs the game's own
     // files, so this runs only where they are - beside the repository, as the
     // build script is run.
@@ -767,9 +823,12 @@ int main(void) {
                         unsigned open = 0;
                         for (int i = 0; i < WORLD_CELLS; i++)
                             if (game.world.cells[i].cost < 0x1f0) open++;
-                        expect("an open map fills without hanging", open > 1, 1);
+                        // Every cell but the outer ring, which 0041ebb0 never
+                        // walks: 2304 - 188.
+                        expect("an open map fills but for its edge", open,
+                               WORLD_CELLS - (WORLD_GRID * 4 - 4));
                         printf("  open fill reached %u of %d cells "
-                               "(the byte-wide queue stops it early)\n",
+                               "(all but the outer ring)\n",
                                open, WORLD_CELLS);
                     }
 

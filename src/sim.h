@@ -86,6 +86,11 @@ void simSeedLeaders(Sim *sim);
 unsigned simHumanActor(const Sim *sim);
 
 
+// 0041a9f0.  The distance field as one particular unit sees it: cleared,
+// painted with what that unit must keep away from (00405510), then flooded
+// from where it stands.
+void simPrepareFill(GameState *state, unsigned slot, int col, int row);
+
 // 00405000 and its two helpers.  simRouteTo turns a filled distance field into
 // a route the unit can walk - 1 if it laid one, 10 if the unit is already
 // there, 0 if it cannot be reached.  simUnblockTarget (004056f0) opens a wall
