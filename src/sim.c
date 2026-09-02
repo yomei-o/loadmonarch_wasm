@@ -1452,6 +1452,78 @@ static WorldCell *targetCell(GameState *state, const Entity *entity,
 // strength comes off its value at a time; at nothing it goes back to bare land
 // at the usual hundred.  Unlike the others this works on the cell the unit is
 // standing on, not its target.
+static int stepInBounds(unsigned col, unsigned row, int dx, int dy);
+static int fightAt(Sim *sim, unsigned slot, unsigned col, unsigned row);
+static int mergeAt(Sim *sim, unsigned slot, unsigned col, unsigned row);
+static int raidSettlement(Sim *sim, unsigned slot, unsigned col, unsigned row);
+
+// 0041ac10.  The Manhattan distance between a unit and the square it means to
+// work on.  The five orders that reach out of a unit's own cell all open with
+// it: the target has to be beside the unit, never under it and never further.
+static int targetRange(const Entity *entity) {
+    const int dc = (int)entity->target[0] - (int)entity->position[0];
+    const int dr = (int)entity->target[1] - (int)entity->position[1];
+    return (dc < 0 ? -dc : dc) + (dr < 0 ? -dr : dr);
+}
+
+// 0041ac90 as 0041ac40 calls it: a unit at work faces what it is working on.
+// The original writes this at every exit of the five; nothing in any of them
+// moves the unit, so once, after the reach is checked, is the same thing.
+static void faceTarget(GameState *state, unsigned slot) {
+    Entity *entity = &state->entities[slot];
+    unsigned char face = 6;                 // south, and the unit's own cell
+    if (entity->target[1] == entity->position[1]) {
+        if (entity->target[0] != entity->position[0])
+            face = entity->target[0] > entity->position[0] ? 4 : 0;
+    } else {
+        face = entity->target[1] > entity->position[1] ? 6 : 2;
+    }
+    entity->at0c = face;
+}
+
+// 00421750.  A unit standing on the very square it means to work on steps off
+// it: the four directions from the one it faces, two apart, and the first
+// whose ground is open.  Fighting, merging and raiding all count as having
+// spent the step, the same as any other move.
+static int stepAside(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->position[0], row = entity->position[1];
+    for (int t = 0; t < 4; t++) {
+        const unsigned char dir = (unsigned char)((entity->at0c + t * 2) & 7);
+        if (!stepInBounds(col, row, kStepDx[dir], kStepDy[dir])) continue;
+        const int nc = (int)col + kStepDx[dir], nr = (int)row + kStepDy[dir];
+        WorldCell *to = &state->world.cells[WORLD_INDEX((unsigned)nc,
+                                                        (unsigned)nr)];
+        if (to->terrain >= TERRAIN_WALKABLE_MAX) continue;
+        entity->at0c = dir;
+        if (fightAt(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+        if (mergeAt(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+        if (entity->flags & 0x80) return 1;     // a merge can retire the mover
+        if (to->occupant < ENTITY_NONE) return 0;
+        if (raidSettlement(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+        state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+        to->occupant = (unsigned char)slot;
+        entity->position[0] = (unsigned char)nc;
+        entity->position[1] = (unsigned char)nr;
+        return 1;
+    }
+    return 0;
+}
+
+// What each of those five does before anything else.  Non-zero means the
+// caller should give up this tick.
+#define OUT_OF_REACH(sim, slot, entity)                                       \
+    do {                                                                      \
+        const int reach__ = targetRange(entity);                              \
+        if (reach__ == 0) {                                                   \
+            stepAside((sim), (slot));                                         \
+            return SIM_ACTION_REFUSED;                                        \
+        }                                                                     \
+        if (reach__ != 1) return SIM_ACTION_REFUSED;                          \
+        faceTarget((sim)->state, (slot));                                     \
+    } while (0)
+
 // 0041ad90.  Whenever the ground opens up - a wall pulled down, a mine
 // harvested, a den broken, a monster chewing through - two things follow: every
 // cell works out afresh whether it can be walked on, and every idle unit that
@@ -1496,6 +1568,7 @@ SimActionResult simDemolishWall(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
     Entity *entity = &state->entities[slot];
+    OUT_OF_REACH(sim, slot, entity);
     WorldCell *cell = targetCell(state, entity, NULL, NULL);
     if (!cell) return SIM_ACTION_REFUSED;
     if (cell->terrain != 0x7b) return SIM_ACTION_REFUSED;
@@ -1521,6 +1594,7 @@ SimActionResult simMakeMine(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
     Entity *entity = &state->entities[slot];
+    OUT_OF_REACH(sim, slot, entity);
     unsigned col = 0, row = 0;
     WorldCell *cell = targetCell(state, entity, &col, &row);
     if (!cell) return SIM_ACTION_REFUSED;
@@ -1555,6 +1629,7 @@ SimActionResult simBreakSpawner(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
     Entity *entity = &state->entities[slot];
+    OUT_OF_REACH(sim, slot, entity);
     WorldCell *cell = targetCell(state, entity, NULL, NULL);
     if (!cell) return SIM_ACTION_REFUSED;
     if (cell->terrain != 5) return SIM_ACTION_REFUSED;
@@ -1582,6 +1657,7 @@ SimActionResult simBuildWall(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
     Entity *entity = &state->entities[slot];
+    OUT_OF_REACH(sim, slot, entity);
     const unsigned col = entity->target[0];
     const unsigned row = entity->target[1];
     if (col == 0 || row == 0 || col > 0x2e || row > 0x2e)
@@ -1628,13 +1704,14 @@ SimActionResult simBuildWall(Sim *sim, unsigned slot) {
 // a sixteenth of its own strength.  When the cell's value runs out it becomes
 // 0x20, which is walkable.
 //
-// The original gates this on 0041ac10 - a Manhattan distance - as well; here
+// 0041ac10 gates this, as it gates the other four; here
 // the target has to be inside the border, which is the guard 0040b680 itself
 // applies next.
 SimActionResult simClearTarget(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
     Entity *entity = &state->entities[slot];
+    OUT_OF_REACH(sim, slot, entity);
     const unsigned col = entity->target[0];
     const unsigned row = entity->target[1];
     if (col == 0 || row == 0 || col > 0x2e || row > 0x2e)

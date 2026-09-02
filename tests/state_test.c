@@ -458,11 +458,17 @@ int main(void) {
         expect("the fallback sent it home", e->at18 != 0x1f0, 1);
         expect("and set the plain order", e->at0d & 0x0f, 1);
 
-        // Standing on its own, it is left alone.
+        // Standing on its own, it is left alone.  The order's target is put
+        // out of reach on purpose: 0041ac10 lets the five reaching orders work
+        // one cell away and no further, and a target under the unit's own feet
+        // makes 00421750 shove it off the square instead - which is a
+        // different question from this one.
         e->at0d = 0x10 | 7;
         e->at18 = 0x1f0;
         e->position[0] = 32;
         e->position[1] = 30;
+        e->target[0] = 10;
+        e->target[1] = 10;
         simStepEntities(&home);
         expect("on its own ground it stays", e->at18, 0x1f0);
     }
