@@ -97,11 +97,12 @@ createLordMonarch().then((M) => {
     // Orders: giving the whole army one takes and shows up in their state.
     M._lm_load_stage(1);                    // B_003, which starts with units
     for (let i = 0; i < 200; i++) M._lm_step(1);
-    M._lm_set_order(4);
+    M._lm_set_order(4, 2);
     // lm_set_order composes the byte the menu at 0x434444 would: the order
-    // itself plus 0x10, which is what makes it a standing order at all.
-    expect('the selected order took', M._lm_order(), 4 | 0x10);
-    const ordered = M._lm_order_all(4);
+    // itself, plus 0x10 to make it a standing order at all, plus 0x80 for the
+    // third of the three rows - keep looking for another one like it.
+    expect('the selected order took', M._lm_order(), 4 | 0x10 | 0x80);
+    const ordered = M._lm_order_all(4, 2);
     expect('some units were given it', ordered, (n) => n > 0);
     for (let i = 0; i < 200; i++) M._lm_step(1);
     expect('and the game keeps running', M._lm_sweeps(), (n) => n > 0);

@@ -250,18 +250,25 @@ EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
 // DAT_004365e0: the order a unit the player raises will carry.  1 is the
 // plain one (build where you stand); 4 sends it after a neighbour's
 // settlement.  growFromUnit stamps it on, exactly as the original does.
-EMSCRIPTEN_KEEPALIVE void lm_set_order(int order) {
+EMSCRIPTEN_KEEPALIVE void lm_set_order(int order, int strength) {
     // The menu at 0x434444 composes this byte: the order itself, plus 0x10 to
     // make it a standing order at all, and 0x40 or 0x80 for the two stronger
-    // variants.  This takes the plain order and asks for the middle one.
-    g_sim.pendingOrder =
-        order <= 0 ? 1u : (unsigned)((order & 0x0f) | 0x10);
+    // variants.  `strength` picks which of the three - what 00403170 reads the
+    // high bits for once the work is done.
+    if (order <= 0) {
+        g_sim.pendingOrder = 1u;
+        return;
+    }
+    unsigned code = (unsigned)((order & 0x0f) | 0x10);
+    if (strength == 1) code |= 0x40u;
+    if (strength == 2) code |= 0x80u;
+    g_sim.pendingOrder = code;
 }
 EMSCRIPTEN_KEEPALIVE int lm_order(void) { return (int)g_sim.pendingOrder; }
 
 // Gives every unit of the player's faction that order, which is how a country
 // is actually directed - the original routes it through the command window.
-EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
+EMSCRIPTEN_KEEPALIVE int lm_order_all(int order, int strength) {
     int changed = 0;
     for (int i = 0; i < ENTITY_COUNT; i++) {
         Entity *entity = &g_game.entities[i];
@@ -270,8 +277,12 @@ EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
         if (entity->at0d & 0x20) continue;         // leave the leader alone
         // Bit 7 is what 00403170 reads as "keep hunting"; without it order 4
         // sends the unit home instead.
-        const unsigned hunt = (order & 0x0f) == 4 ? 0x80u : 0u;
-        entity->at0d = (unsigned char)(hunt | 0x10u | (order & 0x0f));
+        // Order 4 without a strength would send the unit home the moment it
+        // struck once, which is not what "the whole army, attack" means; the
+        // strength the caller asks for wins when it gives one.
+        unsigned high = strength == 1 ? 0x40u : strength == 2 ? 0x80u : 0u;
+        if (!high && (order & 0x0f) == 4) high = 0x80u;
+        entity->at0d = (unsigned char)(high | 0x10u | (order & 0x0f));
         entity->at18 = 0x1f0;                     // drop whatever it was doing
         changed++;
     }

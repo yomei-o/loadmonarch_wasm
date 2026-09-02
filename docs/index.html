@@ -129,6 +129,12 @@
   <button id="pickAll" disabled>全部選択</button>
   <button id="pickNone" disabled>選択解除</button>
   <select id="orderPick" disabled></select>
+  <select id="strengthPick" disabled
+          title="原作の命令メニューは6つの命令をそれぞれ3段で並べている（+0x00 / +0x50 / +0x90）">
+    <option value="0">終わったら帰る</option>
+    <option value="1">終わったらその場で待つ</option>
+    <option value="2">終わったら次を探す</option>
+  </select>
   <span class="sep"></span>
   <button id="artBtn" disabled>絵</button>
   <button id="saveBtn" disabled>保存</button>
@@ -191,7 +197,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902061851"></script>
+<script src="loadmonarch.js?v=20260902062416"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -558,7 +564,7 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       drop.classList.add('hide');
-      ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'attack', 'hold', 'home',
+      ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'strengthPick', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
        'saveBtn', 'loadBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
@@ -715,8 +721,9 @@ createLordMonarch().then(function (M) {
 
   orderButtons.forEach(function (pair) {
     document.getElementById(pair[0]).onclick = function () {
-      M._lm_set_order(pair[1]);
-      say(M._lm_order_all(pair[1]) + ' 部隊に命令');
+      var how = strength();
+      M._lm_set_order(pair[1], how);
+      say(M._lm_order_all(pair[1], how) + ' 部隊に命令');
       refreshPanel();
     };
   });
@@ -724,6 +731,11 @@ createLordMonarch().then(function (M) {
   // Choosing units, then a place: 00409e90 picks them all up, 00409f10 only
   // the idle ones, and the next click on the map says where they are going.
   var orderPick = document.getElementById('orderPick');
+  // What 00403170 does once the work is finished, which is the only difference
+  // between the three rows of the original's order menu: go home, wait where
+  // you are, or look for another one like it.
+  var strengthPick = document.getElementById('strengthPick');
+  function strength() { return parseInt(strengthPick.value, 10) || 0; }
   document.getElementById('pickIdle').onclick = function () {
     var n = M._lm_select_all(0);
     say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : '手のあいた部隊がいません');
@@ -785,7 +797,7 @@ createLordMonarch().then(function (M) {
       say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : 'その範囲に部隊がいません');
     } else if (M._lm_selected() > 0) {
       var order = parseInt(orderPick.value, 10) || 0;
-      var went = M._lm_order_at(order, 0, p[0], p[1]);
+      var went = M._lm_order_at(order, strength(), p[0], p[1]);
       say(went ? went + ' 部隊が向かいます' : 'そこへは行けません');
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
