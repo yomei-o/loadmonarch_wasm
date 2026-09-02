@@ -2247,6 +2247,201 @@ static int lookForWork(Sim *sim, unsigned slot) {
     return 0;
 }
 
+/* ------------------------------------------- what the machine plays for */
+
+// 00421140.  Rally to the king: when a country's flags carry 0x20 - which
+// 00401000 sets when the leader wants help - its units head for wherever the
+// leader is, or for where it is going if it is on the move.  A unit lighter
+// than the walk is worth stays put.
+static int rallyToLeader(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+    if ((state->factions[faction].flags & 0x20) == 0) return 0;
+
+    const unsigned king = state->factions[faction].at0c;
+    if (king >= ENTITY_COUNT) return 0;
+    const Entity *leader = &state->entities[king];
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    const int col = leader->at18 == ROUTE_EMPTY ? leader->position[0]
+                                                : leader->target[0];
+    const int row = leader->at18 == ROUTE_EMPTY ? leader->position[1]
+                                                : leader->target[1];
+    if (!inBounds(col, row)) return 0;
+    if (entity->at08 < state->world.cells[WORLD_INDEX(col, row)].cost) return 0;
+
+    entity->target[0] = (unsigned char)col;
+    entity->target[1] = (unsigned char)row;
+    return simRouteTo(state, slot, col, row) != 0;
+}
+
+// 00421270.  Go for the enemy king - the nearest leader that is not ours and
+// not an ally's.  00421ae0 only lets a unit try this once it weighs more than
+// a thousand, which is what keeps the early game from being a decapitation
+// race.
+static int huntEnemyLeader(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+    const unsigned char ally = state->factions[faction].at1e;
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    unsigned best = FILL_INFINITE;
+    int bestCol = 0, bestRow = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        const Entity *other = &state->entities[i];
+        if (other->flags & 0x80) continue;
+        if ((other->at0d & 0x20) == 0) continue;        // leaders only
+        if (other->faction == faction || other->faction == ally) continue;
+        const int col = other->position[0], row = other->position[1];
+        if (!inBounds(col, row)) continue;
+        const unsigned cost = state->world.cells[WORLD_INDEX(col, row)].cost;
+        if (cost >= FILL_INFINITE || cost >= best) continue;
+        best = cost;
+        bestCol = col;
+        bestRow = row;
+    }
+    if (best >= FILL_INFINITE) return 0;
+    if (entity->at08 < best * 2u) return 0;
+
+    entity->target[0] = (unsigned char)bestCol;
+    entity->target[1] = (unsigned char)bestRow;
+    if (simRouteTo(state, slot, bestCol, bestRow) == 0) return 0;
+    entity->at0d = (unsigned char)((entity->at0d & 0xd4) | 4);
+    entity->at0f = 4;
+    return 1;
+}
+
+// 00422040 over 0041caf0.  Walk into a bigger friend and become one unit: the
+// nearest of them that is heavier than this one and light enough that the pair
+// stays under the hundred thousand.
+static int mergeWithBigger(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    unsigned best = FILL_INFINITE;
+    int bestCol = 0, bestRow = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        if ((unsigned)i == slot) continue;
+        const Entity *other = &state->entities[i];
+        if (other->flags & 0x80) continue;
+        if (other->faction != entity->faction) continue;
+        if (other->at08 <= entity->at08) continue;
+        if (other->at08 + entity->at08 >= ENTITY_STRENGTH_CAP) continue;
+        const int col = other->position[0], row = other->position[1];
+        if (!inBounds(col, row)) continue;
+        const unsigned cost = state->world.cells[WORLD_INDEX(col, row)].cost;
+        if (cost >= FILL_INFINITE || cost >= best) continue;
+        best = cost;
+        bestCol = col;
+        bestRow = row;
+    }
+    if (best >= FILL_INFINITE) return 0;
+    if (entity->at08 < best * 2u) return 0;
+
+    entity->target[0] = (unsigned char)bestCol;
+    entity->target[1] = (unsigned char)bestRow;
+    if (simRouteTo(state, slot, bestCol, bestRow) != 1) return 0;
+    entity->at0d = 3;
+    entity->at0f = 4;
+    return 1;
+}
+
+// 00422110 over 0041cbc0.  Back to one of the country's own settlements - and
+// if it is standing on one already, stop and build there instead.
+static int settleAtHome(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    const int here = WORLD_INDEX(entity->position[0], entity->position[1]);
+
+    if ((unsigned char)(state->world.cells[here].terrain - faction) == 8) {
+        entity->at18 = ROUTE_EMPTY;
+        entity->target[0] = entity->position[0];
+        entity->target[1] = entity->position[1];
+        if ((entity->at0d & 0x20) == 0) entity->at0d = 2;
+        return 1;
+    }
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    unsigned best = FILL_INFINITE;
+    int bestCol = 0, bestRow = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const WorldCell *cell = &state->world.cells[i];
+        if ((unsigned char)(cell->terrain - faction) != 8) continue;
+        if (cell->cost >= best) continue;
+        best = cell->cost;
+        bestCol = i / WORLD_GRID;
+        bestRow = i % WORLD_GRID;
+    }
+    if (best >= FILL_INFINITE) return 0;
+    entity->target[0] = (unsigned char)bestCol;
+    entity->target[1] = (unsigned char)bestRow;
+    return simRouteTo(state, slot, bestCol, bestRow) != 0;
+}
+
+// 00421f20.  Throw a dart at the map: a random cell, and if it is bare ground
+// this unit can reach for less than half its weight and no settlement of its
+// own stands within a cell of it, go and build there.  This is how a country
+// reaches ground its own borders do not touch.
+static int openGround(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    if (!canAffordFor(sim, slot, 100)) return 0;
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    for (int tries = 0; tries < 16; tries++) {
+        const int col = (int)simRandom(WORLD_GRID);
+        const int row = (int)simRandom(WORLD_GRID);
+        if (!inBounds(col, row)) continue;
+        const WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+        if (cell->terrain != 0) continue;
+        if (cell->cost >= FILL_INFINITE) continue;
+        if (entity->at08 <= cell->cost * 2u) continue;
+        if (tooCloseToOwn(state, entity->faction, col, row)) continue;
+        if (simRouteTo(state, slot, col, row) == 0) continue;
+        entity->target[0] = (unsigned char)col;
+        entity->target[1] = (unsigned char)row;
+        entity->at0d = 5;
+        entity->at0f = 4;
+        return 1;
+    }
+    return 0;
+}
+
+// 00421ae0.  What a country's units do when there is nothing to do nearby -
+// and only the countries the machine plays, which is the whole of its
+// strategy.  Answering the king comes first, then the king's own errand, then
+// the enemy king once a unit is worth more than a thousand; failing those, a
+// roll of a hundred decides between merging, going home, and striking out for
+// open ground.
+//
+// 00420ef0, the first of them, waits on 00421660 and on what terrain 0x20 to
+// 0x2f is - neither read yet - so a unit falls past it.  00421d30's general
+// chooser is likewise unread.
+static int thinkStrategically(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    if (state->entities[slot].faction == sim->humanFaction) return 0;
+
+    if (rallyToLeader(sim, slot)) return 1;
+    if (state->entities[slot].at08 > 1000 && huntEnemyLeader(sim, slot))
+        return 1;
+
+    const unsigned roll = simRandom(100);
+    if (roll > 0x59) {
+        if (mergeWithBigger(sim, slot)) return 1;
+        return settleAtHome(sim, slot);
+    }
+    if (roll > 0x50) return openGround(sim, slot);
+    return 0;
+}
+
 // 00402bc0: the other order handler, the one a unit born with a standing order
 // runs.  Where 00403170 carries an order out at a place it was sent, this one
 // goes looking for somewhere to carry it out - and once it has found one, it
@@ -2713,7 +2908,6 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
     // is full, which is what this port did until now.
     entity->at0c = 6;
     if ((entity->flags & 8) == 0 && lookForWork(sim, slot)) return;
-    // Failing that, 00421ae0 - the machine's own strategy - which is read
-    // next.  Until then a unit with nothing to do simply waits.
-    workBudget(sim, slot);
+    // 00421ae0: nothing nearby, so the machine falls back on strategy.
+    if (workBudget(sim, slot)) thinkStrategically(sim, slot);
 }
