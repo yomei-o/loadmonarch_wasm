@@ -22,6 +22,10 @@ sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/stress_test.exe    tests/st
 echo "built tests/stress_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/sim_harness.exe     tests/sim_harness.c $SIM
 echo "built tests/sim_harness.exe"
+# It draws the board through the same sim, so it goes stale exactly when it
+# would be most misleading to look at.
+sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/frame_dump.exe      tests/frame_dump.c $SIM
+echo "built tests/frame_dump.exe"
 ./tests/state_test.exe
 ./tests/stress_test.exe
 ./tests/growth_test.exe
