@@ -236,6 +236,28 @@ int main(void) {
                was, state.entities[2].at08);
     }
 
+    // A bridge.  The one thing a player has to be able to do on Saint Steed,
+    // Strange Islands and Moon and Stars, and the thing no country the machine
+    // plays ever does: clear a square of 0x30-to-0x5f and walk through the gap.
+    board(&state, &sim, 20000);
+    for (unsigned row = 0; row < WORLD_GRID; row++) {
+        WorldCell *c = &state.world.cells[WORLD_INDEX(22, row)];
+        c->terrain = 0x35;                  // a wall of water down the board
+        c->value = 100;
+    }
+    stateMarkBlocked(&state);
+    {
+        expect("the far side starts out of reach",
+               simReachTarget(&state, 1, 24, 20), 1);
+        const long took = carryOut(&sim, &state, 7, 22, 20, 0x35);
+        expect("the water gave way", took > 0, 1);
+        const int reach = simReachTarget(&state, 1, 24, 20);
+        expect("and the far side is reachable over the bridge",
+               reach > 1 && reach < 5, 1);
+        printf("  a bridge took %ld sweeps; the far side answers %d\n",
+               took, reach);
+    }
+
     // Order 0: stand still.  Nothing to check on the board - what matters is
     // that the unit does not wander off, which is the whole point of it.
     board(&state, &sim, 8000);
