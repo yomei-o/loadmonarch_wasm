@@ -2281,6 +2281,43 @@ static int lookForWork(Sim *sim, unsigned slot) {
 
 /* ------------------------------------------- what the machine plays for */
 
+// 00420ef0.  Somebody else's find.  A country whose king is out of its castle
+// and has stood on a seam of ore says so in its own record - the place in
+// +0x20, and the two flags that mean "out" and "something to report".  This is
+// a rival reading that and going to dig it out from under them: order 10, the
+// mine, stopping a cell short the way the digging orders do.
+static int answerRivalFind(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+    const unsigned char ally = state->factions[faction].at1e;
+
+    unsigned found = PLAYABLE_FACTIONS;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        if (f == faction || f == ally) continue;
+        const unsigned flags = state->factions[f].flags;
+        if ((flags & 2) && (flags & 4)) { found = f; break; }
+    }
+    if (found >= PLAYABLE_FACTIONS) return 0;
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    const int col = state->factions[found].at20[0];
+    const int row = state->factions[found].at20[1];
+    if (!inBounds(col, row)) return 0;
+    const unsigned cost = state->world.cells[WORLD_INDEX(col, row)].cost;
+    if (cost >= FILL_INFINITE) return 0;
+    if (entity->at08 < cost * 2u) return 0;
+
+    entity->target[0] = (unsigned char)col;
+    entity->target[1] = (unsigned char)row;
+    if (simRouteTo(state, slot, col, row) == 0) return 0;
+    simShortenRoute(state, slot);
+    entity->at0d = 10;
+    entity->at0f = 4;
+    return 1;
+}
+
 // 00421660.  The king goes home: a route to the capital, taken only if the
 // king is worth twice the walk.  Getting one clears both the flag that says it
 // is out and the flag that says it has something to report.
@@ -2485,6 +2522,77 @@ static int openGround(Sim *sim, unsigned slot) {
     return 0;
 }
 
+// 0041c410 and 00421d30.  The general question: of everything this unit can
+// reach, what is most worth walking to?  Everything is scored by its distance,
+// with eight added to it - except a neutral spawn, which is scored by distance
+// alone and so beats anything else at the same range.  Ground the unit could
+// build on counts only if no settlement of its own stands within a cell of it;
+// buildings and enemy settlements always count; the unit's own country's and
+// its ally's never do.
+//
+// What is found then decides the order: bare ground is built on, a spawn is
+// broken, an enemy settlement attacked, and anything else pulled down.
+static int generalStrategy(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return 0;
+    // 0041c580 is the same scan with the building case taken out: a country
+    // that cannot afford a settlement still goes for spawns, buildings and
+    // enemy ground, none of which costs anything.
+    const int canBuild = canAffordFor(sim, slot, 100);
+    const unsigned char ally = state->factions[faction].at1e;
+
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+
+    unsigned best = FILL_INFINITE + 9;              // 0x1f9, as the original
+    int bestCol = 0, bestRow = 0;
+    unsigned bestTerrain = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const WorldCell *cell = &state->world.cells[i];
+        if (cell->cost >= FILL_INFINITE) continue;
+        const unsigned char terrain = cell->terrain;
+        const int col = i / WORLD_GRID, row = i % WORLD_GRID;
+
+        unsigned score;
+        if (terrain == 5) {
+            score = cell->cost;                     // no penalty for a spawn
+        } else {
+            score = cell->cost + 8;
+            if (terrain == (unsigned char)(faction + 8)) continue;
+            if (terrain == (unsigned char)(ally + 8)) continue;
+            if (terrain == 0 || (terrain > 0x0b && terrain < 0x10)) {
+                if (!canBuild) continue;
+                if (tooCloseToOwn(state, faction, col, row)) continue;
+            } else if (!((terrain >= 1 && terrain <= 4) ||
+                         (terrain >= 8 && terrain <= 0x0b))) {
+                continue;
+            }
+        }
+        if (score >= best) continue;
+        best = score;
+        bestCol = col;
+        bestRow = row;
+        bestTerrain = terrain;
+    }
+    if (best >= FILL_INFINITE) return 0;
+
+    unsigned char order;
+    if (bestTerrain == 0 || (bestTerrain >= 0x0c && bestTerrain < 0x10))
+        order = 5;
+    else if (bestTerrain == 5) order = 0x0b;
+    else if (bestTerrain >= 8 && bestTerrain <= 0x0b) order = 4;
+    else order = 8;
+
+    entity->target[0] = (unsigned char)bestCol;
+    entity->target[1] = (unsigned char)bestRow;
+    if (simRouteTo(state, slot, bestCol, bestRow) == 0) return 0;
+    if (order == 0x0b) simShortenRoute(state, slot);
+    entity->at0d = order;
+    entity->at0f = 4;
+    return 1;
+}
+
 // 00421ae0.  What a country's units do when there is nothing to do nearby -
 // and only the countries the machine plays, which is the whole of its
 // strategy.  Answering the king comes first, then the king's own errand, then
@@ -2492,19 +2600,20 @@ static int openGround(Sim *sim, unsigned slot) {
 // roll of a hundred decides between merging, going home, and striking out for
 // open ground.
 //
-// 00420ef0, the first of them, waits on 00421660 and on what terrain 0x20 to
-// 0x2f is - neither read yet - so a unit falls past it.  00421d30's general
-// chooser is likewise unread.
+// Only 0041c580 - what 0041c410 falls to when the country cannot afford a
+// settlement - and 0041c8e0 remain unread.
 static int thinkStrategically(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (state->entities[slot].faction == sim->humanFaction) return 0;
 
+    if (answerRivalFind(sim, slot)) return 1;
     if (rallyToLeader(sim, slot)) return 1;
     if (state->entities[slot].at08 > 1000 && huntEnemyLeader(sim, slot))
         return 1;
 
     const unsigned roll = simRandom(100);
     if (roll > 0x59) {
+        if (generalStrategy(sim, slot)) return 1;
         if (mergeWithBigger(sim, slot)) return 1;
         return settleAtHome(sim, slot);
     }

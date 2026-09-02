@@ -46,6 +46,7 @@ static void report(GameState *game, const Sim *sim, const char *when) {
     }
 }
 
+
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
