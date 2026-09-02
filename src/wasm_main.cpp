@@ -13,6 +13,7 @@
 extern "C" {
 #include "host.h"
 #include "midi.h"
+#include "picture.h"
 #include "render.h"
 #include "sim.h"
 #include "state.h"
@@ -330,6 +331,26 @@ EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
 // 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
 // outlasted the rest, 2 when the player is out.
 EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }
+
+/* ------------------------------------------------------------ pictures */
+
+// The title, the five interludes and the ending, straight out of DATA/.  The
+// page asks for one by name and draws it on its own canvas.
+Picture g_picture;
+
+EMSCRIPTEN_KEEPALIVE int lm_picture_open(const char *stem) {
+    pictureFree(&g_picture);
+    return pictureLoad(&g_picture, &g_host, stem);
+}
+EMSCRIPTEN_KEEPALIVE int lm_picture_width(void) {
+    return (int)g_picture.width;
+}
+EMSCRIPTEN_KEEPALIVE int lm_picture_height(void) {
+    return (int)g_picture.height;
+}
+EMSCRIPTEN_KEEPALIVE const unsigned *lm_picture_pixels(void) {
+    return g_picture.pixels;
+}
 
 /* ------------------------------------------- what is under the cursor */
 

@@ -58,6 +58,13 @@
     background: rgba(7, 10, 6, .94);
   }
   #drop.hide { display: none; }
+  #art {
+    position: absolute; inset: 0; margin: auto;
+    max-width: 100%; max-height: 100%;
+    image-rendering: pixelated;
+    background: #000; cursor: pointer;
+    box-shadow: 0 0 0 100vmax rgba(7, 10, 6, .8);
+  }
   #drop .box {
     border: 2px dashed var(--line);
     border-radius: 6px;
@@ -119,6 +126,7 @@
   <button id="pickNone" disabled>選択解除</button>
   <select id="orderPick" disabled></select>
   <span class="sep"></span>
+  <button id="artBtn" disabled>絵</button>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -126,6 +134,7 @@
 <main>
   <div id="stage">
     <canvas id="view" width="640" height="480"></canvas>
+    <canvas id="art" hidden></canvas>
     <div id="drop">
       <div class="box">
         <h1 id="dropTitle">読み込んでいます…</h1>
@@ -170,6 +179,32 @@ createLordMonarch().then(function (M) {
   var note = document.getElementById('note');
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
+
+  // DATA/*.256: the title, the five interludes and the ending.  Shown over
+  // the map, cleared by a click.
+  var artCanvas = document.getElementById('art');
+  var artButton = document.getElementById('artBtn');
+  function showPicture(stem) {
+    if (!M.ccall) return false;
+    var name = M._lm_alloc(stem.length + 1);
+    for (var i = 0; i < stem.length; i++) M.HEAPU8[name + i] = stem.charCodeAt(i);
+    M.HEAPU8[name + stem.length] = 0;
+    var ok = M._lm_picture_open(name);
+    M._lm_free(name);
+    if (!ok) return false;
+    var w = M._lm_picture_width(), h = M._lm_picture_height();
+    artCanvas.width = w;
+    artCanvas.height = h;
+    var ptr = M._lm_picture_pixels();
+    var img = new ImageData(
+        new Uint8ClampedArray(M.HEAPU8.buffer, ptr, w * h * 4).slice(), w, h);
+    artCanvas.getContext('2d').putImageData(img, 0, 0);
+    artCanvas.hidden = false;
+    return true;
+  }
+  artCanvas.addEventListener('pointerdown', function () {
+    artCanvas.hidden = true;
+  });
 
   var W = M._lm_width(), H = M._lm_height();
   canvas.width = W;
@@ -323,7 +358,7 @@ createLordMonarch().then(function (M) {
       loaded = true;
       drop.classList.add('hide');
       ['prev', 'next', 'pause', 'music', 'attack', 'hold', 'home',
-       'pickIdle', 'pickAll', 'pickNone', 'orderPick',
+       'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
@@ -331,6 +366,8 @@ createLordMonarch().then(function (M) {
       // The orders are named by the scenery set too - "Destroy" in one, "Now
       // Open" in another - so the buttons say what this campaign calls them.
       nameOrderButtons();
+      showPicture('LOGO');          // the title, until it is clicked away
+      artAt = 1;
       present();
       refreshPanel();
       // Opening the zip is a user gesture, which is the one thing a browser
@@ -367,6 +404,18 @@ createLordMonarch().then(function (M) {
           'お手元の zip を落とすか、上のボタンから開いてください。';
     });
   }
+
+  // LOGO is the title, GAKU and GAKU1 to 4 the interludes, END the ending.
+  var artNames = ['LOGO', 'GAKU', 'GAKU1', 'GAKU2', 'GAKU3', 'GAKU4', 'END'];
+  var artAt = 0;
+  artButton.onclick = function () {
+    for (var tries = 0; tries < artNames.length; tries++) {
+      var name = artNames[artAt];
+      artAt = (artAt + 1) % artNames.length;
+      if (showPicture(name)) { say(name); return; }
+    }
+    say('絵が読めません');
+  };
 
   langE.onclick = function () { fetchRelease('e'); };
   langJ.onclick = function () { fetchRelease('j'); };

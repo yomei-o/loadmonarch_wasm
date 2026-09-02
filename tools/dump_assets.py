@@ -3,7 +3,9 @@
 Formats settled by inspection (no decompiler needed):
 
   .256   uint32 width, uint32 height, then width*height 8-bit palette indices
-  .PAL   256 RGBQUAD entries (B, G, R, 0) - a Windows DIB colour table
+  .PAL   256 entries of (R, G, B, 0).  Not the blue-first order the name
+         RGBQUAD would suggest: entry 9 is 166, 202, 240, the sky blue of
+         the standard Windows palette, which only reads correctly this way
   .MAP   a 48x48 grid of terrain bytes, then a uint16 par value (the
          10/20/30/40/50 ladder the level list uses as its difficulty)
   .RGB   896 bytes = 224 RGBQUAD - the in-game palette blocks
@@ -31,7 +33,7 @@ def png(path, w, h, rgb):
 
 def load_pal(path):
     data = open(path, 'rb').read()
-    return [(data[i * 4 + 2], data[i * 4 + 1], data[i * 4]) for i in range(256)]
+    return [(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) for i in range(256)]
 
 
 def decode_256(path, pal):

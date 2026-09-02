@@ -162,6 +162,24 @@ createLordMonarch().then((M) => {
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
     expect('and the count reads back', M._lm_selected(), picked);
+    // DATA/*.256: the title and the interludes.
+    {
+        const stem = 'LOGO';
+        const p = M._lm_alloc(stem.length + 1);
+        for (let i = 0; i < stem.length; i++)
+            M.HEAPU8[p + i] = stem.charCodeAt(i);
+        M.HEAPU8[p + stem.length] = 0;
+        expect('the title picture reads', M._lm_picture_open(p), 1);
+        M._lm_free(p);
+        expect('and is the size its header says', M._lm_picture_width(), 256);
+        expect('its height too', M._lm_picture_height(), 192);
+        const pix = new Uint32Array(M.HEAPU8.buffer, M._lm_picture_pixels(),
+                                    256 * 192);
+        const seen = new Set();
+        for (let i = 0; i < pix.length; i += 97) seen.add(pix[i]);
+        expect('with real colours in it', seen.size, (n) => n > 8);
+    }
+
     // 00426900's inspector: with the cursor somewhere, the cell answers.
     M._lm_set_cursor(320, 240);
     expect('the cursor is on a cell', M._lm_cursor_terrain(), (n) => n >= 0);
