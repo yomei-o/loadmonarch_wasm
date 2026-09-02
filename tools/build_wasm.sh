@@ -10,6 +10,7 @@ EXPORTS=_lm_open_zip,_lm_message,_lm_width,_lm_height,_lm_stage_name,_lm_stage,_
 
 sh tools/lowpri.sh "$EMCC" -O2 \
     src/wasm_main.cpp src/world.c src/state.c src/sim.c src/render.c \
+    src/font.c src/font16.c \
     src/bz.c src/gfx.c src/host.c src/zip.c src/midi.c src/picture.c \
     -sALLOW_MEMORY_GROWTH=1 -sSINGLE_FILE=1 \
     -sMODULARIZE=1 -sEXPORT_NAME=createLordMonarch \

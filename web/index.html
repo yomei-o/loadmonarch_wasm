@@ -138,6 +138,8 @@
   <span class="sep"></span>
   <button id="pathBtn" disabled
           title="命令7。未開拓のマス（風景・海）を道や橋にする">道/橋</button>
+  <button id="blockBtn" disabled
+          title="命令10。開通済みのマスを塞いで通れなくする">塞ぐ</button>
   <button id="artBtn" disabled>絵</button>
   <button id="saveBtn" disabled>保存</button>
   <button id="loadBtn" disabled>再開</button>
@@ -573,7 +575,7 @@ createLordMonarch().then(function (M) {
       drop.classList.add('hide');
       ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'strengthPick', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
-       'saveBtn', 'loadBtn', 'pathBtn',
+       'saveBtn', 'loadBtn', 'pathBtn', 'blockBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
@@ -989,6 +991,16 @@ createLordMonarch().then(function (M) {
     say(M._lm_selected() > 0
             ? '未開拓のマスをクリックしてください'
             : '部隊を選んでから未開拓のマスをクリックしてください');
+  };
+
+  // 0040b960 is the other half of 0040b680: what order 7 opens, order 10
+  // shuts again, and what order 10 shuts order 7 reopens for a fifteenth of
+  // the price.
+  document.getElementById('blockBtn').onclick = function () {
+    orderPick.value = 10;
+    say(M._lm_selected() > 0
+            ? '塞ぐマスをクリックしてください'
+            : '部隊を選んでから塞ぐマスをクリックしてください');
   };
 
   document.getElementById('recall').onclick = function () {

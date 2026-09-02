@@ -7,6 +7,8 @@
 #include "gfx.h"
 #include "render.h"
 
+#include "font.h"
+
 #include <string.h>
 
 void surfaceInit(Surface *surface, int width, int height,
@@ -229,6 +231,16 @@ void renderStatus(const GameState *game, Surface *out) {
     for (int f = 0; f < PLAYABLE_FACTIONS; f++) {
         const int right = columnWidth * (f + 1) - 6;
         const int out_ = (game->factions[f].flags & 0x10) != 0;
+        // Its name, which the scenery set supplies and the original writes
+        // with GDI - so until this port carried a font of its own, the panel
+        // was four columns of unlabelled numbers.
+        const char *name = worldCountryName(&game->world, (unsigned)f);
+        if (name && *name) {
+            const unsigned char ink =
+                fontInk(&game->world,
+                        out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE);
+            fontDrawText(out, columnWidth * f + 4, 2, ink, name);
+        }
         renderNumber(&game->world,
                      out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
                      right, 2, game->factions[f].funds, out);

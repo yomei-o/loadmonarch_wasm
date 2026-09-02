@@ -132,6 +132,15 @@ int main(int argc, char **argv) {
         unsigned col = 0, row = 0;
         if (strcmp(argv[a], "map") == 0) continue;
         if (strcmp(argv[a], "nohuman") == 0) continue;
+        if (strcmp(argv[a], "names") == 0) {
+            // Every string the scenery set supplies, raw, so the bytes can be
+            // collected: the five countries and the sixteen orders.
+            for (unsigned f = 0; f < 5; f++)
+                printf("N %s\n", worldCountryName(&game.world, f));
+            for (unsigned o = 0; o < 16; o++)
+                printf("N %s\n", worldOrderName(&game.world, o));
+            continue;
+        }
         if (sscanf(argv[a], "clear:%u,%u", &col, &row) == 2) {
             // What a player does: gather the army, point it at a square of
             // scenery with the clearing order, and watch.
