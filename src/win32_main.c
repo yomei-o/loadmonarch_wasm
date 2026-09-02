@@ -251,6 +251,31 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         case 'S':                       // one sweep, for watching it step
             simStep(&app->sim);
             break;
+        case VK_F5: {                   // the game's own save format
+            static unsigned char bytes[SAVE_SIZE];
+            stateSave(&app->game, bytes);
+            FILE *f = fopen("loadmonarch.sav", "wb");
+            if (f) {
+                fwrite(bytes, 1, sizeof bytes, f);
+                fclose(f);
+            }
+            break;
+        }
+        case VK_F9: {
+            static unsigned char bytes[SAVE_SIZE];
+            FILE *f = fopen("loadmonarch.sav", "rb");
+            if (f) {
+                if (fread(bytes, 1, sizeof bytes, f) == sizeof bytes) {
+                    stateLoad(&app->game, bytes);
+                    stateMarkBlocked(&app->game);
+                    statePlaceEntities(&app->game);
+                    stateRecomputeTotals(&app->game);
+                    simInit(&app->sim, &app->game);
+                }
+                fclose(f);
+            }
+            break;
+        }
         case 'O':                       // the order a click sends, 0 to 15
             app->order = (app->order + 1) & 0x0f;
             break;
