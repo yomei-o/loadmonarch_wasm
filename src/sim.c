@@ -2210,6 +2210,43 @@ static int huntFar(Sim *sim, unsigned slot, HuntFor what) {
     return 1;
 }
 
+// 004219b0.  What a unit with nothing to do looks for, in the order it looks:
+// a neutral spawn to break, an enemy to hit, room to build, a building to pull
+// down, a wall to tear out - that one only for the countries the machine plays
+// - and finally its own ground to stand on.  The first thing found becomes its
+// order and it walks there, a cell short for the two that are worked on from
+// beside.
+//
+// The six searches are the ones the standing orders already use, so this is
+// mostly a list of priorities.
+static int lookForWork(Sim *sim, unsigned slot) {
+    static const struct { LookFor what; unsigned char order; int computerOnly; }
+        kPriority[] = {
+            {LOOK_SPAWNER,       0x0b, 0},
+            {LOOK_ENEMY,         4,    0},
+            {LOOK_ROOM_TO_BUILD, 5,    0},
+            {LOOK_BUILDING,      8,    0},
+            {LOOK_WALL,          9,    1},
+            {LOOK_OWN_GROUND,    1,    0},
+        };
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+
+    for (unsigned i = 0; i < sizeof kPriority / sizeof kPriority[0]; i++) {
+        if (kPriority[i].computerOnly && entity->faction == sim->humanFaction)
+            continue;
+        signed char dx = 0, dy = 0;
+        if (!lookAround(sim, slot, kPriority[i].what, &dx, &dy)) continue;
+
+        entity->at0d = kPriority[i].order;
+        simMakeRoute(state, slot, dx, dy);
+        const unsigned char order = entity->at0d & 0x0f;
+        if (order == 0x0b || order == 9) simShortenRoute(state, slot);
+        return 1;
+    }
+    return 0;
+}
+
 // 00402bc0: the other order handler, the one a unit born with a standing order
 // runs.  Where 00403170 carries an order out at a place it was sent, this one
 // goes looking for somewhere to carry it out - and once it has found one, it
@@ -2632,9 +2669,11 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
         return;
     }
 
+    // 00401770 wraps its own decisions in `if (+0x18 == 0x1f0)` the way
+    // 00403170 does, and walks when there is a route - so a unit that went
+    // looking for work walks to it.
     if (entity->at18 != ROUTE_EMPTY) {
-        // It has somewhere to be; the walk is the leader's routine, which the
-        // cursor only gives to leaders in the original.  Left alone here.
+        stepWalkOrdered(sim, slot);
         return;
     }
 
@@ -2642,14 +2681,39 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
     // rather than getting on with its order.
     if (lashOut(sim, slot, col, row)) return;
 
+    // A plain unit's +0x0d is a preference, not an order: it says what this
+    // unit went looking for, and once it has arrived it does that here.  If
+    // the work will not go, it looks for something else.
+    SimActionResult did = SIM_ACTION_REFUSED;
     switch (entity->at0d & 0x0f) {
     case 1:
     case 2:
     case 3:
-        if (simBuildUnitCell(sim, slot, col, row) == SIM_ACTION_REFUSED)
-            entity->at0c = 6;
+    case 5:
+        did = simBuildUnitCell(sim, slot, col, row);
+        break;
+    case 8:
+        did = simDemolishBuilding(sim, slot);
+        break;
+    case 9:
+        did = simDemolishWall(sim, slot);
+        break;
+    case 0x0b:
+        did = simBreakSpawner(sim, slot);
         break;
     default:
         break;
     }
+    if (did == SIM_ACTION_DONE || did == SIM_ACTION_SPENT_ENTITY ||
+        did == SIM_ACTION_PROGRESS)
+        return;
+
+    // Nothing doing where it stands.  004219b0 looks around - and without this
+    // a country stops growing the moment the ring around its first settlements
+    // is full, which is what this port did until now.
+    entity->at0c = 6;
+    if ((entity->flags & 8) == 0 && lookForWork(sim, slot)) return;
+    // Failing that, 00421ae0 - the machine's own strategy - which is read
+    // next.  Until then a unit with nothing to do simply waits.
+    workBudget(sim, slot);
 }
