@@ -104,6 +104,10 @@ void simConquerFaction(Sim *sim, unsigned faction);
 void simCheckConquest(Sim *sim);
 int simStageOutcome(Sim *sim);      // 0 playing, 1 the player won, 2 lost
 
+// 00421910.  A unit on one of its own country's settlements takes it up: the
+// cell's worth becomes the unit's, and the cell goes back to bare ground.
+int simAbsorbOwnCell(Sim *sim, unsigned slot);
+
 // 0041f790.  Puts a balloon over each of the player's units that has something
 // to say: under orders, out of money, too small for the job, or - over the
 // leader - away from home.  Runs every tick and clears the rest.

@@ -1008,6 +1008,26 @@ static int cheapestCell(const GameState *state, unsigned slot, HuntFor what,
     return best < FILL_INFINITE;
 }
 
+// 00421910.  A unit standing on one of its own country's settlements picks it
+// up: the cell's worth goes into the unit, capped, and the cell goes back to
+// bare ground worth a hundred.  This is how a country turns its land back into
+// an army - and why an attacking unit checks it first, since walking home over
+// your own settlements is how you gather one.
+int simAbsorbOwnCell(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const int col = entity->position[0], row = entity->position[1];
+    if (!inBounds(col, row)) return 0;
+    WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+    if ((unsigned char)(cell->terrain - 8) != entity->faction) return 0;
+
+    entity->at08 += cell->value;
+    if (entity->at08 > ENTITY_STRENGTH_CAP) entity->at08 = ENTITY_STRENGTH_CAP;
+    cell->terrain = 0;
+    cell->value = 100;
+    return 1;
+}
+
 /* -------------------------------------------------------------- routing */
 
 // The eight directions, as the table at 0x434434 numbers them.  It is indexed
@@ -2760,8 +2780,9 @@ static void stepStandingOrder(Sim *sim, unsigned slot) {
         entity->flags &= (unsigned char)~4u;
         return;
     case 4:
-        // 00421910's "am I already beside my quarry" is not read; the finder
-        // below covers the near case, which is the one that matters here.
+        // 00403170 asks 00421910 first: a unit standing on its own country's
+        // settlement picks it up rather than marching on.
+        if (simAbsorbOwnCell(sim, slot)) return;
         what = LOOK_ENEMY;
         break;
     case 5:
@@ -3012,6 +3033,9 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
         simBuildUnitCell(sim, slot, col, row);
         return;
     case 4: {
+        // The same first question 00402bc0 asks: standing on its own
+        // country's settlement, a unit takes it up instead of marching.
+        if (simAbsorbOwnCell(sim, slot)) return;
         // 00403170 reads the high bits of +0x0d here as well as the order:
         // bit 7 means keep hunting, bit 6 puts the unit back to ordered-idle,
         // and neither means go home and build.  0041e0a0 finds the quarry.

@@ -420,7 +420,9 @@ int main(void) {
         e->position[0] = 20;
         e->position[1] = 20;
         state.world.cells[WORLD_INDEX(20, 20)].occupant = 1;
-        state.world.cells[WORLD_INDEX(20, 20)].terrain = 8;   // its own ground
+        // Its own territory, not one of its settlements: standing on one of
+        // those, 00421910 has it pick the settlement up instead of marching.
+        state.world.cells[WORLD_INDEX(20, 20)].terrain = 0x0c;
         state.factions[0].funds = 100000;
         // Faction 1's settlement two cells east, with clear ground between.
         state.world.cells[WORLD_INDEX(22, 20)].terrain = 9;
@@ -692,6 +694,32 @@ int main(void) {
                             if (n > highest) highest = n;
                         }
         expect("no sprite number leaves the bank", highest < 0xcc, 1);
+    }
+
+    // 00421910: a unit standing on one of its own settlements takes it up.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim take;
+        simInit(&take, &state);
+        Entity *e = &state.entities[1];
+        e->flags = 0;
+        e->faction = 0;
+        e->at08 = 500;
+        e->position[0] = 12;
+        e->position[1] = 12;
+        state.world.cells[WORLD_INDEX(12, 12)].terrain = 8;      // its own
+        state.world.cells[WORLD_INDEX(12, 12)].value = 250;
+        expect("it picked its settlement up", simAbsorbOwnCell(&take, 1), 1);
+        expect("the worth went into the unit", e->at08, 750);
+        expect("and the cell went back to bare ground",
+               state.world.cells[WORLD_INDEX(12, 12)].terrain, 0);
+        expect("worth a hundred again",
+               state.world.cells[WORLD_INDEX(12, 12)].value, 100);
+        // Somebody else's it leaves alone.
+        state.world.cells[WORLD_INDEX(12, 12)].terrain = 9;
+        expect("another country's it leaves", simAbsorbOwnCell(&take, 1), 0);
     }
 
     // 004015a0: a king on its castle raises a unit out of itself when the
