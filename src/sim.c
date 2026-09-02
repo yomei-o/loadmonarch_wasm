@@ -741,25 +741,94 @@ void simPrepareFill(GameState *state, unsigned slot, int col, int row) {
     simFillFrom(state, col, row);
 }
 
-// 0041cc30.  Across the whole map, the nearest cell held by somebody this
-// country is at war with - nearest by the fill, so it is the shortest walk
-// rather than the shortest line, and unreachable ground is simply never the
-// smallest.
-static int nearestEnemyCell(const GameState *state, unsigned faction,
-                            int *colOut, int *rowOut, unsigned *costOut) {
-    unsigned best = FILL_INFINITE;
+// 0041e670.  A settlement may not be raised within one cell of another of its
+// own country's - or of an ally's.  The original walks the three by three as
+// raw pointer arithmetic; this is the same nine cells.
+static int tooCloseToOwn(const GameState *state, unsigned faction, int col,
+                         int row) {
     const unsigned char ally = faction < FACTION_COUNT
                                    ? state->factions[faction].at1e : 0x80;
+    for (int dc = -1; dc <= 1; dc++)
+        for (int dr = -1; dr <= 1; dr++) {
+            const int c = col + dc, r = row + dr;
+            if (!inBounds(c, r)) continue;
+            const unsigned char terrain =
+                state->world.cells[WORLD_INDEX(c, r)].terrain;
+            if (terrain == (unsigned char)(faction + 8)) return 1;
+            if (terrain == (unsigned char)(ally + 8)) return 1;
+        }
+    return 0;
+}
+
+// What a unit will cross the map for, one per standing order.  0041cc30,
+// 0041c690, 0041cce0, 0041c800 and 0041cd50 are again the same sweep with a
+// different question, so again they are one function.
+typedef enum {
+    HUNT_ENEMY,             // 0041cc30: order 4
+    HUNT_ROOM,              // 0041c690: order 5
+    HUNT_BUILDING,          // 0041cce0: order 8
+    HUNT_WALL,              // 0041c800: order 9
+    HUNT_SPAWNER            // 0041cd50: order 0x0b
+} HuntFor;
+
+// Across the whole map, the cheapest cell of the kind asked for - cheapest by
+// the fill, so it is the shortest walk and not the shortest line, and
+// unreachable ground is never the smallest.
+//
+// A wall is the odd one: the unit is sent to a cell *beside* it, since that is
+// where the work is done from, so the walk is costed to the neighbour while
+// the target stays the wall itself.
+static int cheapestCell(const GameState *state, unsigned slot, HuntFor what,
+                        int *colOut, int *rowOut, int *standCol, int *standRow,
+                        unsigned *costOut) {
+    const unsigned faction = state->entities[slot].faction;
+    const unsigned char ally = faction < FACTION_COUNT
+                                   ? state->factions[faction].at1e : 0x80;
+    unsigned best = FILL_INFINITE;
+
     for (int i = 0; i < WORLD_CELLS; i++) {
         const WorldCell *cell = &state->world.cells[i];
-        if (cell->cost >= best) continue;
         const unsigned char terrain = cell->terrain;
-        if (terrain < 8 || terrain > 0x0b) continue;
-        if ((unsigned char)(terrain - faction) == 8) continue;
-        if ((unsigned char)(ally - terrain) == (unsigned char)-8) continue;
+        const int col = i / WORLD_GRID, row = i % WORLD_GRID;
+
+        if (what == HUNT_WALL) {
+            if (terrain != 0x7b) continue;
+            for (int d = 0; d < 4; d++) {
+                const int c = col + kFillDx[d], r = row + kFillDy[d];
+                if (!inBounds(c, r)) continue;
+                const unsigned cost =
+                    state->world.cells[WORLD_INDEX(c, r)].cost;
+                if (cost >= best) continue;
+                best = cost;
+                *colOut = col;      *rowOut = row;
+                *standCol = c;      *standRow = r;
+            }
+            continue;
+        }
+
+        if (cell->cost >= best) continue;
+        switch (what) {
+        case HUNT_ENEMY:
+            if (terrain < 8 || terrain > 0x0b) continue;
+            if ((unsigned char)(terrain - faction) == 8) continue;
+            if ((unsigned char)(ally - terrain) == (unsigned char)-8) continue;
+            break;
+        case HUNT_ROOM:
+            if (terrain != 0) continue;
+            if (tooCloseToOwn(state, faction, col, row)) continue;
+            break;
+        case HUNT_BUILDING:
+            if (terrain == 0 || terrain >= 5) continue;
+            break;
+        case HUNT_SPAWNER:
+            if (terrain != 5) continue;
+            break;
+        case HUNT_WALL:
+            continue;                           // handled above
+        }
         best = cell->cost;
-        *colOut = i / WORLD_GRID;
-        *rowOut = i % WORLD_GRID;
+        *colOut = col;      *rowOut = row;
+        *standCol = col;    *standRow = row;
     }
     *costOut = best;
     return best < FILL_INFINITE;
@@ -1801,27 +1870,56 @@ void simStepEntities(Sim *sim) {
     }
 }
 
-// 00422290.  The wide hunt: see the map as this unit sees it, take the nearest
-// enemy cell, and go - but only if the unit is worth at least twice the walk.
+// 00422290 and its four siblings - 00421050, 00422370, 00422460, 00422530.
+// See the map as this unit sees it, take the cheapest cell of the kind the
+// order wants, and go - but only if the unit is worth at least twice the walk.
 // That one comparison is the whole of the caution: a small unit stays near
-// home simply because it cannot afford a long march.
+// home simply because it cannot afford the march.
 //
-// Arriving sets order 4 afresh, keeping the high bits that say how the order
-// was given, and fills the patience counter.
-static int huntFarEnemy(Sim *sim, unsigned slot) {
+// Arriving sets the order afresh, keeping the high bits that say how it was
+// given, and fills the patience counter.
+static int huntFar(Sim *sim, unsigned slot, HuntFor what) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
+
+    // Each has its own price of admission.
+    if (what == HUNT_BUILDING && entity->at08 < 0x14) return 0;
+    if (what == HUNT_ROOM &&
+        !canAfford(state, slot, 100, sim->humanFaction)) return 0;
+
     simPrepareFill(state, slot, entity->position[0], entity->position[1]);
 
-    int col = 0, row = 0;
+    int col = 0, row = 0, standCol = 0, standRow = 0;
     unsigned cost = FILL_INFINITE;
-    if (!nearestEnemyCell(state, entity->faction, &col, &row, &cost)) return 0;
+    if (!cheapestCell(state, slot, what, &col, &row, &standCol, &standRow,
+                      &cost))
+        return 0;
     if (entity->at08 < cost * 2u) return 0;
 
     entity->target[0] = (unsigned char)col;
     entity->target[1] = (unsigned char)row;
-    if (simRouteTo(state, slot, col, row) == 0) return 0;
-    entity->at0d = (unsigned char)((entity->at0d & 0xd4) | 4);
+    if (simRouteTo(state, slot, standCol, standRow) == 0) return 0;
+
+    // The order byte each of the five leaves behind, and the mask it keeps.
+    switch (what) {
+    case HUNT_ENEMY:
+        entity->at0d = (unsigned char)((entity->at0d & 0xd4) | 4);
+        break;
+    case HUNT_ROOM:
+        entity->at0d = (unsigned char)((entity->at0d & 0x95) | 5);
+        break;
+    case HUNT_BUILDING:
+        entity->at0d = (unsigned char)((entity->at0d & 0xd8) | 8);
+        break;
+    case HUNT_WALL:
+        entity->at0d = (unsigned char)((entity->at0d & 0xd9) | 9);
+        break;
+    case HUNT_SPAWNER:
+        // 00422530 shortens the route: the spawner is broken from beside it.
+        simShortenRoute(state, slot);
+        entity->at0d = (unsigned char)((entity->at0d & 0xdb) | 0x0b);
+        break;
+    }
     entity->at0f = 4;
     return 1;
 }
@@ -1911,14 +2009,22 @@ static void stepStandingOrder(Sim *sim, unsigned slot) {
         entity->flags &= (unsigned char)~4u;
         return;
     }
-    // 00422290 and its siblings: with a work permit in hand, look across the
-    // whole map.  Only the hunt is ported; the other orders' wide searches
-    // (00421050, 00422370, 00422460, 00422530) are unread, so those units give
-    // up for this tick and try again on the next.
-    if (workBudget(sim, slot) && what == LOOK_ENEMY &&
-        huntFarEnemy(sim, slot)) {
-        entity->flags &= (unsigned char)~4u;
-        return;
+    // With a work permit in hand, look across the whole map.
+    if (workBudget(sim, slot)) {
+        HuntFor wide = HUNT_ENEMY;
+        int wider = 1;
+        switch (what) {
+        case LOOK_ENEMY:          wide = HUNT_ENEMY; break;
+        case LOOK_ROOM_TO_BUILD:  wide = HUNT_ROOM; break;
+        case LOOK_BUILDING:       wide = HUNT_BUILDING; break;
+        case LOOK_WALL:           wide = HUNT_WALL; break;
+        case LOOK_SPAWNER:        wide = HUNT_SPAWNER; break;
+        case LOOK_OWN_GROUND:     wider = 0; break;
+        }
+        if (wider && huntFar(sim, slot, wide)) {
+            entity->flags &= (unsigned char)~4u;
+            return;
+        }
     }
     fallbackOrder(sim, slot);
 }
