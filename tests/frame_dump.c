@@ -6,6 +6,7 @@
 
 #include "../src/host.h"
 #include "../src/render.h"
+#include "../src/ui.h"
 #include "../src/sim.h"
 #include "../src/state.h"
 
@@ -60,6 +61,25 @@ int main(int argc, char **argv) {
     renderWorld(&game.world, zoom, viewX, viewY, 1, &surface);
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
     renderStatus(&game, &surface);
+
+    // menu:<col>,<row> opens 00423940's order menu over the picture, at the
+    // place the pointer would be for that square, so the chrome can be looked
+    // at against the map it sits on.
+    for (int a = 6; a < argc; a++) {
+        unsigned col = 0, row = 0;
+        if (sscanf(argv[a], "menu:%u,%u", &col, &row) != 2) continue;
+        const int ts = ground->tileSize > 0 ? ground->tileSize : 16;
+        OrderMenu menu;
+        const int px = (int)col * ts - viewX + ts / 2;
+        const int py = (int)row * ts - viewY + ts / 2;
+        if (!uiOrderOpen(&menu, &game, (int)col, (int)row, px, py, W, H)) {
+            printf("no order can be given on %u,%u\n", col, row);
+            continue;
+        }
+        uiOrderHover(&menu, &game, menu.x + 10, menu.y + 2 + UI_ITEM_H / 2);
+        uiOrderDraw(&surface, &game, &menu);
+        printf("menu at %u,%u: %d order(s) offered\n", col, row, menu.count);
+    }
 
     unsigned drawn = 0;
     for (int i = 0; i < ENTITY_COUNT; i++)
