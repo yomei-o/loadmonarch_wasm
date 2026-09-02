@@ -363,6 +363,24 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_ui_region(int x, int y, int w, int h) {
     return g_uiPixels;
 }
 
+// One tile of a terrain bank, in that bank's colours, for a page that wants to
+// show what a cell holds the way 00426900 does - it draws the 32-pixel tile of
+// whatever the cursor is on.
+EMSCRIPTEN_KEEPALIVE const unsigned *lm_terrain_tile(int zoom, int number) {
+    const TileBank *bank = worldBank(&g_game.world, zoom);
+    if (!bank->pixels || number < 0 || (unsigned)number >= bank->tiles)
+        return NULL;
+    const int ts = bank->tileSize;
+    if (ts * ts > 256 * 256) return NULL;
+    const unsigned char *tile = bank->pixels + (size_t)number * ts * ts;
+    for (int i = 0; i < ts * ts; i++) {
+        const unsigned char *rgb = bank->palette[tile[i]];
+        g_uiPixels[i] = 0xff000000u | rgb[0] | ((unsigned)rgb[1] << 8) |
+                        ((unsigned)rgb[2] << 16);
+    }
+    return g_uiPixels;
+}
+
 /* --------------------------------------------------------- saved games */
 
 // The original's own save: three blocks and no header.  The page keeps the

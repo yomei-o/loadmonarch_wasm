@@ -156,10 +156,11 @@
       <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
       <tbody></tbody>
     </table>
+    <h2>UNIT WINDOW</h2>
+    <canvas id="unitwin" width="176" height="176"
+            style="width:100%;image-rendering:pixelated"></canvas>
     <h2>CURSOR</h2>
     <table id="cursor"><tbody></tbody></table>
-    <canvas id="gauge" width="240" height="16"
-            style="width:100%;image-rendering:pixelated;margin-top:4px"></canvas>
     <h2>WORLD</h2>
     <table id="world"><tbody></tbody></table>
     <h2>移植の状況</h2>
@@ -188,6 +189,68 @@ createLordMonarch().then(function (M) {
   var note = document.getElementById('note');
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
+
+  // 00426900, the game's Unit Window, put back together from its own art.
+  //
+  // The window is 176 by 176, and its background is a 176-wide strip of the
+  // interface sheet - two panels of 96 rows stacked, each with a tall slot on
+  // the left and three across on the right.  The routine's own coordinates
+  // land in the lower one: the 32-pixel terrain tile at (16, 112), the number
+  // at (64, 120), and the gauge along y = 96 from x = 72.  If those line up
+  // inside the slots, the strip is the right one.
+  var unitWin = document.getElementById('unitwin');
+  // 112 is where the strip starts on the sheet.  It is not a guess: at that
+  // row the border is whole, and the tile, the gauge and the number land
+  // inside the three slots the art has for them.  A row either way and
+  // something bleeds in from what is above or below.
+  var UNIT_WIN_TOP = 112;
+
+  function blitSheet(g, sx, sy, w, h, dx, dy) {
+    var ptr = M._lm_ui_region(sx, sy, w, h);
+    if (!ptr) return false;
+    var img = new ImageData(
+        new Uint8ClampedArray(M.HEAPU8.buffer, ptr, w * h * 4).slice(), w, h);
+    g.putImageData(img, dx, dy);
+    return true;
+  }
+
+  // The large white digits sit along the top of the sheet, eight by sixteen
+  // each, and the game draws its numbers right-aligned.
+  function blitNumber(g, value, right, y) {
+    var text = String(value);
+    for (var i = 0; i < text.length; i++) {
+      var d = text.charCodeAt(text.length - 1 - i) - 48;
+      if (d < 0 || d > 9) continue;
+      blitSheet(g, d * 8, 0, 8, 16, right - (i + 1) * 8, y);
+    }
+  }
+
+  function drawUnitWindow() {
+    var g = unitWin.getContext('2d');
+    g.clearRect(0, 0, 176, 176);
+    // The background strip, in two halves because a region is capped at 256.
+    blitSheet(g, 0, UNIT_WIN_TOP, 176, 96, 0, 0);
+    blitSheet(g, 0, UNIT_WIN_TOP + 96, 176, 80, 0, 96);
+
+    var t = M._lm_cursor_terrain();
+    if (t < 0) return;
+    // The cell's own tile, at the 32-pixel size, where 00426900 puts it.
+    var ptr = M._lm_terrain_tile(2, t);
+    if (ptr) {
+      var img = new ImageData(
+          new Uint8ClampedArray(M.HEAPU8.buffer, ptr, 32 * 32 * 4).slice(),
+          32, 32);
+      g.putImageData(img, 16, 112);
+    }
+    // The number, and the gauge above it.
+    var value = M._lm_cursor_value();
+    blitNumber(g, value, 152, 120);
+    var over = (t >= 8 && t < 12) ? 0x90 : 0xff;
+    var n = Math.min(30, Math.floor(value * 30 / over));
+    for (var i = 0; i < n && i < 10; i++)
+      blitSheet(g, (i % 10) * 8, (Math.floor(i / 10) + 4) * 16, 8, 16,
+                72 + i * 8, 96);
+  }
 
   // 00426900's gauge, drawn from the game's own art: up to thirty pieces of
   // eight by sixteen at row (n / 10 + 4) * 16, column (n % 10) * 8 - which is
@@ -377,7 +440,7 @@ createLordMonarch().then(function (M) {
       }
     }
 
-    drawGauge();
+    drawUnitWindow();
 
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
