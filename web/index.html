@@ -136,6 +136,8 @@
     <option value="2">終わったら次を探す</option>
   </select>
   <span class="sep"></span>
+  <button id="pathBtn" disabled
+          title="命令7。未開拓のマス（風景・海）を道や橋にする">道/橋</button>
   <button id="artBtn" disabled>絵</button>
   <button id="saveBtn" disabled>保存</button>
   <button id="loadBtn" disabled>再開</button>
@@ -490,9 +492,14 @@ createLordMonarch().then(function (M) {
       else if (t >= 8 && t < 12) { kind = countryName(t - 8) + ' の集落'; num = 'NUM'; }
       else if (t >= 12 && t < 16) kind = countryName(t - 12) + ' の領地';
       else if (t >= 20 && t < 24) kind = countryName(t - 20) + ' の城';
-      else if (t === 0x7a) kind = '鉱山';
-      else if (t === 0x7b) kind = '壁';
-      else if (t >= 0x30 && t < 0x60) kind = '地形';
+      else if (t === 0x7a) kind = '鉱山 - 命令7で掘れる';
+      else if (t === 0x7b) kind = '壁 - 命令9で壊せる';
+      // 0040b680 takes anything from 0x30 to 0x5f, and that range is scenery
+      // on land and open water at sea - clearing it is how a road or a bridge
+      // gets built.  Above it is rock, which nothing in the game removes.
+      else if (t >= 0x30 && t < 0x60) kind = '未開拓 - 命令7で道/橋になる';
+      else if (t >= 0x60 && t < 0x70) kind = '岩 - 開拓できない';
+      else if (t >= 0x20 && t < 0x30) kind = '開拓済み - 通れる';
       else kind = '地形 ' + t;
       var unit = M._lm_cursor_unit();
       cur.innerHTML =
@@ -566,7 +573,7 @@ createLordMonarch().then(function (M) {
       drop.classList.add('hide');
       ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'strengthPick', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
-       'saveBtn', 'loadBtn',
+       'saveBtn', 'loadBtn', 'pathBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
@@ -977,6 +984,13 @@ createLordMonarch().then(function (M) {
   // Watching.  Handing the player's country to nobody leaves all four to the
   // machine; the country the player had is remembered so the button gives it
   // back.
+  document.getElementById('pathBtn').onclick = function () {
+    orderPick.value = 7;
+    say(M._lm_selected() > 0
+            ? '未開拓のマスをクリックしてください'
+            : '部隊を選んでから未開拓のマスをクリックしてください');
+  };
+
   document.getElementById('recall').onclick = function () {
     say(M._lm_recall_leader() ? '王が城へ戻ります' : '王は戻れません');
   };
