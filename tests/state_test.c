@@ -708,6 +708,71 @@ int main(void) {
                            strlen(worldOrderName(&probe, 15)) > 0, 1);
                     expect("a country carries a colour",
                            probe.names.colour[1] != 0, 1);
+                    // 0041a680's fill, which decides whose land pays tax.
+                    static GameState game;
+                    game.world = probe;
+                    stateStartStage(&game);
+
+                    // Find faction 0's castle, and fill from it the way
+                    // 0041dc60 does.
+                    int home = -1;
+                    for (int i = 0; i < WORLD_CELLS; i++)
+                        if (game.world.cells[i].terrain == 0x14) { home = i; break; }
+                    expect("faction 0 has a castle", home >= 0, 1);
+                    if (home >= 0) {
+                        const int hc = home / WORLD_GRID, hr = home % WORLD_GRID;
+                        simResetFill(&game);
+                        simBlockForeign(&game, 0);
+                        simFillFrom(&game, hc, hr);
+                        expect("the capital is nought steps from itself",
+                               game.world.cells[home].cost, 0u);
+
+                        unsigned reached = 0, own = 0;
+                        for (int i = 0; i < WORLD_CELLS; i++) {
+                            const WorldCell *c = &game.world.cells[i];
+                            if (c->terrain != 0x0c && c->terrain != 8) continue;
+                            own++;
+                            if (c->cost < 0x1f0) reached++;
+                        }
+                        expect("some of its own ground is reachable",
+                               reached > 0, 1);
+                        expect("and not more than it owns", reached <= own, 1);
+                        printf("  faction 0: %u of %u cells reach the capital\n",
+                               reached, own);
+
+                        // Wall the capital in and nothing but itself is left.
+                        simResetFill(&game);
+                        simBlockForeign(&game, 0);
+                        for (int dc = -1; dc <= 1; dc++)
+                            for (int dr = -1; dr <= 1; dr++) {
+                                if (!dc && !dr) continue;
+                                const int c = hc + dc, r = hr + dr;
+                                if (c < 0 || r < 0 || c >= WORLD_GRID ||
+                                    r >= WORLD_GRID) continue;
+                                game.world.cells[WORLD_INDEX(c, r)].marked = 1;
+                            }
+                        simFillFrom(&game, hc, hr);
+                        unsigned islands = 0;
+                        for (int i = 0; i < WORLD_CELLS; i++)
+                            if (game.world.cells[i].cost < 0x1f0) islands++;
+                        expect("walled in, the capital reaches only itself",
+                               islands, 1u);
+
+                        // An empty map fills without running away: the queue is
+                        // 255 long and wraps, so this must still terminate.
+                        simResetFill(&game);
+                        for (int i = 0; i < WORLD_CELLS; i++)
+                            game.world.cells[i].marked = 0;
+                        simFillFrom(&game, 24, 24);
+                        unsigned open = 0;
+                        for (int i = 0; i < WORLD_CELLS; i++)
+                            if (game.world.cells[i].cost < 0x1f0) open++;
+                        expect("an open map fills without hanging", open > 1, 1);
+                        printf("  open fill reached %u of %d cells "
+                               "(the byte-wide queue stops it early)\n",
+                               open, WORLD_CELLS);
+                    }
+
                     printf("  countries:");
                     for (unsigned f = 0; f < 5; f++)
                         printf(" [%s]", worldCountryName(&probe, f));

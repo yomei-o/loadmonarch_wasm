@@ -23,6 +23,8 @@
 #define UNIT_VALUE 200             // and turns value into a unit at this
 #define ENTITY_STRENGTH_CAP 100000
 #define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
+#define FILL_INFINITE 0x1f0        // and how far 0041a680 calls unreached
+#define FILL_INFINITE 0x1f0        // and how far 0041a680 says an unreached cell is
 
 // The eight neighbours, from the paired tables at 00434420 and 00434428:
 // west, east, north, south, then the four diagonals.
@@ -162,11 +164,124 @@ static void updateTaxRate(GameState *state, unsigned faction, int isHuman,
     owner->taxRate = rate;
 }
 
+/* ------------------------------------------------- reaching the territory */
+
+// 00405360.  Every cell back to "not reached": the fill's own blocked flag is
+// re-seeded from the terrain's, and the distance goes to 0x1f0, which is this
+// game's infinity.
+void simResetFill(GameState *state) {
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        WorldCell *cell = &state->world.cells[i];
+        cell->marked = cell->blocked;
+        cell->cost = FILL_INFINITE;
+    }
+}
+
+// 00405390.  Shuts the fill out of everyone else's ground - their unit cells
+// (8 + f) and their plain territory (0x0c + f) alike.  The exception is the
+// faction named by +0x1e: an ally's land is walked as if it were your own.
+// +0x1e is 0x80 after a reset, which names nobody.
+void simBlockForeign(GameState *state, unsigned faction) {
+    if (faction >= FACTION_COUNT) return;
+    const unsigned char ally = state->factions[faction].at1e;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        WorldCell *cell = &state->world.cells[i];
+        const unsigned char terrain = cell->terrain;
+        const int unitCell = terrain >= 8 && terrain <= 0x0b;
+        const int ground = terrain >= 0x0c && terrain <= 0x0f;
+        if (!unitCell && !ground) continue;
+        if (unitCell && (unsigned char)(terrain - faction) == 8) continue;
+        if (ground && (unsigned char)(terrain - faction) == 0x0c) continue;
+        // The original tests the ally byte against the terrain the same way in
+        // both bands, so an ally opens their unit cells and not their ground.
+        if ((unsigned char)(ally - terrain) == (unsigned char)-8) continue;
+        cell->marked = 1;
+    }
+}
+
+// 0041ebb0.  The outer ring is never walkable, whatever stands on it.
+static int fillOpen(const GameState *state, int col, int row) {
+    if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return 0;
+    return state->world.cells[WORLD_INDEX(col, row)].marked == 0;
+}
+
+// 0041a680.  A breadth-first fill from one cell, leaving each cell's distance
+// from it in +0x08.
+//
+// The queue is two 256-byte arrays with byte-wide head and tail, so it holds
+// 255 cells at most and wraps silently on a map of 2304.  That is not a
+// mistake to correct: a fill that outruns its queue overwrites cells it has
+// not visited and stops early, and the game is balanced on whatever that
+// produces.  Reproduced here, byte wrap and all.
+#define FILL_QUEUE 256
+
+void simFillFrom(GameState *state, int col, int row) {
+    if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return;
+
+    static const signed char dx[4] = {-1, 1, 0, 0};
+    static const signed char dy[4] = {0, 0, -1, 1};
+    unsigned char queueCol[FILL_QUEUE], queueRow[FILL_QUEUE];
+    unsigned char head = 0, tail = 1;
+
+    queueCol[0] = (unsigned char)col;
+    queueRow[0] = (unsigned char)row;
+    state->world.cells[WORLD_INDEX(col, row)].cost = 0;
+
+    do {
+        const unsigned char fromCol = queueCol[head];
+        const unsigned char fromRow = queueRow[head];
+        head++;
+        for (int i = 0; i < 4; i++) {
+            const int toCol = fromCol + dx[i];
+            const int toRow = fromRow + dy[i];
+            if (!fillOpen(state, toCol, toRow)) continue;
+            WorldCell *cell = &state->world.cells[WORLD_INDEX(toCol, toRow)];
+            if (cell->cost < FILL_INFINITE) continue;       // already reached
+            queueCol[tail] = (unsigned char)toCol;
+            queueRow[tail] = (unsigned char)toRow;
+            tail++;
+            unsigned next =
+                state->world.cells[WORLD_INDEX(fromCol, fromRow)].cost + 1;
+            if (next >= FILL_INFINITE) {
+                cell->marked = 1;
+                next = FILL_INFINITE;
+            }
+            cell->cost = next;
+        }
+    } while (tail != head);
+}
+
+// Where a country's fill starts.  0041dc60 takes it from +0x08 and +0x09 of
+// the faction record - the same pair 00423f90 centres the view on and 00421270
+// sends a retreating unit to, so it is the capital.  Nothing in the executable
+// ever writes those two bytes; only a save file fills them, which leaves them
+// zero on a fresh stage and the fill doing nothing at all.  Rather than have a
+// country collect no tax, this falls back to its castle, found the only way
+// there is - by looking for it.  **The fallback is ours, not the game's.**
+static int fillOrigin(const GameState *state, unsigned faction, int *col,
+                      int *row) {
+    const Faction *owner = &state->factions[faction];
+    if (owner->at08[0] && owner->at08[1]) {
+        *col = owner->at08[0];
+        *row = owner->at08[1];
+        return 1;
+    }
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        if ((unsigned char)(state->world.cells[i].terrain - faction) == 0x14) {
+            *col = i / WORLD_GRID;
+            *row = i % WORLD_GRID;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // 0041dc60's tail: every cell holding one of this faction's units, whose cost
 // has not run out, pays tax rate times its value over 256 - and loses that
-// much of its value.  The original also fires three side effects here
-// (00405360, 00405390, 0041a680) and decrements DAT_0043781c; none of those is
-// read yet, so this collects only the money.
+// much of its value.  The three routines above run first, which is what makes
+// "whose cost has not run out" mean anything - only ground the capital can
+// still be walked to pays.  (The original also decrements DAT_0043781c here,
+// which nothing read yet explains.)
 static void collectTax(GameState *state, unsigned faction) {
     if (faction >= FACTION_COUNT) return;
     Faction *owner = &state->factions[faction];
@@ -206,7 +321,17 @@ static void stepCastle(Sim *sim, unsigned index, unsigned faction) {
     if (ahead >= 0x0c && ahead <= 0x0f && (unsigned char)(ahead - faction) != 0x0c)
         return;
 
-    collectTax(state, faction);
+    // 00405360, 00405390 and 0041a680 in the order 0041dc60 calls them: clear
+    // the fill, shut it out of foreign ground, walk it from the capital.  Land
+    // cut off from the capital stops paying, which is the rule this whole game
+    // turns on.
+    int col = 0, row = 0;
+    if (fillOrigin(state, faction, &col, &row)) {
+        simResetFill(state);
+        simBlockForeign(state, faction);
+        simFillFrom(state, col, row);
+        collectTax(state, faction);
+    }
 }
 
 // 0041d870's first branch: a faction carrying flag 0x40 is being relabelled.

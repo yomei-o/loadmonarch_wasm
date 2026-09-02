@@ -80,4 +80,12 @@ void simSeedLeaders(Sim *sim);
 unsigned simHumanActor(const Sim *sim);
 
 
+// 00405360, 00405390 and 0041a680: the distance fill 0041dc60 runs before it
+// collects tax.  Reset every cell, shut the fill out of foreign ground, then
+// walk it from one cell, leaving distances in each cell's +0x08.  Territory the
+// walk cannot reach is territory that stops paying.
+void simResetFill(GameState *state);
+void simBlockForeign(GameState *state, unsigned faction);
+void simFillFrom(GameState *state, int col, int row);
+
 #endif
