@@ -633,7 +633,9 @@ int main(void) {
         there->value = 100;
         expect("then it broke", (long)simBreakSpawner(&work, 1),
                SIM_ACTION_DONE);
-        expect("into plain scenery", there->terrain, 0x60);
+        // 0041acc0 re-tiles what is left, so it is 0x60 plus which of its
+        // four sides face open ground - the family, not the bare number.
+        expect("into plain scenery", there->terrain >> 4, 6);
 
         // And each refuses terrain it has no business with.
         there->terrain = 0x60;
@@ -817,7 +819,7 @@ int main(void) {
             simStepEntities(&raid);
         }
         expect("and then it was gone",
-               state.world.cells[WORLD_INDEX(11, 10)].terrain, 0x60);
+               state.world.cells[WORLD_INDEX(11, 10)].terrain >> 4, 6);
     }
 
     // 0041f0d0 and 0041f4c0: a country falls, and the stage ends.

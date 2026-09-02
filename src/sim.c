@@ -1524,6 +1524,147 @@ static int stepAside(Sim *sim, unsigned slot) {
         faceTarget((sim)->state, (slot));                                     \
     } while (0)
 
+// 00434300, read out of DS7E_WIN.EXE's .data.  0041adf0 builds an eight-bit
+// picture of which neighbours are not scenery and looks the tile up here, so a
+// wood that loses a tree redraws its own edges.  Copied rather than derived:
+// which tile fits which corner is the artist's answer, not a rule.
+static const unsigned char kSceneryTile[256] = {
+    0x30, 0x31, 0x41, 0x31, 0x32, 0x33, 0x32, 0x33,
+    0x42, 0x50, 0x43, 0x50, 0x32, 0x33, 0x32, 0x33,
+    0x34, 0x35, 0x57, 0x35, 0x36, 0x37, 0x36, 0x37,
+    0x34, 0x35, 0x57, 0x35, 0x36, 0x37, 0x36, 0x37,
+    0x44, 0x51, 0x45, 0x51, 0x53, 0x5e, 0x53, 0x5e,
+    0x46, 0x52, 0x47, 0x52, 0x53, 0x5e, 0x53, 0x5e,
+    0x34, 0x35, 0x57, 0x35, 0x36, 0x37, 0x36, 0x37,
+    0x34, 0x35, 0x57, 0x35, 0x36, 0x37, 0x36, 0x37,
+    0x38, 0x39, 0x59, 0x39, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x5a, 0x5c, 0x5b, 0x5c, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x38, 0x39, 0x59, 0x39, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x5a, 0x5c, 0x5b, 0x5c, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x48, 0x31, 0x49, 0x31, 0x54, 0x33, 0x54, 0x33,
+    0x4a, 0x50, 0x4b, 0x50, 0x54, 0x33, 0x54, 0x33,
+    0x56, 0x35, 0x58, 0x35, 0x5f, 0x37, 0x5f, 0x37,
+    0x56, 0x35, 0x58, 0x35, 0x5f, 0x37, 0x5f, 0x37,
+    0x4c, 0x51, 0x4d, 0x51, 0x55, 0x5e, 0x55, 0x5e,
+    0x4e, 0x52, 0x4f, 0x52, 0x55, 0x5e, 0x55, 0x5e,
+    0x56, 0x35, 0x58, 0x35, 0x5f, 0x37, 0x5f, 0x37,
+    0x56, 0x35, 0x58, 0x35, 0x5f, 0x37, 0x5f, 0x37,
+    0x38, 0x39, 0x59, 0x39, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x5a, 0x5c, 0x5b, 0x5c, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x38, 0x39, 0x59, 0x39, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x5a, 0x5c, 0x5b, 0x5c, 0x3a, 0x3b, 0x3a, 0x3b,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+    0x3c, 0x3d, 0x5d, 0x3d, 0x3e, 0x3f, 0x3e, 0x3f,
+};
+
+// 0041f3f0: scenery, cleared ground or a mine - and anything off the board.
+static int sceneryLike(const GameState *state, int col, int row) {
+    if (col < 0 || col > 0x2f || row < 0 || row > 0x2f) return 1;
+    const unsigned char t = state->world.cells[WORLD_INDEX(col, row)].terrain;
+    return (t >= 0x30 && t < 0x60) || (t >= 0x20 && t < 0x30) || t == 0x7a;
+}
+
+// 0041f460: scenery or rock.  Off the board is neither.
+static int sceneryOrRock(const GameState *state, int col, int row) {
+    if (col < 0 || col > 0x2f || row < 0 || row > 0x2f) return 0;
+    const unsigned char t = state->world.cells[WORLD_INDEX(col, row)].terrain;
+    return t >= 0x30 && t < 0x70;
+}
+
+// 0041f380: rock or a monster den - and anything off the board.
+static int rockLike(const GameState *state, int col, int row) {
+    if (col < 0 || col > 0x2f || row < 0 || row > 0x2f) return 1;
+    const unsigned char t = state->world.cells[WORLD_INDEX(col, row)].terrain;
+    return (t >= 0x60 && t < 0x70) || t == 5;
+}
+
+// 0041adf0.  The eight neighbours in a ring - west, north-west, north and so
+// on round to south-west - each adding a bit as the mask shifts right, then
+// the board's own edges masked off and the table consulted.
+static void retileScenery(GameState *state, int col, int row) {
+    static const signed char ringDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+    static const signed char ringDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
+    unsigned mask = 0;
+    for (int i = 0; i < 8; i++) {
+        if (i) mask >>= 1;
+        if (!sceneryLike(state, col + ringDx[i], row + ringDy[i]))
+            mask |= 0x80u;
+    }
+    if (col == 0) mask &= 0x7cu;
+    if (col == 0x2f) mask &= 0xc7u;
+    if (row == 0) mask &= 0xf1u;
+    if (row == 0x2f) mask &= 0x1fu;
+    state->world.cells[WORLD_INDEX(col, row)].terrain =
+        kSceneryTile[mask & 0xffu];
+}
+
+// 0041af10.  Cleared ground carries in its low four bits which of its sides
+// still face something uncleared.
+static void retileCleared(GameState *state, int col, int row) {
+    unsigned char mask = 0;
+    if (col != 0 && sceneryOrRock(state, col - 1, row)) mask |= 1;
+    if (row != 0 && sceneryOrRock(state, col, row - 1)) mask |= 2;
+    if (col < 0x2f && sceneryOrRock(state, col + 1, row)) mask |= 4;
+    if (row < 0x2f && sceneryOrRock(state, col, row + 1)) mask |= 8;
+    state->world.cells[WORLD_INDEX(col, row)].terrain =
+        (unsigned char)(0x20 + mask);
+}
+
+// 0041b050.  Rock the same way round: which of its sides face open ground.
+static void retileRock(GameState *state, int col, int row) {
+    unsigned char mask = 0;
+    if (col != 0 && !rockLike(state, col - 1, row)) mask |= 1;
+    if (row != 0 && !rockLike(state, col, row - 1)) mask |= 2;
+    if (col != 0x2f && !rockLike(state, col + 1, row)) mask |= 4;
+    if (row != 0x2f && !rockLike(state, col, row + 1)) mask |= 8;
+    state->world.cells[WORLD_INDEX(col, row)].terrain =
+        (unsigned char)(0x60 + mask);
+}
+
+// 0041afa0.  A building stands in a column of them, so only north and south
+// decide its tile - and the original refills its value while it is here.
+static void retileBuilding(GameState *state, int col, int row) {
+    unsigned char mask = 0;
+    if (row != 0) {
+        const unsigned char above =
+            state->world.cells[WORLD_INDEX(col, row - 1)].terrain;
+        if (above == 0 || above > 4) mask |= 1;
+    }
+    if (row != 0x2f) {
+        const unsigned char below =
+            state->world.cells[WORLD_INDEX(col, row + 1)].terrain;
+        if (below == 0 || below > 4) mask |= 2;
+    }
+    WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+    if (cell->terrain != 0 && cell->terrain < 5) cell->value = 100;
+    cell->terrain = (unsigned char)(1 + mask);
+}
+
+// 0041acc0.  Once ground has changed, the three by three around it picks its
+// tiles again, each cell by whichever of the four families it belongs to.
+// The original walks that square without checking the border; the cells it
+// would read off the end belong to the outer ring, which nothing targets, so
+// the guard here takes nothing away from what it does.
+static void retileAround(GameState *state, int col, int row) {
+    for (int dc = -1; dc <= 1; dc++)
+        for (int dr = -1; dr <= 1; dr++) {
+            const int c = col + dc, r = row + dr;
+            if (c < 0 || c > 0x2f || r < 0 || r > 0x2f) continue;
+            const unsigned char t =
+                state->world.cells[WORLD_INDEX(c, r)].terrain;
+            if (t >= 0x30 && t < 0x60) retileScenery(state, c, r);
+            else if (t >= 0x20 && t < 0x30) retileCleared(state, c, r);
+            else if (t >= 1 && t < 5) retileBuilding(state, c, r);
+            else if (t >= 0x60 && t < 0x70) retileRock(state, c, r);
+        }
+}
+
 // 0041ad90.  Whenever the ground opens up - a wall pulled down, a mine
 // harvested, a den broken, a monster chewing through - two things follow: every
 // cell works out afresh whether it can be walked on, and every idle unit that
@@ -1641,6 +1782,9 @@ SimActionResult simBreakSpawner(Sim *sim, unsigned slot) {
         return SIM_ACTION_PROGRESS;
     }
     cell->terrain = 0x60;
+    // 0040bb10 passes its own square rather than the den's; the den is beside
+    // it, so the three by three covers both.
+    retileAround(state, (int)entity->position[0], (int)entity->position[1]);
     groundChanged(sim);
     return SIM_ACTION_DONE;
 }
@@ -1742,6 +1886,7 @@ SimActionResult simClearTarget(Sim *sim, unsigned slot) {
     // 0040b680 leaves the overshoot behind as the new cell's value.
     cell->value = amount - cell->value;
     cell->terrain = 0x20;
+    retileAround(state, (int)col, (int)row);        // 0041acc0
     groundChanged(sim);
     return SIM_ACTION_DONE;
 }
