@@ -694,6 +694,56 @@ int main(void) {
         expect("no sprite number leaves the bank", highest < 0xcc, 1);
     }
 
+    // 004015a0: a king on its castle raises a unit out of itself when the
+    // country is worth less than half of it, and feeds on the country when the
+    // country is worth more.
+    memset(&state, 0, sizeof state);
+    stateResetEntitiesAndFactions(&state);
+    statePlaceEntities(&state);
+    {
+        Sim court;
+        simInit(&court, &state);
+        court.humanFaction = 3;
+        Entity *k = &state.entities[1];
+        k->flags = 0;
+        k->faction = 0;
+        k->at0d = 0x20;                 // a leader
+        k->at18 = 0x1f0;
+        k->at08 = 4000;
+        k->at0f = 10;
+        k->position[0] = 20;
+        k->position[1] = 20;
+        state.world.cells[WORLD_INDEX(20, 20)].terrain = 0x14;   // its castle
+        state.world.cells[WORLD_INDEX(20, 20)].occupant = 1;
+        state.factions[0].funds = 100000;
+        state.factions[0].strength = 0;         // a country with nothing
+
+        int before = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++)
+            if ((state.entities[i].flags & 0x80) == 0) before++;
+        simStepEntities(&court);
+        int after = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++)
+            if ((state.entities[i].flags & 0x80) == 0) after++;
+        expect("the king raised a unit", after, before + 1);
+        expect("out of its own strength", k->at08, 3000);
+        const unsigned char born =
+            state.world.cells[WORLD_INDEX(20, 21)].occupant;
+        expect("and put it below the castle", born < ENTITY_COUNT, 1);
+        if (born < ENTITY_COUNT) {
+            expect("with a quarter of what the king had",
+                   state.entities[born].at08, 1000);
+            expect("and the king's own country", state.entities[born].faction, 0);
+        }
+
+        // The other way: a rich country feeds its king an eighth of the gap.
+        k->at08 = 1000;
+        state.factions[0].strength = 9000;
+        state.world.cells[WORLD_INDEX(20, 21)].occupant = 0x40;
+        simStepEntities(&court);
+        expect("a rich country feeds its king", k->at08, 1000 + (9000 - 1000) / 8);
+    }
+
     // 004219b0's first priority is a neutral spawn, and 0040bb10 is what
     // happens when a unit gets to one: it eats an eighth of its own strength
     // out of the spawn each tick until there is nothing left, and the cell

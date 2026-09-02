@@ -2350,6 +2350,69 @@ static int kingGoesHome(Sim *sim, unsigned slot) {
     return 1;
 }
 
+// 004015a0.  What a king does while it sits on its castle, and it is two
+// things depending on which way the country and the king are leaning.
+//
+// If the country is worth less than half the king, the king raises a unit out
+// of itself: a quarter of its own strength, placed one cell south of the
+// castle, carrying the standing order if the player has one selected.  That is
+// where a country's armies come from when it has run out of them.
+//
+// If the country is worth more than the king, the flow runs the other way -
+// the king takes an eighth of the difference into itself, up to the hundred
+// thousand.  A rich country feeds its king.
+static void kingOnCastle(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *king = &state->entities[slot];
+    const unsigned faction = king->faction;
+    if (faction >= FACTION_COUNT) return;
+    const int col = king->position[0], row = king->position[1];
+    if (!inBounds(col, row)) return;
+    if ((unsigned char)(state->world.cells[WORLD_INDEX(col, row)].terrain -
+                        faction) != 0x14)
+        return;
+
+    const unsigned country = state->factions[faction].strength;
+    const unsigned mine = king->at08;
+
+    if (country < mine >> 1) {
+        if (!inBounds(col, row + 1)) return;
+        WorldCell *below = &state->world.cells[WORLD_INDEX(col, row + 1)];
+        if (below->occupant < ENTITY_COUNT) return;     // somebody is there
+        const unsigned slotNew = allocEntity(state);
+        if (slotNew >= ENTITY_COUNT) return;
+        const unsigned share = mine >> 2;
+        if (share == 0) return;
+
+        Entity *born = &state->entities[slotNew];
+        born->at08 = share;
+        king->at08 -= share;
+        born->faction = (unsigned char)faction;
+        born->position[0] = (unsigned char)col;
+        born->position[1] = (unsigned char)(row + 1);
+        born->target[0] = born->position[0];
+        born->target[1] = born->position[1];
+        born->at220 = 0xff;
+        below->occupant = (unsigned char)slotNew;
+        born->flags = 0;
+        if (faction == sim->humanFaction && sim->pendingOrder != 1) {
+            born->flags |= 4;
+            born->at0d = (unsigned char)sim->pendingOrder;
+        } else {
+            born->at0d = 1;
+        }
+        born->at18 = ROUTE_EMPTY;
+        born->at0c = 6;
+        born->at0f = 10;
+        return;
+    }
+    if (mine < country) {
+        unsigned grown = ((country - mine) >> 3) + mine;
+        if (grown > ENTITY_STRENGTH_CAP - 1) grown = ENTITY_STRENGTH_CAP;
+        king->at08 = grown;
+    }
+}
+
 // 00401000's castle branch.  A king standing on its own castle steps out of
 // it, southwards, when the two cells that way are both empty and walkable -
 // and then takes a route out to the north-west corner of its reach, which is
@@ -2388,6 +2451,7 @@ static void kingDecides(Sim *sim, unsigned slot) {
     const unsigned faction = state->entities[slot].faction;
     if (faction >= FACTION_COUNT) return;
 
+    kingOnCastle(sim, slot);            // 004015a0, before anything else
     if (kingLeavesCastle(sim, slot)) return;
 
     state->factions[faction].flags &= ~0x20u;
