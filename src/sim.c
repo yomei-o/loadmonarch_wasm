@@ -2406,6 +2406,34 @@ static int kingGoesHome(Sim *sim, unsigned slot) {
     return 1;
 }
 
+// 0041eea0.  What is waiting around a cell, weighed against this unit: the
+// strengths of every enemy in the four cells beside it are added up, and the
+// answer is 8 for nobody there, 7 for a crowd this unit outweighs, and 9 for
+// one it does not.
+#define THREAT_NONE     8
+#define THREAT_WEAKER   7
+#define THREAT_STRONGER 9
+
+static int threatAround(const GameState *state, unsigned slot, int col,
+                        int row) {
+    const Entity *me = &state->entities[slot];
+    const unsigned faction = me->faction;
+    const unsigned char ally = faction < FACTION_COUNT
+                                   ? state->factions[faction].at1e : 0x80;
+    unsigned sum = 0;
+    for (int i = 1; i <= 4; i++) {
+        const int c = col + kNearDx[i], r = row + kNearDy[i];
+        if (!inBounds(c, r)) continue;
+        const unsigned char who = state->world.cells[WORLD_INDEX(c, r)].occupant;
+        if (who >= ENTITY_COUNT || who == slot) continue;
+        const Entity *other = &state->entities[who];
+        if (other->faction == faction || other->faction == ally) continue;
+        sum += other->at08;
+    }
+    if (sum == 0) return THREAT_NONE;
+    return sum < me->at08 ? THREAT_WEAKER : THREAT_STRONGER;
+}
+
 // 004015a0.  What a king does while it sits on its castle, and it is two
 // things depending on which way the country and the king are leaning.
 //
@@ -2491,6 +2519,13 @@ static int kingLeavesCastle(Sim *sim, unsigned slot) {
         if (cell->occupant < ENTITY_COUNT) return 0;
         if (cell->terrain >= TERRAIN_WALKABLE_MAX) return 0;
     }
+
+    // And it only goes out for a reason: the first cell must not be one an
+    // enemy it cannot beat is standing beside, and the second must have such a
+    // crowd that the king does outweigh.  A king does not stroll out of its
+    // castle into an empty field.
+    if (threatAround(state, slot, col, row + 1) == THREAT_STRONGER) return 0;
+    if (threatAround(state, slot, col, row + 2) != THREAT_WEAKER) return 0;
 
     state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
     state->world.cells[WORLD_INDEX(col, row + 1)].occupant = (unsigned char)slot;
