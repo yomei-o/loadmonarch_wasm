@@ -176,6 +176,25 @@ void stateComputeAreas(GameState *state) {
     }
 }
 
+// 00405c60 and its writing half.  Three blocks, in the order the original
+// lays them out.
+void stateSave(const GameState *state, unsigned char *out) {
+    memcpy(out, state->factions, sizeof state->factions);
+    memcpy(out + sizeof state->factions, state->world.cells,
+           sizeof state->world.cells);
+    memcpy(out + sizeof state->factions + sizeof state->world.cells,
+           state->entities, sizeof state->entities);
+}
+
+void stateLoad(GameState *state, const unsigned char *in) {
+    memcpy(state->factions, in, sizeof state->factions);
+    memcpy(state->world.cells, in + sizeof state->factions,
+           sizeof state->world.cells);
+    memcpy(state->entities,
+           in + sizeof state->factions + sizeof state->world.cells,
+           sizeof state->entities);
+}
+
 // The chain at 00407790: 004273b0, 00405330, 004272b0, 00427210, 0041b370.
 // worldLoadStage has already put the map's terrain in place, so the cell
 // reset that opens the original's chain is deliberately not repeated here -

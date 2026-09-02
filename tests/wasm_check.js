@@ -225,6 +225,24 @@ createLordMonarch().then((M) => {
     M._lm_clear_selection();
     expect('a choice can be dropped', M._lm_selected(), 0);
 
+    // The original's own save: write it, change the world, read it back.
+    {
+        const size = M._lm_save_size();
+        expect('a save is the size the original writes', size, 0x16218);
+        const saved = new Uint8Array(
+            new Uint8Array(M.HEAPU8.buffer, M._lm_save(), size));
+        const funds = M._lm_funds(0);
+        const sweeps = M._lm_sweeps();
+        M._lm_step(400);
+        expect('the game moved on', M._lm_sweeps(), (n) => n > sweeps);
+        const p = M._lm_alloc(size);
+        M.HEAPU8.set(saved, p);
+        expect('the save loads', M._lm_load(p, size), 1);
+        M._lm_free(p);
+        expect('and the purse is what it was', M._lm_funds(0), funds);
+        expect('a save of the wrong size is refused', M._lm_load(p, 10), 0);
+    }
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

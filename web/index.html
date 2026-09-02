@@ -130,6 +130,8 @@
   <select id="orderPick" disabled></select>
   <span class="sep"></span>
   <button id="artBtn" disabled>絵</button>
+  <button id="saveBtn" disabled>保存</button>
+  <button id="loadBtn" disabled>再開</button>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -376,6 +378,7 @@ createLordMonarch().then(function (M) {
       drop.classList.add('hide');
       ['prev', 'next', 'pause', 'music', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
+       'saveBtn', 'loadBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
@@ -432,6 +435,42 @@ createLordMonarch().then(function (M) {
       if (showPicture(name)) { say(name); return; }
     }
     say('絵が読めません');
+  };
+
+  // The original's own save format - the faction records, the cells and the
+  // entities, one after another with no header - kept in the browser.  The
+  // stage is not part of it, so it is kept alongside.
+  var SAVE_KEY = 'lord-monarch-save';
+  document.getElementById('saveBtn').onclick = function () {
+    var size = M._lm_save_size();
+    var bytes = new Uint8Array(M.HEAPU8.buffer, M._lm_save(), size);
+    var text = '';
+    for (var i = 0; i < size; i++) text += String.fromCharCode(bytes[i]);
+    try {
+      localStorage.setItem(SAVE_KEY, btoa(text));
+      localStorage.setItem(SAVE_KEY + '-stage', String(M._lm_stage()));
+      localStorage.setItem(SAVE_KEY + '-human', String(M._lm_human()));
+      say('保存しました');
+    } catch (e) {
+      say('保存できません: ' + e.message);
+    }
+  };
+  document.getElementById('loadBtn').onclick = function () {
+    var text;
+    try { text = localStorage.getItem(SAVE_KEY); } catch (e) { text = null; }
+    if (!text) { say('保存がありません'); return; }
+    var raw = atob(text);
+    var size = M._lm_save_size();
+    if (raw.length !== size) { say('保存が壊れています'); return; }
+    var stage = parseInt(localStorage.getItem(SAVE_KEY + '-stage'), 10) || 0;
+    goStage(stage);
+    var p = M._lm_alloc(size);
+    for (var i = 0; i < size; i++) M.HEAPU8[p + i] = raw.charCodeAt(i);
+    var ok = M._lm_load(p, size);
+    M._lm_free(p);
+    M._lm_set_human(parseInt(localStorage.getItem(SAVE_KEY + '-human'), 10) || 0);
+    say(ok ? '再開しました' : '読めません');
+    refreshPanel();
   };
 
   langE.onclick = function () { fetchRelease('e'); };

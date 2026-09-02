@@ -328,6 +328,32 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+/* --------------------------------------------------------- saved games */
+
+// The original's own save: three blocks and no header.  The page keeps the
+// bytes wherever it likes; the stage number is not in them, so it keeps that
+// too.
+unsigned char g_save[SAVE_SIZE];
+
+EMSCRIPTEN_KEEPALIVE int lm_save_size(void) { return (int)SAVE_SIZE; }
+
+EMSCRIPTEN_KEEPALIVE const unsigned char *lm_save(void) {
+    stateSave(&g_game, g_save);
+    return g_save;
+}
+
+// The cells come back with the game, so the fill flags and the blocked flags
+// are already in them; the entity links are rebuilt the way a stage load does.
+EMSCRIPTEN_KEEPALIVE int lm_load(const unsigned char *bytes, int size) {
+    if (size != (int)SAVE_SIZE) return 0;
+    stateLoad(&g_game, bytes);
+    stateMarkBlocked(&g_game);
+    statePlaceEntities(&g_game);
+    stateRecomputeTotals(&g_game);
+    simInit(&g_sim, &g_game);
+    return 1;
+}
+
 // Which country the player has.  DAT_004365cd in the original, where it comes
 // from the campaign; here it is a choice, since any of the four plays the same
 // way and watching a different one is half the interest of a port.

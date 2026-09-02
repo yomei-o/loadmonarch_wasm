@@ -122,6 +122,20 @@ void stateComputeAreas(GameState *state);
 // left.  Out-of-range coordinates put it away.
 void stateMoveCursor(GameState *state, int col, int row);
 
+// A saved game, exactly as the original writes one: the faction records, then
+// the cells, then the entities, with nothing between them and no header.
+// 00405c60 reads 0x16218 bytes and copies them into those three arrays in that
+// order, so a file written by the game itself loads here and one written here
+// would load there - the structures are the same to the byte, which the offset
+// checks at the top of tests/state_test.c exist to keep true.
+//
+// Which stage it belongs to is not in the file; the original keeps that
+// elsewhere, and so does whatever calls these.
+#define SAVE_SIZE (0x118 + 0xd800 + 0x8900)
+
+void stateSave(const GameState *state, unsigned char *out);
+void stateLoad(GameState *state, const unsigned char *in);
+
 // The whole chain 00407790 runs after a map loads, in its order.
 void stateStartStage(GameState *state);
 
