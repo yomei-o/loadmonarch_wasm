@@ -773,6 +773,87 @@ int main(void) {
                                open, WORLD_CELLS);
                     }
 
+                    // Choosing units and sending them somewhere: 0040a020,
+                    // 00409e90, 00423cc0 and the route builder underneath.
+                    {
+                        Sim sim;
+                        simInit(&sim, &game);
+                        simSeedLeaders(&sim);
+                        for (int i = 0; i < 300; i++) simStep(&sim);
+
+                        const int chosen = simSelectAll(&sim, 1);
+                        expect("units can be chosen", chosen > 0, 1);
+                        unsigned withBalloon = 0;
+                        for (int i = 0; i < ENTITY_COUNT; i++)
+                            if (game.entities[i].at220 != 0xff) withBalloon++;
+                        expect("and each carries a balloon",
+                               (int)withBalloon, chosen);
+
+                        // Send them to a cell one of them can reach, and see a
+                        // route appear.
+                        int sent = 0, routed = 0;
+                        for (int col = 4; col < 44 && !sent; col += 5)
+                            for (int row = 4; row < 44 && !sent; row += 5) {
+                                if (game.world.cells[WORLD_INDEX(col, row)]
+                                        .terrain >= 0x30) continue;
+                                sent = simOrderSelected(&sim, 1, 0, col, row);
+                            }
+                        expect("an order reaches somebody", sent > 0, 1);
+                        for (int i = 0; i < ENTITY_COUNT; i++)
+                            if (game.entities[i].at18 != 0x1f0) routed++;
+                        expect("and leaves routes behind", routed > 0, 1);
+                        printf("  %d chosen, %d took the order, %d hold a "
+                               "route\n", chosen, sent, routed);
+
+                        for (int i = 0; i < ENTITY_COUNT; i++)
+                            expect("the balloons are cleared",
+                                   game.entities[i].at220, 0xff);
+
+                        // Dropping a choice restores what it changed.  Any of
+                        // the player's own units will do; slot 1 is not
+                        // necessarily one of them.
+                        int mine = -1;
+                        for (int i = 0; i < ENTITY_COUNT; i++) {
+                            const Entity *e = &game.entities[i];
+                            if (e->flags & 0x80) continue;
+                            if (e->faction != sim.humanFaction) continue;
+                            if (e->at0d & 0x20) continue;
+                            mine = i;
+                            break;
+                        }
+                        expect("the player has a unit to choose", mine >= 0, 1);
+                        if (mine >= 0) {
+                            const unsigned char facing = game.entities[mine].at0c;
+                            expect("choosing it takes",
+                                   simSelect(&sim, (unsigned)mine,
+                                             game.entities[mine].position[0],
+                                             game.entities[mine].position[1], 1),
+                                   1);
+                            expect("a chosen unit shows the chosen pose",
+                                   game.entities[mine].at0c, 6);
+                            simClearSelection(&game);
+                            expect("and gets its facing back",
+                                   game.entities[mine].at0c, facing);
+                            expect("with the balloon gone",
+                                   game.entities[mine].at220, 0xff);
+
+                            // A route to where you already stand is not a
+                            // route - but 00405000 reads the distance before
+                            // it compares positions, so the field has to have
+                            // been filled from there first.
+                            simResetFill(&game);
+                            simFillFrom(&game, game.entities[mine].position[0],
+                                        game.entities[mine].position[1]);
+                            expect("standing there already",
+                                   simRouteTo(&game, (unsigned)mine,
+                                              game.entities[mine].position[0],
+                                              game.entities[mine].position[1]),
+                                   10);
+                            expect("an unfilled cell has no route",
+                                   simRouteTo(&game, (unsigned)mine, 0, 0), 0);
+                        }
+                    }
+
                     printf("  countries:");
                     for (unsigned f = 0; f < 5; f++)
                         printf(" [%s]", worldCountryName(&probe, f));

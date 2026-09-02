@@ -227,6 +227,37 @@ EMSCRIPTEN_KEEPALIVE int lm_order_all(int order) {
     return changed;
 }
 
+/* --------------------------------------------- choosing units and sending */
+
+// The original's own flow: choose units, which puts a balloon over each, then
+// point at a cell to say where the order is to be carried out.  `force` picks
+// up units that already have orders as well as the idle ones.
+EMSCRIPTEN_KEEPALIVE int lm_select_all(int force) {
+    return simSelectAll(&g_sim, force);
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_selected(void) {
+    int n = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++)
+        if (g_game.entities[i].flags21c & 1) n++;
+    return n;
+}
+
+EMSCRIPTEN_KEEPALIVE void lm_clear_selection(void) {
+    simClearSelection(&g_game);
+}
+
+// Gives the chosen units the current order, aimed at the cell under a view
+// pixel.  Returns how many of them found a way there.
+EMSCRIPTEN_KEEPALIVE int lm_order_at(int order, int modifier, int x, int y) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y) / ts;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
+    return simOrderSelected(&g_sim, (unsigned)order, modifier, col, row);
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_last_action(void) { return g_lastAction; }
 EMSCRIPTEN_KEEPALIVE int lm_last_col(void) { return (int)g_lastCol; }
 EMSCRIPTEN_KEEPALIVE int lm_last_row(void) { return (int)g_lastRow; }

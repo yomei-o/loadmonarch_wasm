@@ -80,6 +80,24 @@ void simSeedLeaders(Sim *sim);
 unsigned simHumanActor(const Sim *sim);
 
 
+// 00405000 and its two helpers.  simRouteTo turns a filled distance field into
+// a route the unit can walk - 1 if it laid one, 10 if the unit is already
+// there, 0 if it cannot be reached.  simUnblockTarget (004056f0) opens a wall
+// or cave the order is aimed at, and simShortenRoute (004051b0) stops a unit
+// one cell short, which is how the building orders work.
+int simRouteTo(GameState *state, unsigned slot, int col, int row);
+void simUnblockTarget(GameState *state, int col, int row);
+int simShortenRoute(GameState *state, unsigned slot);
+
+// Choosing units and giving them an order, from 0040a020, 00409e90/00409f10,
+// 00409f90 and 00423cc0.  A chosen unit carries a balloon until the order is
+// given or the choice is dropped.  simSelectAll's `force` picks the units that
+// already have orders as well as the idle ones.
+int simSelect(Sim *sim, unsigned slot, int col, int row, int force);
+int simSelectAll(Sim *sim, int force);
+void simClearSelection(GameState *state);
+int simOrderSelected(Sim *sim, unsigned order, int modifier, int col, int row);
+
 // 00405360, 00405390 and 0041a680: the distance fill 0041dc60 runs before it
 // collects tax.  Reset every cell, shut the fill out of foreign ground, then
 // walk it from one cell, leaving distances in each cell's +0x08.  Territory the

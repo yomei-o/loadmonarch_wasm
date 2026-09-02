@@ -132,6 +132,23 @@ createLordMonarch().then((M) => {
     expect('same row too', M._lm_cursor_row(), wasRow);
     expect('orders show by default', M._lm_orders_shown(), 1);
 
+    // Choosing units and sending them: the original's own flow.
+    M._lm_load_stage(2);
+    for (let i = 0; i < 300; i++) M._lm_step(1);
+    const picked = M._lm_select_all(1);
+    expect('units can be chosen', picked, (n) => n > 0);
+    expect('and the count reads back', M._lm_selected(), picked);
+    let sent = 0;
+    for (let y = 40; y < 440 && !sent; y += 40)
+        for (let x = 40; x < 600 && !sent; x += 40)
+            sent = M._lm_order_at(1, 0, x, y);
+    expect('an order reaches somebody', sent, (n) => n > 0);
+    expect('and the choice is spent', M._lm_selected(), 0);
+    console.log(`  ${picked} chosen, ${sent} took the order`);
+    M._lm_select_all(0);
+    M._lm_clear_selection();
+    expect('a choice can be dropped', M._lm_selected(), 0);
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

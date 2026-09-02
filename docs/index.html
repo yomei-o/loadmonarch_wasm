@@ -114,6 +114,11 @@
   <button id="hold" disabled>全軍 待機</button>
   <button id="home" disabled>全軍 帰還</button>
   <span class="sep"></span>
+  <button id="pickIdle" disabled>手空きを選択</button>
+  <button id="pickAll" disabled>全部選択</button>
+  <button id="pickNone" disabled>選択解除</button>
+  <select id="orderPick" disabled></select>
+  <span class="sep"></span>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -141,17 +146,19 @@
     <table id="world"><tbody></tbody></table>
     <h2>移植の状況</h2>
     <p style="color:var(--muted)">地形とタイル、領土の拡大、経済（税と維持費）、
-       戦闘、ユニットの自律行動までは実行ファイルから移植済み。
-       AI の行動選択と経路探索はまだ入っていないので、
-       ユニットは生まれた場所の周りで働きます。</p>
-    <p style="color:var(--muted)">クリックでユニットを置けます（資金100）。
-       「全軍」ボタンは自勢力の部隊に命令を出します — 攻撃は隣の集落へ、
-       帰還は自陣へ戻して設置に戻します。</p>
+       戦闘、ユニットの自律行動、命令16種と経路探索まで実行ファイルから移植済み。
+       税は<b>首都から歩いて行ける領地からしか集まりません</b> —
+       分断されると収入が止まります。</p>
+    <p style="color:var(--muted)"><b>部隊を選んでから地図をクリック</b>すると、
+       選んだ命令をその場所で実行しに向かいます。選択中の部隊には吹き出しが
+       出ます。何も選んでいなければクリックでユニットを置きます（資金100）。</p>
+    <p style="color:var(--muted)">国名と命令名はシナリオごとに違い、
+       ゲームのデータから読んでいます。</p>
   </aside>
 </main>
-<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / クリック: ユニットを置く / 全軍ボタン: 命令 / 音楽: ボタンから</footer>
+<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902004026"></script>
+<script src="loadmonarch.js?v=20260902005156"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -198,6 +205,19 @@ createLordMonarch().then(function (M) {
       var name = heapString(M._lm_order_name(pair[1]));
       if (name) document.getElementById(pair[0]).textContent = '全軍 ' + name;
     });
+    // All sixteen, in the wording this campaign uses for them.
+    var pick = document.getElementById('orderPick');
+    var keep = pick.value;
+    pick.innerHTML = '';
+    for (var o = 0; o < 16; o++) {
+      var name = heapString(M._lm_order_name(o));
+      if (!name) continue;
+      var option = document.createElement('option');
+      option.value = o;
+      option.textContent = o + ' ' + name;
+      pick.appendChild(option);
+    }
+    pick.value = keep && pick.querySelector('[value="' + keep + '"]') ? keep : 1;
   }
 
   function refreshPanel() {
@@ -255,6 +275,7 @@ createLordMonarch().then(function (M) {
       loaded = true;
       drop.classList.add('hide');
       ['prev', 'next', 'pause', 'music', 'attack', 'hold', 'home',
+       'pickIdle', 'pickAll', 'pickNone', 'orderPick',
        'z0', 'z1', 'z2'].forEach(function (id) {
         document.getElementById(id).disabled = false;
       });
@@ -351,23 +372,64 @@ createLordMonarch().then(function (M) {
   // after a neighbour's settlement, 0 holds it, 1 sends it home and back to
   // building.  New units carry whichever is selected, the way DAT_004365e0
   // works in the executable.
+  function say(text) {
+    note.textContent = text;
+    setTimeout(function () { note.textContent = ''; }, 2000);
+  }
+
   orderButtons.forEach(function (pair) {
     document.getElementById(pair[0]).onclick = function () {
       M._lm_set_order(pair[1]);
-      var n = M._lm_order_all(pair[1]);
-      note.textContent = n + ' 部隊に命令';
-      setTimeout(function () { note.textContent = ''; }, 1500);
+      say(M._lm_order_all(pair[1]) + ' 部隊に命令');
       refreshPanel();
     };
   });
 
+  // Choosing units, then a place: 00409e90 picks them all up, 00409f10 only
+  // the idle ones, and the next click on the map says where they are going.
+  var orderPick = document.getElementById('orderPick');
+  document.getElementById('pickIdle').onclick = function () {
+    var n = M._lm_select_all(0);
+    say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : '手のあいた部隊がいません');
+  };
+  document.getElementById('pickAll').onclick = function () {
+    var n = M._lm_select_all(1);
+    say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : '選べる部隊がいません');
+  };
+  document.getElementById('pickNone').onclick = function () {
+    M._lm_clear_selection();
+    say('選択を解除');
+  };
+
+  function viewPoint(e) {
+    var r = canvas.getBoundingClientRect();
+    return [Math.floor((e.clientX - r.left) * canvas.width / r.width),
+            Math.floor((e.clientY - r.top) * canvas.height / r.height)];
+  }
+
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
-    var r = canvas.getBoundingClientRect();
-    var x = Math.floor((e.clientX - r.left) * canvas.width / r.width);
-    var y = Math.floor((e.clientY - r.top) * canvas.height / r.height);
-    M._lm_click(x, y);
+    var p = viewPoint(e);
+    // With units chosen, a click is where they are being sent - that is the
+    // original's flow.  With none chosen it puts a new unit down.
+    if (M._lm_selected() > 0) {
+      var order = parseInt(orderPick.value, 10) || 0;
+      var went = M._lm_order_at(order, 0, p[0], p[1]);
+      say(went + ' 部隊が向かいます');
+    } else {
+      M._lm_click(p[0], p[1]);
+    }
     refreshPanel();
+  });
+
+  // The cursor follows the pointer, as sprite 0xcc laid on the cell.
+  canvas.addEventListener('pointermove', function (e) {
+    if (!loaded) return;
+    var p = viewPoint(e);
+    M._lm_set_cursor(p[0], p[1]);
+  });
+  canvas.addEventListener('pointerleave', function () {
+    if (loaded) M._lm_set_cursor(-1, -1);
   });
 
   document.addEventListener('keydown', function (e) {

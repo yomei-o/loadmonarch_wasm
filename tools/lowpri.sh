@@ -35,6 +35,9 @@ status="$work/status"
     # written into a file, and cmd cannot run /c/prog/w64devkit/bin/gcc.
     for arg in "$@"; do
         case "$arg" in
+            # cygpath renders this as \\.\NUL, which the assembler will not
+            # open; cmd's own name for it is what tools expect.
+            /dev/null) arg="nul" ;;
             /*) arg="$(cygpath -w "$arg")" ;;
         esac
         printf '"%s" ' "$arg"

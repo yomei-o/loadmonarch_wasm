@@ -199,6 +199,12 @@ void simBlockForeign(GameState *state, unsigned faction) {
     }
 }
 
+// The four neighbours a fill steps to, from the tables at 0x434401 and
+// 0x434411.  Both tables carry four more entries, stepping two cells at a
+// time, which nothing read so far uses.
+static const signed char kFillDx[4] = {-1, 1, 0, 0};
+static const signed char kFillDy[4] = {0, 0, -1, 1};
+
 // 0041ebb0.  The outer ring is never walkable, whatever stands on it.
 static int fillOpen(const GameState *state, int col, int row) {
     if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return 0;
@@ -218,8 +224,6 @@ static int fillOpen(const GameState *state, int col, int row) {
 void simFillFrom(GameState *state, int col, int row) {
     if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return;
 
-    static const signed char dx[4] = {-1, 1, 0, 0};
-    static const signed char dy[4] = {0, 0, -1, 1};
     unsigned char queueCol[FILL_QUEUE], queueRow[FILL_QUEUE];
     unsigned char head = 0, tail = 1;
 
@@ -232,8 +236,8 @@ void simFillFrom(GameState *state, int col, int row) {
         const unsigned char fromRow = queueRow[head];
         head++;
         for (int i = 0; i < 4; i++) {
-            const int toCol = fromCol + dx[i];
-            const int toRow = fromRow + dy[i];
+            const int toCol = fromCol + kFillDx[i];
+            const int toRow = fromRow + kFillDy[i];
             if (!fillOpen(state, toCol, toRow)) continue;
             WorldCell *cell = &state->world.cells[WORLD_INDEX(toCol, toRow)];
             if (cell->cost < FILL_INFINITE) continue;       // already reached
@@ -481,6 +485,220 @@ void simStep(Sim *sim) {
     stateRecomputeTotals(state);
     stateMarkDefeated(state);
     sim->frames++;
+}
+
+/* -------------------------------------------------------------- routing */
+
+// The eight directions, as the table at 0x434434 numbers them.  It is indexed
+// table[dy * 3 + dx] about its own address, so the centre - a step to nowhere -
+// is 5.  That answers a question this port carried unresolved for a while:
+// a route byte of 5 means "stay", it is not a step at all.
+//
+//      dx:  -1   0   1
+//   dy -1:   1   2   3
+//   dy  0:   0   5   4
+//   dy  1:   7   6   5
+//
+// Only the four cardinals are ever produced here, since the fill walks four
+// ways, so a route byte out of simRouteTo is always 0, 2, 4 or 6.
+static const unsigned char kDirection[3][3] = {
+    {1, 2, 3},
+    {0, 5, 4},
+    {7, 6, 5},
+};
+
+// 004056f0.  Opens the cell an order points at, when the order is *about* that
+// cell: a wall, a cave mouth, or anything in the obstacle band.  Without this a
+// unit could never be sent to dismantle the thing in its way, because the fill
+// would refuse to reach it.
+void simUnblockTarget(GameState *state, int col, int row) {
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return;
+    WorldCell *cell = &state->world.cells[WORLD_INDEX(col, row)];
+    const unsigned char terrain = cell->terrain;
+    if (terrain == 0x7a || terrain == 0x7b ||
+        (unsigned char)(terrain - 0x30) < 0x30)
+        cell->marked = 0;
+}
+
+// 00405000.  Turns a filled distance field into a route, by walking downhill
+// from the destination to the unit and writing each step down as it goes.
+//
+// The fill must already have been run from the unit's own cell, so the
+// destination's distance is how many steps away it is.  Each cell of the route
+// is indexed by distance - route[k] is the direction to take once k steps have
+// been walked - and the step recorded is the reverse of the one taken, since
+// the walk down is backwards.  Reversing an eight-direction code is + 4 & 7.
+//
+// Returns 1 when a route was laid, 10 when the unit is already standing there,
+// and 0 when the destination cannot be reached.
+int simRouteTo(GameState *state, unsigned slot, int col, int row) {
+    if (slot >= ENTITY_COUNT) return 0;
+    if (col > 0x2e || row > 0x2e) return 0;
+
+    unsigned cost = state->world.cells[WORLD_INDEX(col, row)].cost;
+    if (cost > FILL_INFINITE - 1) return 0;
+
+    Entity *entity = &state->entities[slot];
+    entity->at18 = ROUTE_EMPTY;
+    if (entity->position[0] == col && entity->position[1] == row) return 10;
+
+    entity->at18 = 0;                   // 00405000 clears the four bytes back
+    entity->at14 = cost;                // and the length is the distance
+
+    unsigned probe = 0;                 // kept between steps, so the search
+                                        // resumes where it left off
+    for (;;) {
+        int stepped = 0;
+        for (int tries = 0; tries < 4; tries++) {
+            const int toCol = col + kFillDx[probe];
+            const int toRow = row + kFillDy[probe];
+            if (fillOpen(state, toCol, toRow)) {
+                const unsigned there =
+                    state->world.cells[WORLD_INDEX(toCol, toRow)].cost;
+                if (there < cost) {
+                    cost = there;
+                    stepped = 1;
+                    if (cost < sizeof entity->route)
+                        entity->route[cost] = (unsigned char)
+                            ((kDirection[kFillDy[probe] + 1]
+                                        [kFillDx[probe] + 1] + 4) & 7);
+                    col = toCol;
+                    row = toRow;
+                    break;
+                }
+            }
+            probe = (probe + 1) & 3;
+        }
+        if (cost == 0) return 1;
+        if (!stepped) {
+            entity->at18 = ROUTE_EMPTY;
+            return 0;
+        }
+    }
+}
+
+// 004051b0.  Stops the unit one cell short.  The orders that act on a cell -
+// building, clearing, dismantling - are carried out from beside it, not on it,
+// so their routes are shortened by one and cancelled if that leaves nothing.
+int simShortenRoute(GameState *state, unsigned slot) {
+    if (slot >= ENTITY_COUNT) return 0;
+    Entity *entity = &state->entities[slot];
+    if (entity->at18 == ROUTE_EMPTY) return 0;
+    entity->at14--;
+    if ((int)entity->at14 < 1) {
+        entity->at18 = ROUTE_EMPTY;
+        return 0;
+    }
+    return 1;
+}
+
+/* ------------------------------------------------------------ selection */
+
+// 0040a020.  Marks one unit as chosen: bit 0 of +0x21c, a balloon over its
+// head, and its facing parked in +0x0e while +0x0c shows the "chosen" pose.
+// It refuses a unit of another country or one already fighting, and - unless
+// forced - one that is already carrying an order.
+int simSelect(Sim *sim, unsigned slot, int col, int row, int force) {
+    GameState *state = sim->state;
+    if (slot >= ENTITY_COUNT) return 0;
+    Entity *entity = &state->entities[slot];
+    if (entity->faction != sim->humanFaction) return 0;
+    if (entity->flags & 2) return 0;
+    if (!force && (entity->at0d & 0x10)) return 0;
+
+    // The original fills from the chosen cell here, leaving the field ready
+    // for whatever the order turns out to be.
+    simResetFill(state);
+    simFillFrom(state, col, row);
+
+    entity->flags21c |= 1;
+    entity->at220 = 0;
+    entity->at0e = entity->at0c;
+    entity->at0c = 6;
+    return 1;
+}
+
+// 00409e90 and 00409f10, which differ only in that one forces: choose every
+// unit of the player's country except its leader.  Sweeping cells rather than
+// the entity array is deliberate - a unit not standing anywhere is not on the
+// board to be chosen.
+int simSelectAll(Sim *sim, int force) {
+    GameState *state = sim->state;
+    int chosen = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const unsigned char slot = state->world.cells[i].occupant;
+        if (slot >= ENTITY_COUNT) continue;
+        if (state->entities[slot].at0d & 0x20) continue;    // not the leader
+        if (simSelect(sim, slot, i / WORLD_GRID, i % WORLD_GRID, force))
+            chosen++;
+    }
+    return chosen;
+}
+
+// 00409f90.  Lets everyone go again: facing restored, balloon away, bit
+// cleared.  The original also unpauses here, the selection having held the
+// game still while it was made.
+void simClearSelection(GameState *state) {
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &state->entities[i];
+        if ((entity->flags21c & 1) == 0) continue;
+        entity->at0c = entity->at0e;
+        entity->flags21c &= ~1u;
+        entity->at220 = 0xff;
+    }
+}
+
+// 00423cc0's body: hand every chosen unit the order and the place to carry it
+// out, and route it there.  `modifier` is the original's second argument - 1
+// adds 0x40 and 2 adds 0x80 to the order byte.  A leader is given order 0x0d
+// whatever was asked for, which is the one its own name table calls "I'm
+// Leader".
+//
+// Returns how many units took the order.
+int simOrderSelected(Sim *sim, unsigned order, int modifier, int col,
+                     int row) {
+    GameState *state = sim->state;
+    int given = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &state->entities[i];
+        if ((entity->flags21c & 1) == 0) continue;
+        entity->flags21c &= ~1u;
+
+        const unsigned char balloon = entity->at220;
+        entity->at220 = 0xff;
+        if (balloon == 1 || balloon == 0xff) continue;
+
+        unsigned char code = (unsigned char)order;
+        if (modifier == 1) code |= 0x40;
+        if (modifier == 2) code |= 0x80;
+        const unsigned char leader = entity->at0d & 0x20;
+        if (leader) code = (unsigned char)((code & 0xfd) | 0x0d);
+        else code |= 0x10;
+        entity->at0d = (unsigned char)(code | leader);
+
+        entity->target[0] = (unsigned char)col;
+        entity->target[1] = (unsigned char)row;
+        entity->flags &= (unsigned char)~0x0cu;
+
+        // Fill from the unit, with the target cell opened if the order is
+        // about that cell, then descend from the target back to the unit.
+        simResetFill(state);
+        simUnblockTarget(state, col, row);
+        simFillFrom(state, entity->position[0], entity->position[1]);
+        entity->at18 = ROUTE_EMPTY;
+        const int laid = simRouteTo(state, (unsigned)i, col, row);
+        if (laid == 1) {
+            switch (code & 0x0f) {
+            case 6: case 7: case 9: case 10: case 11:
+                simShortenRoute(state, (unsigned)i);
+                break;
+            default:
+                break;
+            }
+        }
+        if (laid == 1 || laid == 10) given++;
+    }
+    return given;
 }
 
 /* ------------------------------------------------------------- actions */
