@@ -24,6 +24,7 @@
 #define ENTITY_STRENGTH_CAP 100000
 #define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
 #define FILL_INFINITE 0x1f0        // and how far 0041a680 calls unreached
+#define SIM_DAY_BUDGET 3000        // 00405c60's allowance for a stage
 #define FILL_INFINITE 0x1f0        // and how far 0041a680 says an unreached cell is
 
 // The eight neighbours, from the paired tables at 00434420 and 00434428:
@@ -453,6 +454,10 @@ void simInit(Sim *sim, GameState *state) {
     sim->humanFaction = 0;      // DAT_004365cd, until the menus set it
     sim->autoTax = 1;           // DAT_0043769c
     sim->pendingOrder = 1;      // DAT_004365e0, the order a new unit takes
+    // 00405c60 sets the clock against a budget of three thousand days, plus
+    // whatever the quest allows on top.  The game's readme asks you to finish
+    // in as few as you can, and this is what "few" is measured against.
+    sim->countdown = SIM_DAY_BUDGET;
 }
 
 void simStep(Sim *sim) {
