@@ -140,6 +140,14 @@ createLordMonarch().then((M) => {
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
     expect('and the count reads back', M._lm_selected(), picked);
+    // Aiming answers before anything is ordered.
+    let reachable = 0;
+    for (let y = 40; y < 440 && !reachable; y += 40)
+        for (let x = 40; x < 600 && !reachable; x += 40)
+            reachable = M._lm_aim(x, y);
+    expect('somewhere is reachable', reachable, 1);
+    expect('and aiming ordered nothing', M._lm_selected(), picked);
+
     let sent = 0;
     for (let y = 40; y < 440 && !sent; y += 40)
         for (let x = 40; x < 600 && !sent; x += 40)

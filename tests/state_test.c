@@ -749,6 +749,7 @@ int main(void) {
             expect("a balloon is one the sheet has", e->at220 < 16, 1);
         }
         expect("somebody is wearing a balloon", wearing > 0, 1);
+
         expect("and the ordered one says so",
                state.entities[3].at220 == 10 || state.entities[3].at220 == 11,
                1);
@@ -758,6 +759,32 @@ int main(void) {
         simStep(&hunt);
         expect("another country's unit stays quiet",
                state.entities[3].at220, 0xff);
+        state.entities[3].faction = 0;
+
+        // 004237e0: aiming the chosen units at a cell, before any order.
+        state.entities[3].flags21c |= 1;            // pretend it was chosen
+        expect("an open cell is reachable safely",
+               simReachTarget(&state, 3, 20, 20), 2);
+        expect("and the balloon says so", state.entities[3].at220, 2);
+        // Walled in, nothing can be reached at all.
+        for (int dc = -1; dc <= 1; dc++)
+            for (int dr = -1; dr <= 1; dr++)
+                if (dc || dr)
+                    state.world.cells[WORLD_INDEX(
+                        state.entities[3].position[0] + dc,
+                        state.entities[3].position[1] + dr)].blocked = 1;
+        expect("walled in, nowhere is reachable",
+               simReachTarget(&state, 3, 20, 20), 1);
+        expect("and the balloon says that too", state.entities[3].at220, 1);
+        expect("aiming the force answers for it",
+               simAimSelection(&hunt, 20, 20), 0);
+        for (int dc = -1; dc <= 1; dc++)
+            for (int dr = -1; dr <= 1; dr++)
+                state.world.cells[WORLD_INDEX(
+                    state.entities[3].position[0] + dc,
+                    state.entities[3].position[1] + dr)].blocked = 0;
+        state.entities[3].flags21c &= ~1u;
+
     }
 
     // The name table out of the large terrain file.  It needs the game's own

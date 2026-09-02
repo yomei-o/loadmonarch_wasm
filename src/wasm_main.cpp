@@ -251,6 +251,18 @@ EMSCRIPTEN_KEEPALIVE void lm_clear_selection(void) {
     simClearSelection(&g_game);
 }
 
+// Aims the chosen units at the cell under a view pixel without ordering
+// anything: each answers in the balloon over its head.  Non-zero when at least
+// one of them can get there without passing danger.
+EMSCRIPTEN_KEEPALIVE int lm_aim(int x, int y) {
+    const TileBank *bank = worldBank(&g_game.world, g_zoom);
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y) / ts;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
+    return simAimSelection(&g_sim, col, row);
+}
+
 // Gives the chosen units the current order, aimed at the cell under a view
 // pixel.  Returns how many of them found a way there.
 EMSCRIPTEN_KEEPALIVE int lm_order_at(int order, int modifier, int x, int y) {

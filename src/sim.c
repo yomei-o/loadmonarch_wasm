@@ -791,6 +791,31 @@ static void blockDanger(GameState *state, unsigned slot) {
     }
 }
 
+// 00405440.  The same sweep as 00405510 with the judgement taken out: it
+// blocks only what cannot be walked through at all - an ally, or a friend too
+// large to merge with - and says nothing about danger.
+static void blockImpassable(GameState *state, unsigned slot) {
+    const Entity *me = &state->entities[slot];
+    const unsigned faction = me->faction;
+    if (faction >= FACTION_COUNT) return;
+    const unsigned char ally = state->factions[faction].at1e;
+
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        if (i == slot) continue;
+        const Entity *other = &state->entities[i];
+        if (other->flags & 0x80) continue;
+        if (other->at18 != ROUTE_EMPTY) continue;
+        const int col = other->position[0], row = other->position[1];
+        if (!inBounds(col, row)) continue;
+
+        const int blocked =
+            ally == other->faction ||
+            (other->faction == faction &&
+             other->at08 + me->at08 > ENTITY_STRENGTH_CAP);
+        if (blocked) state->world.cells[WORLD_INDEX(col, row)].marked = 1;
+    }
+}
+
 // 0041a9f0.  The fill one unit sees: cleared, painted with what that unit must
 // avoid, then flooded from where it stands.
 void simPrepareFill(GameState *state, unsigned slot, int col, int row) {
@@ -1055,6 +1080,65 @@ void simClearSelection(GameState *state) {
         entity->flags21c &= ~1u;
         entity->at220 = 0xff;
     }
+}
+
+// 004237e0.  Asks one chosen unit whether it can get to a cell, and answers in
+// the balloon over its head.  It tries three times, each less careful than the
+// last, and the balloon says which attempt succeeded:
+//
+//   2  it can go there without passing anything dangerous
+//   3  only by passing danger
+//   4  only by pushing through its own people as well
+//   1  it cannot get there at all
+//
+// This is what the game shows while the pointer moves over the map with units
+// chosen - a live answer, unit by unit, before any order is given.  00423cc0
+// then refuses the ones that answered 1.
+int simReachTarget(GameState *state, unsigned slot, int col, int row) {
+    if (slot >= ENTITY_COUNT || !inBounds(col, row)) return 0;
+    Entity *entity = &state->entities[slot];
+    const unsigned target = WORLD_INDEX(col, row);
+
+    simResetFill(state);
+    blockDanger(state, slot);
+    simUnblockTarget(state, col, row);
+    simFillFrom(state, entity->position[0], entity->position[1]);
+    if (state->world.cells[target].cost < FILL_INFINITE) {
+        entity->at220 = 2;
+        return 2;
+    }
+
+    simResetFill(state);
+    blockImpassable(state, slot);
+    simUnblockTarget(state, col, row);
+    simFillFrom(state, entity->position[0], entity->position[1]);
+    if (state->world.cells[target].cost < FILL_INFINITE) {
+        entity->at220 = 3;
+        return 3;
+    }
+
+    simResetFill(state);
+    simUnblockTarget(state, col, row);
+    simFillFrom(state, entity->position[0], entity->position[1]);
+    if (state->world.cells[target].cost < FILL_INFINITE) {
+        entity->at220 = 4;
+        return 4;
+    }
+
+    entity->at220 = 1;
+    return 1;
+}
+
+// 00423940's loop over 004237e0: aim the whole chosen force at a cell and let
+// each of them answer.  Returns non-zero when at least one can get there.
+int simAimSelection(Sim *sim, int col, int row) {
+    GameState *state = sim->state;
+    int any = 0;
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        if ((state->entities[i].flags21c & 1) == 0) continue;
+        if (simReachTarget(state, (unsigned)i, col, row) == 2) any = 1;
+    }
+    return any;
 }
 
 // 00423cc0's body: hand every chosen unit the order and the place to carry it

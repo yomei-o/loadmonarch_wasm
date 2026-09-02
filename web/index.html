@@ -422,11 +422,22 @@ createLordMonarch().then(function (M) {
     refreshPanel();
   });
 
-  // The cursor follows the pointer, as sprite 0xcc laid on the cell.
+  // The cursor follows the pointer, as sprite 0xcc laid on the cell - and with
+  // units chosen, each of them answers in its balloon whether it can get to
+  // where the pointer is.
+  var aimCol = -1, aimRow = -1;
   canvas.addEventListener('pointermove', function (e) {
     if (!loaded) return;
     var p = viewPoint(e);
     M._lm_set_cursor(p[0], p[1]);
+    if (M._lm_selected() > 0) {
+      var col = M._lm_cursor_col(), row = M._lm_cursor_row();
+      if (col !== aimCol || row !== aimRow) {
+        aimCol = col;
+        aimRow = row;
+        M._lm_aim(p[0], p[1]);
+      }
+    }
   });
   canvas.addEventListener('pointerleave', function () {
     if (loaded) M._lm_set_cursor(-1, -1);

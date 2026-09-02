@@ -119,6 +119,15 @@ int simSelectAll(Sim *sim, int force);
 void simClearSelection(GameState *state);
 int simOrderSelected(Sim *sim, unsigned order, int modifier, int col, int row);
 
+// 004237e0 and the loop over it.  Asks a chosen unit whether it can reach a
+// cell and writes the answer into the balloon over its head - 2 safely, 3 only
+// through danger, 4 only by pushing past its own people, 1 not at all.
+// simAimSelection asks the whole chosen force and is non-zero when at least one
+// can go safely.  This is the live answer the game shows while the pointer
+// moves, before any order is given.
+int simReachTarget(GameState *state, unsigned slot, int col, int row);
+int simAimSelection(Sim *sim, int col, int row);
+
 // 00405360, 00405390 and 0041a680: the distance fill 0041dc60 runs before it
 // collects tax.  Reset every cell, shut the fill out of foreign ground, then
 // walk it from one cell, leaving distances in each cell's +0x08.  Territory the
