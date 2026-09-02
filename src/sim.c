@@ -2201,12 +2201,56 @@ static void stepNeutralEntity(Sim *sim, unsigned slot) {
         }
     }
 
-    // It could not go that way.  The original now scans the four square
-    // directions through 0041f020 and builds a mask of which are open, falling
-    // back to all eight - neither that routine nor the mask is read, so this
-    // simply picks a new heading and tries again later.
+    // It could not go that way, so it rests a moment and then looks around.
     entity->at0f = (unsigned char)(simRandom(10) + 1);
-    entity->at0c = (unsigned char)(simRandom(8));
+
+    // 0041f020 over the four square directions, starting from the reverse of
+    // its facing: a bit for each one that is open, shifted up as it goes.
+    unsigned mask = 0;
+    unsigned probe = (unsigned)((entity->at0c - 4) & 6);
+    for (int i = 0; i < 4; i++) {
+        mask <<= 1;
+        const int dx = kStepDx[probe], dy = kStepDy[probe];
+        if (stepInBounds(col, row, dx, dy)) {
+            const WorldCell *to = &state->world.cells[
+                WORLD_INDEX((unsigned)((int)col + dx), (unsigned)((int)row + dy))];
+            if (to->terrain <= 0x2f && to->occupant >= ENTITY_NONE) mask |= 1;
+        }
+        probe = (probe + 2) & 6;
+    }
+
+    if (mask == 0) {
+        // Walled in.  A monster does not wait: it turns to a wall and eats it,
+        // a point of the wall's worth a tick, and when there is nothing left
+        // the wall is gone.  Walls hold them off; they do not keep them out.
+        for (int i = 0, turn = 0; i < 8; i += 2, turn++) {
+            const unsigned dir = (unsigned)((entity->at0c + i) & 7);
+            const int dx = kStepDx[dir], dy = kStepDy[dir];
+            if (!stepInBounds(col, row, dx, dy)) continue;
+            const unsigned at = WORLD_INDEX((unsigned)((int)col + dx),
+                                            (unsigned)((int)row + dy));
+            WorldCell *wall = &state->world.cells[at];
+            if (wall->terrain != 0x7b) continue;
+            entity->at0c = (unsigned char)((entity->at0c + turn * 2) & 7);
+            if (wall->value > 0) wall->value--;
+            if (wall->value == 0) {
+                wall->value = 100;
+                wall->terrain = 0;
+                stateMarkBlocked(state);
+            }
+            return;
+        }
+        return;
+    }
+
+    // One way open turns it that way; more than one, or the awkward pair, and
+    // it picks a side.
+    int turn;
+    if (mask == 1) turn = 2;
+    else if (mask == 2) turn = 0;
+    else if (mask == 4) turn = -2;
+    else turn = simRandom(100) < 0x32 ? 2 : -2;
+    entity->at0c = (unsigned char)((entity->at0c + turn) & 6);
 }
 
 // 004204f0: the entity cursor, the counterpart of the cell sweep.  It walks
