@@ -12,6 +12,12 @@ typedef struct {
     unsigned humanFaction;      // DAT_004365cd
     int autoTax;                // DAT_0043769c == 1
     unsigned pendingOrder;      // DAT_004365e0, stamped onto a new unit
+
+    // DAT_0043781c.  0040a5e0 puts four back at the top of every tick, and
+    // 0041eb60 spends one whenever a unit tries to act where it stands.  Only
+    // four units a tick get that far; the rest are told to wait, which is what
+    // keeps a board of sixty-four from doing sixty-four searches at once.
+    int budget;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);

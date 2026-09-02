@@ -417,10 +417,15 @@ static void growFromUnit(Sim *sim, unsigned index, unsigned col, unsigned row,
     cell->occupant = (unsigned char)slot;
     cell->value = 1;
     // A unit the player raised carries the order the interface has selected
-    // (DAT_004365e0); everyone else's gets the plain one.
+    // (DAT_004365e0); everyone else's gets the plain one.  The byte is stored
+    // exactly as given: the menu at 0x434444 offers six orders - 1, 4, 5, 8, 9
+    // and 0x0b - each in three strengths, where the second adds 0x50 and the
+    // third 0x90.  Both of those carry 0x10, which is what sends the unit to
+    // an order handler at all; the plain variant does not, and such a unit
+    // behaves as an ordinary one carrying the order as a preference.
     if (faction == sim->humanFaction && sim->pendingOrder != 1) {
         entity->flags |= 4;
-        entity->at0d = (unsigned char)(sim->pendingOrder | 0x10);
+        entity->at0d = (unsigned char)sim->pendingOrder;
         return;
     }
     entity->at0d = 1;
@@ -451,8 +456,9 @@ void simInit(Sim *sim, GameState *state) {
 
 void simStep(Sim *sim) {
     // 0040a5e0 advances the animation counter once per tick, ahead of the
-    // sweep, and the drawing reads it.
+    // sweep, and hands out the tick's four work permits.
     sim->state->frame++;
+    sim->budget = 4;                    // DAT_0043781c
 
     GameState *state = sim->state;
     for (int n = SWEEP_PER_CALL; n != 0; n--) {
@@ -485,6 +491,187 @@ void simStep(Sim *sim) {
     stateRecomputeTotals(state);
     stateMarkDefeated(state);
     sim->frames++;
+}
+
+// 0041d6d0's table, read off the sixteen words it builds on the stack.  A
+// direction is a column delta and a row delta; 5 is the one 0041d690 falls
+// back on when an entity has no route.
+static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
+#define DIRECTION_DEFAULT 5
+
+/* ------------------------------------------------ looking for somewhere */
+
+// The neighbours at 0x434400 and 0x434410: nothing, then the four cardinals,
+// then the same four at two cells' reach.  The fill's own tables are these
+// from index 1, which is why they looked like eight entries earlier.
+static const signed char kNearDx[9] = {0, -1, 1, 0, 0, -2, 2, 0, 0};
+static const signed char kNearDy[9] = {0, 0, 0, -1, 1, 0, 0, -2, 2};
+
+// 0041ebf0.  Open ground, by the terrain alone - unlike 0041ebb0 this ignores
+// whatever a fill has marked.
+static int cellOpen(const GameState *state, int col, int row) {
+    if (col <= 0 || row <= 0 || col >= 0x2f || row >= 0x2f) return 0;
+    return state->world.cells[WORLD_INDEX(col, row)].blocked == 0;
+}
+
+// 0041eb60.  Spends one of the tick's four work permits.  A unit that gets one
+// has bits 0 and 3 cleared and may act; a unit that does not has them set, and
+// bit 3 is what the finders test before they bother searching.
+static int workBudget(Sim *sim, unsigned slot) {
+    Entity *entity = &sim->state->entities[slot];
+    if (sim->budget != 0) {
+        sim->budget--;
+        entity->flags &= (unsigned char)~9u;
+        return 1;
+    }
+    entity->flags |= 9;
+    return 0;
+}
+
+// 0041e700.  Whether stepping onto a cell is a bad idea.  Two questions: what
+// is standing there, and what is standing next to it.
+//
+// On the cell itself, a unit may only walk into a friend it can absorb - one
+// small enough that the pair stays under the hundred thousand - never into an
+// ally's, and never into anything at least its own size.
+//
+// Around the cell, an enemy that is not moving turns it down if it is the
+// bigger, and an enemy that *is* moving turns it down only when it is walking
+// straight at this cell and is bigger.  So a unit will squeeze past a larger
+// enemy heading elsewhere, and will not walk into one bearing down on it.
+static int moveRefused(const GameState *state, unsigned slot, int col,
+                       int row) {
+    const Entity *me = &state->entities[slot];
+    const unsigned faction = me->faction;
+    if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 1;
+
+    const unsigned char here = state->world.cells[WORLD_INDEX(col, row)].occupant;
+    if (here != 0x40 && here != slot && here < ENTITY_COUNT) {
+        const Entity *other = &state->entities[here];
+        if (me->faction == other->faction &&
+            other->at08 + me->at08 > ENTITY_STRENGTH_CAP) return 1;
+        if (faction < FACTION_COUNT &&
+            state->factions[faction].at1e == other->faction) return 1;
+        if (me->at08 <= other->at08) return 1;
+    }
+
+    for (int i = 1; i <= 4; i++) {
+        const int c = col + kNearDx[i], r = row + kNearDy[i];
+        if (!fillOpen(state, c, r)) continue;
+        const unsigned char who = state->world.cells[WORLD_INDEX(c, r)].occupant;
+        if (who >= ENTITY_COUNT) continue;
+        const Entity *beside = &state->entities[who];
+        if (beside->faction == faction) continue;
+
+        if (faction < FACTION_COUNT &&
+            state->factions[faction].at1e == beside->faction) {
+            if (me->at18 == ROUTE_EMPTY) return 1;
+        } else if (beside->at18 == ROUTE_EMPTY) {
+            if (me->at08 < beside->at08) return 1;
+        } else {
+            // Where it is heading: the reverse of its facing points back at
+            // the cell it came from, so this asks whether that is us.
+            const unsigned back = (unsigned)((beside->at0c + 4) & 7);
+            if (kNearDx[i] == kStepDx[back] && kNearDy[i] == kStepDy[back] &&
+                me->at08 < beside->at08) return 1;
+        }
+    }
+    return 0;
+}
+
+// 0041ec60.  Whether the country can pay, and a note to the player when it
+// cannot: the unit takes flag bit 0, which is how the interface knows to say
+// so.
+static int canAfford(GameState *state, unsigned slot, unsigned cost,
+                     unsigned human) {
+    const Entity *me = &state->entities[slot];
+    if (me->faction >= FACTION_COUNT) return 0;
+    if (state->factions[me->faction].funds >= cost) return 1;
+    if (me->faction == human) state->entities[slot].flags |= 1;
+    return 0;
+}
+
+// What a unit goes looking for, one per standing order.  0041dfb0, 0041e0a0,
+// 0041e1d0, 0041e360, 0041e480 and 0041e560 are the same loop written out six
+// times with a different question in the middle of it, so here it is once.
+typedef enum {
+    LOOK_OWN_GROUND,        // 0041e560: an idle unit, its country's own cell
+    LOOK_ENEMY,             // 0041e0a0: order 4, somebody else's unit cell
+    LOOK_ROOM_TO_BUILD,     // 0041e1d0: order 5, empty or its own ground
+    LOOK_BUILDING,          // 0041e360: order 8, a building
+    LOOK_WALL,              // 0041e480: order 9, a wall
+    LOOK_SPAWNER            // 0041dfb0: order 0x0b, a neutral spawn
+} LookFor;
+
+static int lookAccepts(const GameState *state, unsigned slot, LookFor what,
+                       unsigned char terrain) {
+    const unsigned faction = state->entities[slot].faction;
+    switch (what) {
+    case LOOK_OWN_GROUND:
+        return terrain == (unsigned char)(faction + 8);
+    case LOOK_ENEMY:
+        if (terrain < 8 || terrain > 0x0b) return 0;
+        if ((unsigned char)(terrain - 8) == faction) return 0;
+        return faction >= FACTION_COUNT ||
+               state->factions[faction].at1e != (unsigned char)(terrain - 8);
+    case LOOK_ROOM_TO_BUILD:
+        return terrain == 0 || (terrain >= 0x0c && terrain < 0x10);
+    case LOOK_BUILDING:
+        return terrain != 0 && terrain < 5;
+    case LOOK_WALL:
+        return terrain == 0x7b;
+    case LOOK_SPAWNER:
+        return terrain == 5;
+    }
+    return 0;
+}
+
+// The scan itself, and the corner rule that runs through it.  The mask shifts
+// right a place each step and takes bit 7 whenever a cell is closed, so by the
+// time the two-cell reaches come up - four steps later - bit 3 says whether
+// the one-cell step in that same direction was blocked.  You cannot reach past
+// a wall.
+static int lookAround(Sim *sim, unsigned slot, LookFor what,
+                      signed char *dxOut, signed char *dyOut) {
+    GameState *state = sim->state;
+    const Entity *me = &state->entities[slot];
+    const int col = me->position[0], row = me->position[1];
+    const unsigned faction = me->faction;
+
+    // Each finder's own precondition.
+    if (what == LOOK_OWN_GROUND) {
+        // A unit already standing on its country's ground has nowhere to be.
+        if ((unsigned char)(state->world.cells[WORLD_INDEX(col, row)].terrain -
+                            faction) == 8)
+            return 0;
+    } else if (!cellOpen(state, col, row)) {
+        return 0;                       // the rest will not start from cover
+    }
+    if (what == LOOK_BUILDING && (me->at0d & 0x10) == 0 && me->at08 < 100)
+        return 0;                       // too small to be knocking things down
+    if (what == LOOK_ROOM_TO_BUILD &&
+        !canAfford(state, slot, 100, sim->humanFaction))
+        return 0;
+
+    unsigned mask = 0;
+    for (int i = 1; i < 9; i++) {
+        mask >>= 1;
+        const int c = col + kNearDx[i], r = row + kNearDy[i];
+        if (!cellOpen(state, c, r)) {
+            mask |= 0x80u;
+            continue;
+        }
+        if (mask & 8) continue;
+        const unsigned char terrain =
+            state->world.cells[WORLD_INDEX(c, r)].terrain;
+        if (!lookAccepts(state, slot, what, terrain)) continue;
+        if (moveRefused(state, slot, c, r)) continue;
+        *dxOut = kNearDx[i];
+        *dyOut = kNearDy[i];
+        return 1;
+    }
+    return 0;
 }
 
 /* -------------------------------------------------------------- routing */
@@ -1133,17 +1320,13 @@ int simAdvanceRoute(GameState *state, unsigned slot) {
 /* ------------------------------------------------- entities, 004204f0 */
 
 static void stepPlainUnit(Sim *sim, unsigned slot);     // 00401770, below
-static void stepOrderedUnit(Sim *sim, unsigned slot);  // 00402bc0, below
+static void stepOrderedUnit(Sim *sim, unsigned slot);   // 00403170, below
+static void stepStandingOrder(Sim *sim, unsigned slot); // 00402bc0, below
+static void fallbackOrder(Sim *sim, unsigned slot);     // 00403100, below
 static int trampleGround(GameState *state, unsigned index, unsigned faction);
 static int payUpkeep(GameState *state, unsigned slot, unsigned index,
                      unsigned faction);
 
-// 0041d6d0's table, read off the sixteen words it builds on the stack.  A
-// direction is a column delta and a row delta; 5 is the one 0041d690 falls
-// back on when an entity has no route.
-static const signed char kStepDx[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
-static const signed char kStepDy[8] = {0, -1, -1, -1, 0, 1, 1, 1};
-#define DIRECTION_DEFAULT 5
 
 // 0041d690: the next direction comes out of the route the entity carries -
 // +0x18 indexes into the bytes from +0x1c, which is what most of the 0x224
@@ -1510,7 +1693,14 @@ void simStepEntities(Sim *sim) {
             continue;
         }
         if (entity->at0d & 0x10) {
-            stepOrderedUnit(sim, slot);                 // 00402bc0
+            // Flag bit 2 chooses between the two order handlers: a unit born
+            // with a standing order goes looking for somewhere to use it,
+            // everyone else carries theirs out where they were sent.
+            if (entity->flags & 4) {
+                stepStandingOrder(sim, slot);           // 00402bc0
+                continue;
+            }
+            stepOrderedUnit(sim, slot);                 // 00403170
             // A unit with a route walks it, by 00403170's step rather than
             // the leader's - the difference is the patience counter.
             if (entity->at18 != ROUTE_EMPTY) stepWalkOrdered(sim, slot);
@@ -1518,6 +1708,100 @@ void simStepEntities(Sim *sim) {
         }
         stepPlainUnit(sim, slot);                       // 00401770
     }
+}
+
+// 00402bc0: the other order handler, the one a unit born with a standing order
+// runs.  Where 00403170 carries an order out at a place it was sent, this one
+// goes looking for somewhere to carry it out - and once it has found one, it
+// clears flag bit 2 and hands the unit over to 00403170 to do the work on
+// arrival.  A unit that finds nothing gives the order up.
+//
+// Each case is the same three questions: can I do it right here; if not, is
+// there somewhere within reach; if not, may I look further afield.  The last
+// of those needs 00421050 and the 004223xx family, which are unread, so a unit
+// that gets that far falls back instead - it will try again next tick, which
+// is close to what the original does when its own wider search fails.
+static void stepStandingOrder(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return;
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    if (!inBounds((int)col, (int)row)) return;
+    const unsigned index = WORLD_INDEX(col, row);
+
+    if (!payUpkeep(state, slot, index, faction)) return;
+    trampleGround(state, index, faction);
+    if (lashOut(sim, slot, col, row)) return;
+
+    signed char dx = 0, dy = 0;
+    LookFor what = LOOK_OWN_GROUND;
+    SimActionResult acted = SIM_ACTION_REFUSED;
+
+    switch (entity->at0d & 0x0f) {
+    case 0:
+        entity->at0c = 6;
+        entity->flags &= (unsigned char)~4u;
+        return;
+    case 4:
+        // 00421910's "am I already beside my quarry" is not read; the finder
+        // below covers the near case, which is the one that matters here.
+        what = LOOK_ENEMY;
+        break;
+    case 5:
+        acted = simBuildUnitCell(sim, slot, col, row);
+        if (acted == SIM_ACTION_DONE || acted == SIM_ACTION_SPENT_ENTITY)
+            return;
+        // 0040b330 returning 2 is "no funds"; with the tax rate at zero as
+        // well, there is no prospect of any, so the order goes.
+        if (acted == SIM_ACTION_NO_FUNDS &&
+            state->factions[faction].taxRate == 0) {
+            fallbackOrder(sim, slot);
+            return;
+        }
+        what = LOOK_ROOM_TO_BUILD;
+        break;
+    case 8:
+        if (simDemolishBuilding(sim, slot) == SIM_ACTION_PROGRESS) return;
+        what = LOOK_BUILDING;
+        break;
+    case 9:
+        what = LOOK_WALL;
+        break;
+    case 0x0b:
+        what = LOOK_SPAWNER;
+        break;
+    case 0x0c: {
+        // 00403170's case 0x0c, and the same here: join whoever +0x1f names,
+        // or die when that is four.
+        const unsigned char adopt = state->factions[faction].at1f;
+        if (adopt == 4) {
+            entity->flags |= 0x80;
+            return;
+        }
+        entity->faction = adopt;
+        entity->at0d = 0;
+        entity->flags &= (unsigned char)~4u;
+        return;
+    }
+    default:
+        fallbackOrder(sim, slot);
+        return;
+    }
+
+    if ((entity->flags & 8) == 0 && lookAround(sim, slot, what, &dx, &dy)) {
+        simMakeRoute(state, slot, dx, dy);
+        entity->flags &= (unsigned char)~4u;
+        return;
+    }
+    if (workBudget(sim, slot)) {
+        // Here the original searches the whole map for somewhere to go.  That
+        // search is not ported; giving up costs the unit only this tick.
+        fallbackOrder(sim, slot);
+        return;
+    }
+    fallbackOrder(sim, slot);
 }
 
 /* --------------------------------------------- the plain unit, 00401770 */
@@ -1655,7 +1939,9 @@ static void fallbackOrder(Sim *sim, unsigned slot) {
     entity->flags &= (unsigned char)~4u;
     entity->at0d = 1;
     signed char dx = 0, dy = 0;
-    if (chooseHome(state, slot, &dx, &dy)) {
+    // 0041e560, which this used to approximate with a guess at what "home"
+    // meant: a step onto the country's own ground, one or two cells off.
+    if (lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
         simMakeRoute(state, slot, dx, dy);
         return;
     }

@@ -83,7 +83,9 @@ createLordMonarch().then((M) => {
     M._lm_load_stage(2);                    // B_003, which starts with units
     for (let i = 0; i < 200; i++) M._lm_step(1);
     M._lm_set_order(4);
-    expect('the selected order took', M._lm_order(), 4);
+    // lm_set_order composes the byte the menu at 0x434444 would: the order
+    // itself plus 0x10, which is what makes it a standing order at all.
+    expect('the selected order took', M._lm_order(), 4 | 0x10);
     const ordered = M._lm_order_all(4);
     expect('some units were given it', ordered, (n) => n > 0);
     for (let i = 0; i < 200; i++) M._lm_step(1);

@@ -204,7 +204,11 @@ EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
 // plain one (build where you stand); 4 sends it after a neighbour's
 // settlement.  growFromUnit stamps it on, exactly as the original does.
 EMSCRIPTEN_KEEPALIVE void lm_set_order(int order) {
-    g_sim.pendingOrder = order < 0 ? 0u : (unsigned)order;
+    // The menu at 0x434444 composes this byte: the order itself, plus 0x10 to
+    // make it a standing order at all, and 0x40 or 0x80 for the two stronger
+    // variants.  This takes the plain order and asks for the middle one.
+    g_sim.pendingOrder =
+        order <= 0 ? 1u : (unsigned)((order & 0x0f) | 0x10);
 }
 EMSCRIPTEN_KEEPALIVE int lm_order(void) { return (int)g_sim.pendingOrder; }
 
