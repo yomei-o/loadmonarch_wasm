@@ -140,6 +140,15 @@ createLordMonarch().then((M) => {
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
     expect('and the count reads back', M._lm_selected(), picked);
+    // 00426900's inspector: with the cursor somewhere, the cell answers.
+    M._lm_set_cursor(320, 240);
+    expect('the cursor is on a cell', M._lm_cursor_terrain(), (n) => n >= 0);
+    expect('and the cell holds a number', M._lm_cursor_value(), (n) => n >= 0);
+    M._lm_set_cursor(-1, -1);
+    expect('with no cursor there is nothing to show',
+           M._lm_cursor_terrain(), -1);
+    M._lm_set_cursor(320, 240);
+
     // What the panel shows: a share of the board, and a leader with a
     // strength of its own that the country's total leaves out.
     M._lm_update_areas();

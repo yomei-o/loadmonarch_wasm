@@ -304,6 +304,48 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+/* ------------------------------------------- what is under the cursor */
+
+// 00426900, the Unit Window: it shows the cell the cursor is on - its terrain
+// tile, the number that cell holds, and a gauge of it.  A unit cell's number is
+// labelled NUM and everything else's DEF, and both are the cell's +0x0c, the
+// value that grows and gets spent.  Here the pieces are handed out and the page
+// draws them as text.
+EMSCRIPTEN_KEEPALIVE int lm_cursor_terrain(void) {
+    if (g_game.cursorCol >= WORLD_GRID || g_game.cursorRow >= WORLD_GRID)
+        return -1;
+    return g_game.world.cells[WORLD_INDEX(g_game.cursorCol,
+                                          g_game.cursorRow)].terrain;
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_cursor_value(void) {
+    if (g_game.cursorCol >= WORLD_GRID || g_game.cursorRow >= WORLD_GRID)
+        return -1;
+    return (int)g_game.world.cells[WORLD_INDEX(g_game.cursorCol,
+                                               g_game.cursorRow)].value;
+}
+
+// The unit standing there, if any: its strength, or -1.
+EMSCRIPTEN_KEEPALIVE int lm_cursor_unit(void) {
+    if (g_game.cursorCol >= WORLD_GRID || g_game.cursorRow >= WORLD_GRID)
+        return -1;
+    const unsigned char slot = g_game.world.cells[
+        WORLD_INDEX(g_game.cursorCol, g_game.cursorRow)].occupant;
+    if (slot >= ENTITY_COUNT) return -1;
+    if (g_game.entities[slot].flags & 0x80) return -1;
+    return (int)g_game.entities[slot].at08;
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_cursor_unit_faction(void) {
+    if (g_game.cursorCol >= WORLD_GRID || g_game.cursorRow >= WORLD_GRID)
+        return -1;
+    const unsigned char slot = g_game.world.cells[
+        WORLD_INDEX(g_game.cursorCol, g_game.cursorRow)].occupant;
+    if (slot >= ENTITY_COUNT) return -1;
+    if (g_game.entities[slot].flags & 0x80) return -1;
+    return g_game.entities[slot].faction;
+}
+
 // 0041b640's share of the board, in hundredths of a percent so it crosses the
 // boundary as an integer.  Recomputed on demand, the way the original computes
 // it for its own panel rather than every tick.

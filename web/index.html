@@ -142,6 +142,8 @@
       <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
       <tbody></tbody>
     </table>
+    <h2>CURSOR</h2>
+    <table id="cursor"><tbody></tbody></table>
     <h2>WORLD</h2>
     <table id="world"><tbody></tbody></table>
     <h2>移植の状況</h2>
@@ -248,6 +250,33 @@ createLordMonarch().then(function (M) {
       });
       body.appendChild(tr);
     }
+    // 00426900's own panel: what the cell under the cursor is, and the
+    // number it holds - NUM over a settlement, DEF over anything else.
+    var cur = document.querySelector('#cursor tbody');
+    var t = M._lm_cursor_terrain();
+    if (t < 0) {
+      cur.innerHTML = row('マス', '-');
+    } else {
+      var kind, num = 'DEF';
+      if (t === 0) kind = '空き地';
+      else if (t < 5) kind = '建物';
+      else if (t === 5) kind = '中立の湧き点';
+      else if (t >= 8 && t < 12) { kind = countryName(t - 8) + ' の集落'; num = 'NUM'; }
+      else if (t >= 12 && t < 16) kind = countryName(t - 12) + ' の領地';
+      else if (t >= 20 && t < 24) kind = countryName(t - 20) + ' の城';
+      else if (t === 0x7a) kind = '鉱山';
+      else if (t === 0x7b) kind = '壁';
+      else if (t >= 0x30 && t < 0x60) kind = '地形';
+      else kind = '地形 ' + t;
+      var unit = M._lm_cursor_unit();
+      cur.innerHTML =
+          row('マス', M._lm_cursor_col() + ',' + M._lm_cursor_row()) +
+          row('中身', kind) +
+          row(num, M._lm_cursor_value()) +
+          row('部隊', unit < 0 ? '-' :
+              countryName(M._lm_cursor_unit_faction()) + ' ' + unit);
+    }
+
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
     world.innerHTML =
