@@ -1,278 +1,98 @@
 // The music, from the game's own .MID files.
 //
-// The original hands them to MCI and lets Windows find a synthesiser.  There
-// is no synthesiser in a browser, so this reads the file and makes the sound
-// itself: a standard MIDI parse, then a small subtractive voice per note.  It
-// is not a General MIDI instrument set and does not pretend to be - it is the
-// notes, in tune and in time, which is what carries a Falcom tune.
+// The original hands them to MCI and lets Windows find a synthesiser.  There is
+// none in a browser, so the port renders them itself - and rather than keep the
+// single softened sawtooth this file used to carry, it now drives the wavetable
+// synthesiser from the sibling port windepth_wasm (src/synth.c, src/smf.c),
+// which has a General-MIDI-ish instrument set, three band-limited tables per
+// voice, an ADSR each, panning and hand-made drums for channel ten.  Falcom
+// wrote these tunes for a sound card of about 1990 and that is what it sounds
+// like.
 //
-// Everything stays in C so the native build can write a WAV of the same
-// rendering and the two can be compared.
+// What is left here is the shape the rest of the port already asked for: load
+// an image, render at a rate, say when it has run out.
 #include "midi.h"
 
-#include <math.h>
+#include "synth.h"
+
 #include <string.h>
 
-#define MAX_TRACKS 32
-#define MAX_VOICES 24
+static Music g_music;
+static int g_rate;                  // what mus_init was last given
+static int g_loaded;
 
-typedef struct {
-    const unsigned char *at;
-    const unsigned char *end;
-    unsigned long long when;    // absolute tick of the pending event
-    unsigned char running;      // the running status byte
-    int done;
-} Track;
-
-typedef struct {
-    int active;
-    int note;
-    float frequency;
-    float phase;
-    float amplitude;            // where the envelope is
-    float target;               // where it is heading
-    int releasing;
-    unsigned char channel;
-    int percussive;             // channel 10, rendered as noise
-    unsigned noise;             // its own little generator
-} Voice;
-
-typedef struct {
-    Track tracks[MAX_TRACKS];
-    int trackCount;
-    Voice voices[MAX_VOICES];
-    unsigned division;          // ticks per quarter note
-    unsigned tempo;             // microseconds per quarter note
-    unsigned long long tick;    // where playback has reached
-    double tickRemainder;       // fractional ticks carried between blocks
-    int finished;
-} Player;
-
-static Player g_player;
-static int g_ready;
-static int g_loop;
-
-static unsigned read32be(const unsigned char *p) {
-    return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) |
-           ((unsigned)p[2] << 8) | (unsigned)p[3];
-}
-
-static unsigned read16be(const unsigned char *p) {
-    return ((unsigned)p[0] << 8) | (unsigned)p[1];
-}
-
-// MIDI's variable-length quantity: seven bits a byte, top bit continues.
-static unsigned long long readVarint(const unsigned char **at,
-                                     const unsigned char *end) {
-    unsigned long long value = 0;
-    while (*at < end) {
-        const unsigned char byte = *(*at)++;
-        value = (value << 7) | (byte & 0x7f);
-        if ((byte & 0x80) == 0) break;
+// The synthesiser is told its rate once and keeps it, so the rate has to be
+// settled before a tune is loaded rather than when it is rendered - the
+// wavetables and every envelope slope are built from it.  A host that changes
+// rate loses what was playing and reloads; the one that does not need never
+// call this at all, and 22050 is what both of this port's hosts ask for.
+static void setRate(unsigned rate) {
+    const int want = rate ? (int)rate : 22050;
+    if (g_rate == want) return;
+    if (g_loaded) {
+        mus_stop(&g_music);
+        mus_free(&g_music);
+        g_loaded = 0;
     }
-    return value;
+    mus_init(&g_music, want);
+    // 0.55 is the synthesiser's own, and these tunes come out around a third
+    // of full scale with it; the loudest peaks at 0.47, so this leaves headroom
+    // and still sounds like music rather than a whisper.
+    mus_set_gain(&g_music, 0.9f);
+    g_rate = want;
 }
 
-static void advanceTrack(Track *track) {
-    if (track->at >= track->end) { track->done = 1; return; }
-    track->when += readVarint(&track->at, track->end);
-}
+void midiSetRate(unsigned rate) { setRate(rate); }
 
 int midiLoad(const unsigned char *data, unsigned size, int loop) {
-    memset(&g_player, 0, sizeof g_player);
-    g_ready = 0;
-    g_loop = loop;
-    if (size < 14 || memcmp(data, "MThd", 4) != 0) return 0;
-    const unsigned headerLength = read32be(data + 4);
-    if (headerLength < 6) return 0;
-    g_player.division = read16be(data + 12);
-    if (g_player.division == 0 || (g_player.division & 0x8000u)) {
-        // SMPTE division; the game's files are metrical, so decline rather
-        // than play at the wrong speed.
-        return 0;
+    setRate((unsigned)(g_rate ? g_rate : 22050));
+    if (g_loaded) {
+        mus_stop(&g_music);
+        mus_free(&g_music);
+        g_loaded = 0;
+        mus_init(&g_music, g_rate);
     }
-    g_player.tempo = 500000;        // 120 bpm until the file says otherwise
-
-    unsigned at = 8 + headerLength;
-    while (at + 8 <= size && g_player.trackCount < MAX_TRACKS) {
-        const unsigned length = read32be(data + at + 4);
-        if (memcmp(data + at, "MTrk", 4) == 0) {
-            if (at + 8 + length > size) break;
-            Track *track = &g_player.tracks[g_player.trackCount++];
-            track->at = data + at + 8;
-            track->end = track->at + length;
-            track->running = 0;
-            track->when = 0;
-            track->done = 0;
-            advanceTrack(track);
-        }
-        at += 8 + length;
-    }
-    if (g_player.trackCount == 0) return 0;
-    g_ready = 1;
+    if (mus_load(&g_music, data, (long)size) != 0) return 0;
+    g_loaded = 1;
+    mus_play(&g_music, loop);
     return 1;
 }
 
-static float noteFrequency(int note) {
-    return 440.0f * powf(2.0f, (float)(note - 69) / 12.0f);
-}
-
-static void startNote(unsigned char channel, int note, int velocity) {
-    Voice *chosen = NULL;
-    for (int i = 0; i < MAX_VOICES; i++) {
-        if (!g_player.voices[i].active) { chosen = &g_player.voices[i]; break; }
+int midiRenderStereo(float *left, float *right, unsigned frames,
+                     unsigned rate) {
+    // The rate is settled at load time; a caller that asks for a different one
+    // here is told about it by getting silence rather than a tune at the wrong
+    // speed, and should call midiSetRate before loading.
+    if (rate && (int)rate != g_rate) setRate(rate);
+    if (!g_loaded) {
+        memset(left, 0, frames * sizeof *left);
+        memset(right, 0, frames * sizeof *right);
+        return 0;
     }
-    if (!chosen) {
-        // Steal the quietest, so a busy passage loses the least.
-        float quietest = 1e9f;
-        for (int i = 0; i < MAX_VOICES; i++) {
-            if (g_player.voices[i].amplitude < quietest) {
-                quietest = g_player.voices[i].amplitude;
-                chosen = &g_player.voices[i];
-            }
-        }
-    }
-    memset(chosen, 0, sizeof *chosen);
-    chosen->active = 1;
-    chosen->note = note;
-    chosen->channel = channel;
-    chosen->percussive = channel == 9;      // the drum channel, zero-based
-    chosen->frequency = noteFrequency(note);
-    chosen->target = (float)velocity / 127.0f * 0.22f;
-    chosen->noise = (unsigned)(note * 2654435761u) | 1u;
-}
-
-static void stopNote(unsigned char channel, int note) {
-    for (int i = 0; i < MAX_VOICES; i++) {
-        Voice *voice = &g_player.voices[i];
-        if (voice->active && voice->channel == channel && voice->note == note)
-            voice->releasing = 1;
-    }
-}
-
-static void handleEvent(Track *track) {
-    if (track->at >= track->end) { track->done = 1; return; }
-    unsigned char status = *track->at;
-    if (status & 0x80) {
-        track->at++;
-        track->running = status;
-    } else {
-        status = track->running;
-        if (!status) { track->done = 1; return; }
-    }
-
-    if (status == 0xff) {
-        if (track->at >= track->end) { track->done = 1; return; }
-        const unsigned char meta = *track->at++;
-        const unsigned long long length = readVarint(&track->at, track->end);
-        if (meta == 0x51 && length >= 3 && track->at + 3 <= track->end) {
-            g_player.tempo = ((unsigned)track->at[0] << 16) |
-                             ((unsigned)track->at[1] << 8) |
-                             (unsigned)track->at[2];
-        }
-        track->at += length;
-        if (meta == 0x2f) track->done = 1;
-        return;
-    }
-    if (status == 0xf0 || status == 0xf7) {
-        const unsigned long long length = readVarint(&track->at, track->end);
-        track->at += length;
-        return;
-    }
-
-    const unsigned char kind = status & 0xf0;
-    const unsigned char channel = status & 0x0f;
-    const int twoBytes = kind != 0xc0 && kind != 0xd0;
-    if (track->at + (twoBytes ? 2 : 1) > track->end) {
-        track->done = 1;
-        return;
-    }
-    const unsigned char first = *track->at++;
-    const unsigned char second = twoBytes ? *track->at++ : 0;
-
-    if (kind == 0x90 && second > 0) startNote(channel, first, second);
-    else if (kind == 0x80 || (kind == 0x90 && second == 0))
-        stopNote(channel, first);
-    else if (kind == 0xb0 && first == 123) {
-        for (int i = 0; i < MAX_VOICES; i++)
-            if (g_player.voices[i].channel == channel)
-                g_player.voices[i].releasing = 1;
-    }
-}
-
-// One voice's sample.  A sawtooth softened towards a triangle reads closer to
-// the FM instruments these tunes were written for than a square does.
-static float voiceSample(Voice *voice, float rate) {
-    if (voice->percussive) {
-        voice->noise = voice->noise * 1664525u + 1013904223u;
-        const float noise = (float)((int)(voice->noise >> 16) & 0xffff) /
-                            32768.0f - 1.0f;
-        return noise * voice->amplitude;
-    }
-    voice->phase += voice->frequency / rate;
-    if (voice->phase >= 1.0f) voice->phase -= 1.0f;
-    const float saw = voice->phase * 2.0f - 1.0f;
-    const float triangle = 1.0f - 4.0f * fabsf(voice->phase - 0.5f);
-    return (saw * 0.35f + triangle * 0.65f) * voice->amplitude;
+    mus_render(&g_music, left, right, (int)frames);
+    return g_music.playing;
 }
 
 int midiRender(float *out, unsigned frames, unsigned rate) {
-    memset(out, 0, frames * sizeof *out);
-    if (!g_ready) return 0;
-
-    const float attack = 1.0f / (0.004f * (float)rate);
-    const float decay = 1.0f / (0.35f * (float)rate);
-
-    for (unsigned f = 0; f < frames; f++) {
-        // Ticks are consumed at the tempo the file last asked for.
-        const double ticksPerSecond =
-            1000000.0 / (double)g_player.tempo * (double)g_player.division;
-        g_player.tickRemainder += ticksPerSecond / (double)rate;
-        while (g_player.tickRemainder >= 1.0) {
-            g_player.tickRemainder -= 1.0;
-            g_player.tick++;
-            int alive = 0;
-            for (int t = 0; t < g_player.trackCount; t++) {
-                Track *track = &g_player.tracks[t];
-                while (!track->done && track->when <= g_player.tick) {
-                    handleEvent(track);
-                    if (!track->done) advanceTrack(track);
-                }
-                if (!track->done) alive = 1;
-            }
-            if (!alive) {
-                g_player.finished = 1;
-                if (g_loop) {
-                    // Start the tracks over without disturbing the voices.
-                    for (int t = 0; t < g_player.trackCount; t++) {
-                        Track *track = &g_player.tracks[t];
-                        track->at = track->end - (track->end - track->at);
-                    }
-                    g_player.finished = 1;      // the host decides to reload
-                }
-            }
-        }
-
-        float mix = 0.0f;
-        for (int i = 0; i < MAX_VOICES; i++) {
-            Voice *voice = &g_player.voices[i];
-            if (!voice->active) continue;
-            if (voice->releasing) {
-                voice->amplitude -= decay * voice->target;
-                if (voice->amplitude <= 0.0f) { voice->active = 0; continue; }
-            } else if (voice->amplitude < voice->target) {
-                voice->amplitude += attack * voice->target;
-                if (voice->amplitude > voice->target)
-                    voice->amplitude = voice->target;
-            }
-            mix += voiceSample(voice, (float)rate);
-        }
-        // A soft knee rather than a hard clip, so a dense chord does not
-        // crackle.
-        out[f] = tanhf(mix);
+    // Mono, for a host that wants one channel: the two summed and halved, which
+    // is what a mono output does to a panned mix.
+    enum { CHUNK = 512 };
+    static float left[CHUNK], right[CHUNK];
+    int playing = 0;
+    unsigned done = 0;
+    while (done < frames) {
+        unsigned n = frames - done;
+        if (n > CHUNK) n = CHUNK;
+        playing = midiRenderStereo(left, right, n, rate);
+        for (unsigned i = 0; i < n; i++)
+            out[done + i] = (left[i] + right[i]) * 0.5f;
+        done += n;
     }
-    return 1;
+    return playing;
 }
 
-int midiFinished(void) { return g_player.finished; }
-void midiStop(void) { g_ready = 0; memset(&g_player, 0, sizeof g_player); }
+int midiFinished(void) { return !g_loaded || !g_music.playing; }
+
+void midiStop(void) {
+    if (g_loaded) mus_stop(&g_music);
+}

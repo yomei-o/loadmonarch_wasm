@@ -802,6 +802,25 @@ EMSCRIPTEN_KEEPALIVE int lm_music_playing(void) {
 // Renders the next block and hands back where it is.  The page asks for as
 // many frames as its audio callback needs; anything over the buffer is
 // clamped to what lm_music_capacity reports.
+// The synthesiser pans its instruments, so the page takes both channels: this
+// answers a pointer to the left channel, with the right one lm_music_capacity
+// floats further on.
+EMSCRIPTEN_KEEPALIVE const float *lm_music_render2(int frames, int rate) {
+    const unsigned cap = sizeof g_audio / sizeof g_audio[0];
+    unsigned want = frames < 0 ? 0u : (unsigned)frames;
+    if (want > cap / 2) want = cap / 2;
+    float *left = g_audio;
+    float *right = g_audio + cap / 2;
+    midiRenderStereo(left, right, want, rate > 0 ? (unsigned)rate : 22050u);
+    return g_audio;
+}
+
+// The rate has to be settled before a tune is loaded - the synthesiser builds
+// its tables from it - so a page says what its AudioContext runs at first.
+EMSCRIPTEN_KEEPALIVE void lm_music_rate(int rate) {
+    midiSetRate(rate > 0 ? (unsigned)rate : 22050u);
+}
+
 EMSCRIPTEN_KEEPALIVE const float *lm_music_render(int frames, int rate) {
     unsigned want = frames < 0 ? 0u : (unsigned)frames;
     if (want > sizeof g_audio / sizeof g_audio[0])
@@ -812,6 +831,12 @@ EMSCRIPTEN_KEEPALIVE const float *lm_music_render(int frames, int rate) {
     }
     midiRender(g_audio, want, rate > 0 ? (unsigned)rate : 22050u);
     return g_audio;
+}
+
+// Frames a stereo render can take: half the buffer, since both channels live
+// in it.
+EMSCRIPTEN_KEEPALIVE int lm_music_capacity2(void) {
+    return (int)(sizeof g_audio / sizeof g_audio[0] / 2);
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_music_capacity(void) {

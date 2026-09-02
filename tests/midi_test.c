@@ -66,6 +66,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     printf("%s: %u bytes\n", argv[2], got);
+    midiSetRate(RATE);
     if (!midiLoad(file, got, 0)) {
         fprintf(stderr, "cannot play that file\n");
         return 1;

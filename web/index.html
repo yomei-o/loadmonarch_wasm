@@ -978,6 +978,9 @@ createLordMonarch().then(function (M) {
       });
     }
     if (audio.state === 'suspended') audio.resume();
+    // The synthesiser builds its wavetables from the rate, so it has to be told
+    // before the tune is loaded rather than at render time.
+    M._lm_music_rate(audio.sampleRate | 0);
     if (!M._lm_music_play(playing, 1)) {
       note.textContent = '音楽が読めません';
       musicButton.classList.remove('on');
@@ -987,14 +990,18 @@ createLordMonarch().then(function (M) {
     if (audio.audioWorklet === undefined || true) {
       // A ScriptProcessor is deprecated but needs no separate module file,
       // which keeps this page a single file the way the rest of it is.
-      node = audio.createScriptProcessor(size, 0, 1);
+      node = audio.createScriptProcessor(size, 0, 2);
+      var cap = M._lm_music_capacity2();
       node.onaudioprocess = function (e) {
-        var out = e.outputBuffer.getChannelData(0);
-        var frames = Math.min(out.length, M._lm_music_capacity());
-        var ptr = M._lm_music_render(frames, audio.sampleRate | 0);
-        var src = new Float32Array(M.HEAPU8.buffer, ptr, frames);
-        out.set(src.subarray(0, out.length));
-        if (frames < out.length) out.fill(0, frames);
+        var l = e.outputBuffer.getChannelData(0);
+        var r = e.outputBuffer.getChannelData(1);
+        var frames = Math.min(l.length, cap);
+        var ptr = M._lm_music_render2(frames, audio.sampleRate | 0);
+        var left = new Float32Array(M.HEAPU8.buffer, ptr, frames);
+        var right = new Float32Array(M.HEAPU8.buffer, ptr + cap * 4, frames);
+        l.set(left.subarray(0, Math.min(frames, l.length)));
+        r.set(right.subarray(0, Math.min(frames, r.length)));
+        if (frames < l.length) { l.fill(0, frames); r.fill(0, frames); }
         if (!M._lm_music_playing()) M._lm_music_play(playing, 1);
       };
       node.connect(audio.destination);

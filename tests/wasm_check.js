@@ -324,6 +324,38 @@ createLordMonarch().then((M) => {
         M._lm_clear_selection();
     }
 
+    // The chrome: the bar takes the top of the surface, a click on a title
+    // drops its menu, and the item under it comes back as the command number
+    // MENU 101 gives it.  And the map still starts where it should - a cursor
+    // put on the first row under the bar is on row zero of the view.
+    {
+        const bar = M._lm_bar_height();
+        expect('the bar has a height', bar, (n) => n > 0);
+        expect('a click on the map is not the bar',
+               M._lm_bar_click(300, bar + 40), -1);
+        expect('a click on a title is', M._lm_bar_click(30, 4), 0);
+        expect('and drops the menu', M._lm_bar_open(), 1);
+        // Controls is the second menu; its first item is Start (40045).
+        M._lm_bar_click(30, 4);
+        let found = 0;
+        for (let x = 4; x < 400 && !found; x += 6) {
+            M._lm_bar_click(x, 4);
+            if (!M._lm_bar_open()) continue;
+            const cmd = M._lm_bar_click(x + 10, bar + 8);
+            if (cmd === 40045 || cmd === 40051) found = cmd;
+        }
+        expect('an item answers with its command', found, (n) => n > 0);
+        expect('which the game can carry out', M._lm_command(40030), 1);
+        expect('and again the other way', M._lm_command(40045), 1);
+        M._lm_bar_click(600, 400);              // put everything away
+
+        M._lm_set_cursor(24, bar + 8);
+        const top = M._lm_cursor_row();
+        M._lm_set_cursor(24, bar + 8 + 16);
+        expect('the map starts under the bar',
+               M._lm_cursor_row() >= top, true);
+    }
+
     // The original's own save: write it, change the world, read it back.
     {
         const size = M._lm_save_size();
