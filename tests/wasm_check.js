@@ -152,7 +152,13 @@ createLordMonarch().then((M) => {
     const order = M.UTF8ToString(M._lm_order_name(1));
     expect('country 0 has a name', country.length, (n) => n > 0);
     expect('order 1 has a name', order.length, (n) => n > 0);
+    // Every scenery set colours its countries itself, so no two need agree -
+    // only that four different colours come back.
+    const hues = [0, 1, 2, 3].map((f) => M._lm_country_colour(f));
+    expect('four countries, four colours', new Set(hues).size, (n) => n === 4);
     console.log(`  set ${M._lm_scenery()}: ${country} / order 1 = ${order}`);
+    console.log('  colours: ' + hues.map(
+        (c) => '#' + ('000000' + (c >>> 0).toString(16)).slice(-6)).join(' '));
 
     M._lm_set_cursor(100, 100);
     expect('the cursor took a cell', M._lm_cursor_col(), (n) => n < 48);

@@ -190,7 +190,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902051709"></script>
+<script src="loadmonarch.js?v=20260902052659"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -377,7 +377,15 @@ createLordMonarch().then(function (M) {
   function countryName(f) {
     return heapString(M._lm_country_name(f)) || fallbackNames[f];
   }
-  var factionColours = ['#4c9a3a', '#b8402f', '#3a63b8', '#c9a227', '#7a7a7a'];
+  // Only a fallback.  Each scenery set picks its own colour for each country
+  // and keeps the palette index in the name table, so the swatch asks the game
+  // rather than guessing.
+  var fallbackColours = ['#4c9a3a', '#b8402f', '#3a63b8', '#c9a227', '#7a7a7a'];
+  function countryColour(f) {
+    var rgb = loaded ? M._lm_country_colour(f) : 0;
+    if (!rgb) return fallbackColours[f];
+    return '#' + ('000000' + (rgb >>> 0).toString(16)).slice(-6);
+  }
 
   function present() {
     var ptr = M._lm_frame();
@@ -437,7 +445,7 @@ createLordMonarch().then(function (M) {
       // leader's strength - which is deliberately not part of the total.
       var lead = M._lm_leader_strength(f);
       var cells = [
-        '<span class="swatch" style="background:' + factionColours[f] +
+        '<span class="swatch" style="background:' + countryColour(f) +
             '"></span>' + (mine ? '&#9654; ' : '') + countryName(f),
         M._lm_funds(f), M._lm_tax(f),
         (M._lm_area(f) / 100).toFixed(2) + '%',

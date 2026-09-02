@@ -52,6 +52,12 @@ unsigned renderSpriteNumber(const Entity *entity, unsigned frame);
 // Fills a 256-entry colour table for the surface: the terrain, sprite and
 // interface bands at once, with the two entries the game pulses scaled by
 // where `game->frame` has reached.  Every host uses this rather than its own.
+// The colour a country is drawn in, as 0xRRGGBB.  The name table carries a
+// palette index per country (00405fc0 reads it out of the first byte of each
+// record and blanks it), and every scenery set chooses its own, so this is the
+// only honest source for a swatch beside a country's name.
+unsigned renderCountryColour(const GameState *game, int zoom, unsigned faction);
+
 void renderPalette(const GameState *game, int zoom,
                    unsigned char table[256][3]);
 

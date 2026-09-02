@@ -348,6 +348,11 @@ EMSCRIPTEN_KEEPALIVE int lm_strength(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
     return worldCountryName(&g_game.world, (unsigned)(faction < 0 ? 9 : faction));
 }
+// 0xRRGGBB, from this scenery set's own palette.
+EMSCRIPTEN_KEEPALIVE int lm_country_colour(int faction) {
+    if (faction < 0 || faction > 4) return 0;
+    return (int)renderCountryColour(&g_game, g_zoom, (unsigned)faction);
+}
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }

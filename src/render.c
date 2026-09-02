@@ -265,6 +265,15 @@ static unsigned world_names_colour(const World *world, unsigned faction) {
                ? world->names.colour[NAME_COUNTRY + faction] : 0;
 }
 
+unsigned renderCountryColour(const GameState *game, int zoom,
+                             unsigned faction) {
+    const TileBank *ground = worldBank(&game->world, zoom);
+    if (!ground) return 0;
+    const unsigned index = world_names_colour(&game->world, faction);
+    const unsigned char *rgb = ground->palette[index & 0xff];
+    return ((unsigned)rgb[0] << 16) | ((unsigned)rgb[1] << 8) | rgb[2];
+}
+
 void renderPalette(const GameState *game, int zoom,
                    unsigned char table[256][3]) {
     const TileBank *ground = worldBank(&game->world, zoom);
