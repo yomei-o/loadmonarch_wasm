@@ -1538,6 +1538,17 @@ void simSeedLeaders(Sim *sim) {
         entity->at18 = 0x1f0;
         entity->at220 = 0xff;
         state->world.cells[i].occupant = (unsigned char)slot;
+
+        // The faction record's own two identity fields, which nothing in the
+        // executable ever writes - only a saved scenario does.  +0x0c names the
+        // leader, which the Graph Window prints the strength of, and +0x08 and
+        // +0x09 are the capital, which the tax fill floods from and a retreat
+        // heads for.  Both are ours, like the rest of this function.
+        if (faction < FACTION_COUNT) {
+            state->factions[faction].at0c = slot;
+            state->factions[faction].at08[0] = entity->position[0];
+            state->factions[faction].at08[1] = entity->position[1];
+        }
     }
     (void)sim;
 }

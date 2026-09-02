@@ -67,7 +67,10 @@ typedef struct {
     unsigned at28;              // +0x28         its entities' strength
     unsigned at2c;              // +0x2c         how many cells it holds
     unsigned at30;              // +0x30         its cells' value
-    unsigned char at34[4];
+    // +0x34 is a float, and the only one in the game: the share of the board
+    // this country holds, as a percentage to two decimals.  The Graph Window
+    // prints it with "%s Area Occupied: %3.2f".
+    float area;
 } Faction;
 
 typedef struct {
@@ -106,6 +109,13 @@ void stateRecomputeTotals(GameState *state);
 // is safe only because the sums are rebuilt from scratch first.  Call it after
 // stateRecomputeTotals or never.
 void stateMarkDefeated(GameState *state);
+
+// 0041cdf0 and 0041ceb0: how much of the board can change hands at all - empty
+// ground, buildings, unit cells, territory and walls - and how much of it one
+// country holds.  0041b640 turns the pair into each country's +0x34.
+unsigned stateClaimableCells(const GameState *state);
+unsigned stateFactionCells(const GameState *state, unsigned faction);
+void stateComputeAreas(GameState *state);
 
 // 0040b270: park the cursor on a cell.  It lives in the cell itself, as sprite
 // 0xcc laid over whatever is there, so moving it means clearing the cell it

@@ -135,6 +135,47 @@ void stateMarkDefeated(GameState *state) {
     }
 }
 
+// 0041cdf0.  How much of the board is worth counting: everything that can
+// change hands.  Scenery, water and the rest are not in the reckoning, so a
+// map that is half mountain does not make every country look small.
+unsigned stateClaimableCells(const GameState *state) {
+    unsigned total = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const unsigned char terrain = state->world.cells[i].terrain;
+        if (terrain <= 4 || (terrain >= 8 && terrain <= 0x0f) ||
+            terrain == 0x7b)
+            total++;
+    }
+    return total;
+}
+
+// 0041ceb0.  What one country holds: its unit cells and its plain territory.
+unsigned stateFactionCells(const GameState *state, unsigned faction) {
+    unsigned held = 0;
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        const unsigned char terrain = state->world.cells[i].terrain;
+        if ((unsigned char)(terrain - faction) == 8 ||
+            (unsigned char)(terrain - faction) == 0x0c)
+            held++;
+    }
+    return held;
+}
+
+// 0041b640.  Each country's share, to two decimals.  The original computes it
+// for the interface rather than every tick, and so does this.
+void stateComputeAreas(GameState *state) {
+    const unsigned total = stateClaimableCells(state);
+    for (int i = 0; i < PLAYABLE_FACTIONS; i++) state->factions[i].area = 0.0f;
+    if (total == 0) return;
+    for (int i = 0; i < PLAYABLE_FACTIONS; i++) {
+        const unsigned held = stateFactionCells(state, (unsigned)i);
+        // Rounded the way the original rounds it: to hundredths.
+        const float share = (float)((int)(held * 10000.0f / (float)total)) *
+                            0.01f;
+        state->factions[i].area = share;
+    }
+}
+
 // The chain at 00407790: 004273b0, 00405330, 004272b0, 00427210, 0041b370.
 // worldLoadStage has already put the map's terrain in place, so the cell
 // reset that opens the original's chain is deliberately not repeated here -

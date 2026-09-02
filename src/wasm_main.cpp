@@ -304,6 +304,27 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+// 0041b640's share of the board, in hundredths of a percent so it crosses the
+// boundary as an integer.  Recomputed on demand, the way the original computes
+// it for its own panel rather than every tick.
+EMSCRIPTEN_KEEPALIVE void lm_update_areas(void) {
+    stateComputeAreas(&g_game);
+}
+EMSCRIPTEN_KEEPALIVE int lm_area(int faction) {
+    return faction >= 0 && faction < FACTION_COUNT
+        ? (int)(g_game.factions[faction].area * 100.0f + 0.5f) : 0;
+}
+
+// The leader's own strength, which is not counted in the country's - 0x0c
+// names the entity, and 0x40 means it has none.
+EMSCRIPTEN_KEEPALIVE int lm_leader_strength(int faction) {
+    if (faction < 0 || faction >= FACTION_COUNT) return 0;
+    const unsigned slot = g_game.factions[faction].at0c;
+    if (slot >= ENTITY_COUNT) return 0;
+    if (g_game.entities[slot].flags & 0x80) return 0;
+    return (int)g_game.entities[slot].at08;
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_losses(int faction) {
     return faction >= 0 && faction < FACTION_COUNT
         ? (int)g_game.factions[faction].at14 : 0;

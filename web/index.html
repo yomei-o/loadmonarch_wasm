@@ -139,7 +139,7 @@
   <aside>
     <h2>FACTIONS</h2>
     <table id="factions">
-      <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>領土</th><th>ユニット</th><th>兵</th></tr></thead>
+      <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
       <tbody></tbody>
     </table>
     <h2>WORLD</h2>
@@ -225,14 +225,20 @@ createLordMonarch().then(function (M) {
         M.UTF8ToString(M._lm_stage_name());
     var body = document.querySelector('#factions tbody');
     body.innerHTML = '';
+    M._lm_update_areas();       // 0041b640, for the panel rather than the tick
     for (var f = 0; f < 5; f++) {
       var tr = document.createElement('tr');
-      if (M._lm_out(f)) tr.className = 'out';
+      if (M._lm_out(f)) tr.className = 'out';        // 0041b370's mark
+      // What the game's own Graph Window shows for each country: its purse,
+      // its tax rate, its share of the board, its total strength, and its
+      // leader's strength - which is deliberately not part of the total.
+      var lead = M._lm_leader_strength(f);
       var cells = [
         '<span class="swatch" style="background:' + factionColours[f] +
             '"></span>' + countryName(f),
-        M._lm_funds(f), M._lm_tax(f), M._lm_count(f, 1),
-        M._lm_count(f, 0), M._lm_count(f, 3),
+        M._lm_funds(f), M._lm_tax(f),
+        (M._lm_area(f) / 100).toFixed(2) + '%',
+        M._lm_strength(f), lead || '-',
       ];
       cells.forEach(function (value, i) {
         var td = document.createElement('td');

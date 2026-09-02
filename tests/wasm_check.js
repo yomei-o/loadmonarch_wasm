@@ -140,6 +140,15 @@ createLordMonarch().then((M) => {
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
     expect('and the count reads back', M._lm_selected(), picked);
+    // What the panel shows: a share of the board, and a leader with a
+    // strength of its own that the country's total leaves out.
+    M._lm_update_areas();
+    let share = 0;
+    for (let f = 0; f < 4; f++) share += M._lm_area(f);
+    expect('the countries hold some of the board', share, (n) => n > 0);
+    expect('and not more than all of it', share, (n) => n <= 10000);
+    expect('a leader has a strength', M._lm_leader_strength(0), (n) => n > 0);
+
     // Aiming answers before anything is ordered.
     let reachable = 0;
     for (let y = 40; y < 440 && !reachable; y += 40)
