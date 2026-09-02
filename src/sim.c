@@ -1800,6 +1800,7 @@ static void stepStandingOrder(Sim *sim, unsigned slot); // 00402bc0, below
 static void fallbackOrder(Sim *sim, unsigned slot);     // 00403100, below
 static void kingDecides(Sim *sim, unsigned slot);       // 00401000's other half
 static int settleAtHome(Sim *sim, unsigned slot);       // 00422110, below
+static int simReroute(Sim *sim, unsigned slot);         // 0041a800, below
 static int trampleGround(GameState *state, unsigned index, unsigned faction);
 static int payUpkeep(GameState *state, unsigned slot, unsigned index,
                      unsigned faction);
@@ -2066,12 +2067,19 @@ static void stepWalkOrdered(Sim *sim, unsigned slot) {
     const unsigned nr = (unsigned)((int)row + dy);
     WorldCell *to = &state->world.cells[WORLD_INDEX(nc, nr)];
 
-    // A turn of patience is spent whenever the step does not happen.
-    const int giveUp = --entity->at0f == 0;
+    // A turn of patience is spent whenever the step does not happen, and when
+    // it runs out 00403170 does not give up at once: with a work permit in
+    // hand it asks 0041a800 to find the way again from where it is standing.
+    // Only if that fails does it drop the order.
+    int giveUp = --entity->at0f == 0;
     if (giveUp) {
         entity->at0f = 1;
-        entity->at0d = 1;
-        entity->at18 = ROUTE_EMPTY;
+        if (workBudget(sim, slot) && simReroute(sim, slot)) {
+            giveUp = 0;
+        } else {
+            entity->at0d = 1;
+            entity->at18 = ROUTE_EMPTY;
+        }
     }
 
     if (to->terrain >= TERRAIN_WALKABLE_MAX) return;
@@ -2305,6 +2313,34 @@ static int lookForWork(Sim *sim, unsigned slot) {
         return 1;
     }
     return 0;
+}
+
+// 0041a800.  Work the way to the unit's existing target out again, from where
+// it is standing now: clear the field, open the target if the order is about
+// it, paint what this unit must avoid, flood from here, and route.  A unit
+// whose way is blocked asks for this before it gives up, which is why one
+// standing in a doorway eventually goes round rather than home.
+static int simReroute(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const int col = entity->target[0], row = entity->target[1];
+    if (!inBounds(col, row)) return 0;
+
+    simResetFill(state);
+    simUnblockTarget(state, col, row);
+    blockDanger(state, slot);
+    simFillFrom(state, entity->position[0], entity->position[1]);
+    if (simRouteTo(state, slot, col, row) == 0) return 0;
+
+    switch (entity->at0d & 0x0f) {
+    case 6: case 7: case 9: case 10: case 0x0b:
+        simShortenRoute(state, slot);
+        break;
+    default:
+        break;
+    }
+    entity->at0f = 4;
+    return 1;
 }
 
 /* ------------------------------------------- what the machine plays for */
