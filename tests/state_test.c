@@ -736,6 +736,28 @@ int main(void) {
         statePlaceEntities(&state);
         for (int i = 0; i < 20; i++) simStep(&hunt);
         expect("a small unit stays home", small->at18, 0x1f0);
+
+        // 0041f790: the player's own units say what they are doing.  A unit
+        // under orders shows 10 or 11, alternating.
+        simStep(&hunt);
+        int wearing = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++) {
+            const Entity *e = &state.entities[i];
+            if (e->flags & 0x80) continue;
+            if (e->at220 == 0xff) continue;
+            wearing++;
+            expect("a balloon is one the sheet has", e->at220 < 16, 1);
+        }
+        expect("somebody is wearing a balloon", wearing > 0, 1);
+        expect("and the ordered one says so",
+               state.entities[3].at220 == 10 || state.entities[3].at220 == 11,
+               1);
+
+        // Nobody else's units carry one.
+        state.entities[3].faction = 1;
+        simStep(&hunt);
+        expect("another country's unit stays quiet",
+               state.entities[3].at220, 0xff);
     }
 
     // The name table out of the large terrain file.  It needs the game's own

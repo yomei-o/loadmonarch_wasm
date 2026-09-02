@@ -18,6 +18,11 @@ typedef struct {
     // four units a tick get that far; the rest are told to wait, which is what
     // keeps a board of sixty-four from doing sixty-four searches at once.
     int budget;
+
+    // DAT_0043451c.  Set when something the player wanted could not be paid
+    // for, cleared at the top of every entity sweep, and read by the balloon
+    // pass - which is the only way the game tells you that you are broke.
+    int shortOfFunds;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);
@@ -85,6 +90,11 @@ void simSeedLeaders(Sim *sim);
 // The entity the human player's orders act through.
 unsigned simHumanActor(const Sim *sim);
 
+
+// 0041f790.  Puts a balloon over each of the player's units that has something
+// to say: under orders, out of money, too small for the job, or - over the
+// leader - away from home.  Runs every tick and clears the rest.
+void simUpdateBalloons(Sim *sim);
 
 // 0041a9f0.  The distance field as one particular unit sees it: cleared,
 // painted with what that unit must keep away from (00405510), then flooded

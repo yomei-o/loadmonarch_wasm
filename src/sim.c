@@ -484,7 +484,9 @@ void simStep(Sim *sim) {
             stepCastle(sim, index, terrain - 0x14u);
         }
     }
+    sim->shortOfFunds = 0;              // DAT_0043451c, cleared per sweep
     simStepEntities(sim);
+    simUpdateBalloons(sim);             // 0040a5e0's 0041f790
 
     // 0040a5e0 finishes its tick with 0041b370: the sums, then the mark on any
     // country left with nothing.  Rebuilt from scratch every time, so a country
@@ -593,6 +595,64 @@ static int canAfford(GameState *state, unsigned slot, unsigned cost,
     return 0;
 }
 
+// canAfford is called from places that have no Sim; this carries 0041ec60's
+// other effect - DAT_0043451c, which the balloon pass reads - to the caller.
+static int canAffordFor(Sim *sim, unsigned slot, unsigned cost) {
+    if (canAfford(sim->state, slot, cost, sim->humanFaction)) return 1;
+    if (sim->state->entities[slot].faction == sim->humanFaction)
+        sim->shortOfFunds = 1;
+    return 0;
+}
+
+// 0041f790.  What each of the player's units has to say, once a tick.  Only
+// the player's own - nobody is told what the other countries are thinking -
+// and only one thing at a time, the later tests winning where two apply.
+//
+// The numbers are pairs, alternating on bit 1 of the frame counter, so each
+// balloon breathes rather than sitting still; the leader's is a set of four.
+//
+//   10, 11  under orders
+//    8,  9  wanted to build or clear and the country cannot pay
+//    6,  7  told to build where it stands and is too small to
+//   12..15  over the leader: away from the castle, or the country is in the
+//           state flag 2 marks
+void simUpdateBalloons(Sim *sim) {
+    GameState *state = sim->state;
+    const unsigned beat = (state->frame >> 1) & 1;
+    const unsigned four = (state->frame >> 1) & 3;
+
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &state->entities[i];
+        // A unit the player has chosen keeps the balloon 0040a020 gave it.
+        // The original does not need this exception because choosing units
+        // stops the clock, and this pass never runs while it is stopped; here
+        // the game keeps going underneath the choice, so the choice is kept.
+        if (entity->flags21c & 1) continue;
+        entity->at220 = 0xff;
+        if (entity->flags & 0x80) continue;
+        if (entity->faction != sim->humanFaction) continue;
+
+        if (entity->at0d & 0x20) {
+            const int away = entity->at18 != ROUTE_EMPTY;
+            const int flagged = sim->humanFaction < FACTION_COUNT &&
+                                (state->factions[sim->humanFaction].flags & 2);
+            if (away || flagged)
+                entity->at220 = (unsigned char)(four + 0x0c);
+            continue;
+        }
+
+        if ((entity->flags & 4) || (entity->at0d & 0x10))
+            entity->at220 = (unsigned char)(beat + 10);
+        if (sim->shortOfFunds) {
+            const unsigned char order = entity->at0d & 0x0f;
+            if (order > 4 && order < 8)
+                entity->at220 = (unsigned char)(beat + 8);
+        }
+        if (entity->at08 < 100 && (entity->at0d & 0x0f) == 2)
+            entity->at220 = (unsigned char)(beat + 6);
+    }
+}
+
 // What a unit goes looking for, one per standing order.  0041dfb0, 0041e0a0,
 // 0041e1d0, 0041e360, 0041e480 and 0041e560 are the same loop written out six
 // times with a different question in the middle of it, so here it is once.
@@ -651,8 +711,7 @@ static int lookAround(Sim *sim, unsigned slot, LookFor what,
     }
     if (what == LOOK_BUILDING && (me->at0d & 0x10) == 0 && me->at08 < 100)
         return 0;                       // too small to be knocking things down
-    if (what == LOOK_ROOM_TO_BUILD &&
-        !canAfford(state, slot, 100, sim->humanFaction))
+    if (what == LOOK_ROOM_TO_BUILD && !canAffordFor(sim, slot, 100))
         return 0;
 
     unsigned mask = 0;
@@ -1884,8 +1943,7 @@ static int huntFar(Sim *sim, unsigned slot, HuntFor what) {
 
     // Each has its own price of admission.
     if (what == HUNT_BUILDING && entity->at08 < 0x14) return 0;
-    if (what == HUNT_ROOM &&
-        !canAfford(state, slot, 100, sim->humanFaction)) return 0;
+    if (what == HUNT_ROOM && !canAffordFor(sim, slot, 100)) return 0;
 
     simPrepareFill(state, slot, entity->position[0], entity->position[1]);
 
