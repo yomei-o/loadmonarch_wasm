@@ -139,6 +139,7 @@
            style="vertical-align:middle;width:90px">
     <span id="speedRead" style="color:var(--ink)"></span>
   </label>
+  <button id="watch" disabled title="4か国すべてを機械にまかせて見物する">観戦</button>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -420,6 +421,7 @@ createLordMonarch().then(function (M) {
     M._lm_update_areas();       // 0041b640, for the panel rather than the tick
     for (var f = 0; f < 5; f++) {
       var tr = document.createElement('tr');
+      var mine = f === M._lm_human();
       if (M._lm_out(f)) tr.className = 'out';        // 0041b370's mark
       if (mine) tr.className += ' mine';
       tr.title = 'クリックでこの国を操作';
@@ -434,7 +436,6 @@ createLordMonarch().then(function (M) {
       // its tax rate, its share of the board, its total strength, and its
       // leader's strength - which is deliberately not part of the total.
       var lead = M._lm_leader_strength(f);
-      var mine = f === M._lm_human();
       var cells = [
         '<span class="swatch" style="background:' + factionColours[f] +
             '"></span>' + (mine ? '&#9654; ' : '') + countryName(f),
@@ -530,7 +531,7 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       drop.classList.add('hide');
-      ['prev', 'next', 'pause', 'music', 'attack', 'hold', 'home',
+      ['prev', 'next', 'pause', 'watch', 'music', 'attack', 'hold', 'home',
        'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
        'saveBtn', 'loadBtn',
        'z0', 'z1', 'z2'].forEach(function (id) {
@@ -895,6 +896,24 @@ createLordMonarch().then(function (M) {
         speed + ' (' + tickInterval() + 'ms)';
   };
   speedInput.oninput();
+
+  // Watching.  Handing the player's country to nobody leaves all four to the
+  // machine; the country the player had is remembered so the button gives it
+  // back.
+  var watchBtn = document.getElementById('watch');
+  var watchedFrom = 0;
+  watchBtn.onclick = function () {
+    if (M._lm_human() < 4) {
+      watchedFrom = M._lm_human();
+      M._lm_set_human(4);
+      M._lm_clear_selection();
+      watchBtn.className = 'on';
+    } else {
+      M._lm_set_human(watchedFrom);
+      watchBtn.className = '';
+    }
+    refreshPanel();
+  };
 
   var lastPanel = 0;
   function frame(now) {
