@@ -64,12 +64,18 @@ static void drawMap(const GameState *game) {
             else if (t >= 0x14 && t <= 0x17) c = (char)('A' + (t - 0x14));
             else if (t == 0x7a) c = 'm';
             else if (t == 0x7b) c = 'W';
+            else if (t >= 0x30 && t <= 0x5f) c = '~';
             else if (t >= 0x30) c = '#';
             else c = '?';
             putchar(c);
         }
         putchar(10);
     }
+    unsigned seen[256];
+    memset(seen, 0, sizeof seen);
+    for (int i = 0; i < WORLD_CELLS; i++) seen[game->world.cells[i].terrain]++;
+    for (int t = 0; t < 256; t++)
+        if (seen[t]) printf("  terrain %02x: %u\n", t, seen[t]);
 }
 
 int main(int argc, char **argv) {

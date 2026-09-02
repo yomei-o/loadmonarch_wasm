@@ -1,4 +1,4 @@
-// The simulation sweep, from the routine at 00417380.
+// The simulation sweep, from the routine at 0041d740.
 //
 // The whole game advances through one cyclic cursor over the 2304 cells: each
 // call walks 0x8f of them from where the last one stopped, wrapping, and
@@ -17,7 +17,7 @@
 
 #include <string.h>
 
-#define SWEEP_PER_CALL 0x8f        // 00417380's loop counter
+#define SWEEP_PER_CALL 0x8f        // 0041d740's loop counter
 #define ENTITY_NONE 0x40           // 0041cdc0 returns this when none is free
 #define CELL_VALUE_MAX 0xff        // 0041d870 clamps growth here
 #define UNIT_VALUE 200             // and turns value into a unit at this
@@ -427,7 +427,10 @@ static void growFromUnit(Sim *sim, unsigned index, unsigned col, unsigned row,
     // behaves as an ordinary one carrying the order as a preference.
     if (faction == sim->humanFaction && sim->pendingOrder != 1) {
         entity->flags |= 4;
-        entity->at0d = (unsigned char)sim->pendingOrder;
+        // 0041d870 sets bit 4 here, which is what sends the unit to an order
+        // handler rather than leaving it with a preference.  (00401770's own
+        // spawn, two rows up in the original, writes the byte without it.)
+        entity->at0d = (unsigned char)(sim->pendingOrder | 0x10u);
         return;
     }
     entity->at0d = 1;
@@ -468,7 +471,7 @@ void simStep(Sim *sim) {
 
     GameState *state = sim->state;
     for (int n = SWEEP_PER_CALL; n != 0; n--) {
-        // 00417380 advances first, then wraps by subtracting 0x8ff.
+        // 0041d740 advances first, then wraps by subtracting 0x8ff.
         const unsigned previous = sim->cursor;
         sim->cursor = previous + 1;
         if (sim->cursor > WORLD_CELLS - 1) sim->cursor = previous - (WORLD_CELLS - 1);
@@ -2833,10 +2836,8 @@ static int openGround(Sim *sim, unsigned slot) {
     return 0;
 }
 
-// The four square directions, 00434420 and 00434428.  The wide finders below
-// look at a cell's neighbours through these.
-static const signed char kOrthDx[4] = {-1, 1, 0, 0};
-static const signed char kOrthDy[4] = {0, 0, -1, 1};
+// The wide finders below look only at the four square directions, which are
+// the first four entries of the eight at 00434420.
 
 // What 0041c800 and 0041c8e0 hand back: the square to work on, the square to
 // stand on while working, and what the walk to it costs.
@@ -2851,7 +2852,7 @@ typedef struct {
 static void keepCheapestBeside(const GameState *state, int col, int row,
                                Approach *best) {
     for (int i = 0; i < 4; i++) {
-        const int nc = col + kOrthDx[i], nr = row + kOrthDy[i];
+        const int nc = col + kNeighbourDx[i], nr = row + kNeighbourDy[i];
         if (!inBounds(nc, nr)) continue;
         const unsigned cost = state->world.cells[WORLD_INDEX(nc, nr)].cost;
         if (cost >= best->cost) continue;
@@ -2910,7 +2911,7 @@ static int findMineToDig(Sim *sim, unsigned slot, Approach *out) {
 
         int clear = 1;
         for (int d = 0; d < 4; d++) {
-            const int nc = col + kOrthDx[d], nr = row + kOrthDy[d];
+            const int nc = col + kNeighbourDx[d], nr = row + kNeighbourDy[d];
             const unsigned char who =
                 state->world.cells[WORLD_INDEX(nc, nr)].occupant;
             if (who >= ENTITY_NONE) continue;
