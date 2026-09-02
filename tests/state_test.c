@@ -796,7 +796,7 @@ int main(void) {
                             for (int row = 4; row < 44 && !sent; row += 5) {
                                 if (game.world.cells[WORLD_INDEX(col, row)]
                                         .terrain >= 0x30) continue;
-                                sent = simOrderSelected(&sim, 1, 0, col, row);
+                                sent = simOrderSelected(&sim, 8, 0, col, row);
                             }
                         expect("an order reaches somebody", sent > 0, 1);
                         for (int i = 0; i < ENTITY_COUNT; i++)
@@ -808,6 +808,90 @@ int main(void) {
                         for (int i = 0; i < ENTITY_COUNT; i++)
                             expect("the balloons are cleared",
                                    game.entities[i].at220, 0xff);
+
+                        // Follow a route on paper, the way 0041d690 reads it:
+                        // route[k] is the step to take k cells along.  This
+                        // checks what 00405000 wrote, with no walking code in
+                        // the way.
+                        {
+                            static const signed char sx[8] =
+                                {-1, -1, 0, 1, 1, 1, 0, -1};
+                            static const signed char sy[8] =
+                                {0, -1, -1, -1, 0, 1, 1, 1};
+                            int checked = 0;
+                            for (int i = 0; i < ENTITY_COUNT && !checked; i++) {
+                                const Entity *e = &game.entities[i];
+                                if (e->at18 == 0x1f0 || e->at14 < 2) continue;
+                                int c = e->position[0], r = e->position[1];
+                                for (unsigned k = 0; k < e->at14; k++) {
+                                    c += sx[e->route[k] & 7];
+                                    r += sy[e->route[k] & 7];
+                                }
+                                printf("  route of %u steps ends at %d,%d; "
+                                       "the target is %d,%d\n", e->at14, c, r,
+                                       e->target[0], e->target[1]);
+                                expect("a route ends where it was aimed",
+                                       c == e->target[0] && r == e->target[1],
+                                       1);
+                                checked = 1;
+                            }
+                            expect("there was a route to follow", checked, 1);
+                        }
+
+                        // And the routes are walked.  One unit on its own:
+                        // twenty-three of them sent to the same cell spend
+                        // their time in each other's way, which says nothing
+                        // about whether walking works.
+                        int walker = -1;
+                        for (int i = 0; i < ENTITY_COUNT && walker < 0; i++) {
+                            const Entity *e = &game.entities[i];
+                            if (e->flags & 0x80) continue;
+                            if (e->faction != sim.humanFaction) continue;
+                            if (e->at0d & 0x20) continue;
+                            // Somewhere open, a few cells off, that the fill
+                            // can reach from where this unit stands.
+                            simResetFill(&game);
+                            simFillFrom(&game, e->position[0], e->position[1]);
+                            for (int col = 2; col < 46 && walker < 0; col++)
+                                for (int row = 2; row < 46 && walker < 0; row++) {
+                                    const WorldCell *c =
+                                        &game.world.cells[WORLD_INDEX(col, row)];
+                                    if (c->cost < 6 || c->cost > 12) continue;
+                                    if (simSelect(&sim, (unsigned)i,
+                                                  e->position[0],
+                                                  e->position[1], 1) &&
+                                        simOrderSelected(&sim, 8, 0, col, row))
+                                        walker = i;
+                                }
+                        }
+                        expect("somebody holds a route worth walking",
+                               walker >= 0, 1);
+                        if (walker >= 0) {
+                            const Entity *w = &game.entities[walker];
+                            const int wasCol = w->position[0];
+                            const int wasRow = w->position[1];
+                            const int toCol = w->target[0];
+                            const int toRow = w->target[1];
+                            const int before = (wasCol > toCol ? wasCol - toCol
+                                                              : toCol - wasCol) +
+                                               (wasRow > toRow ? wasRow - toRow
+                                                              : toRow - wasRow);
+                            // It may well wander off once it arrives and finds
+                            // nothing to do, so what matters is whether it got
+                            // there at all.
+                            int closest = before;
+                            for (int i = 0; i < 400; i++) {
+                                simStep(&sim);
+                                const int c = w->position[0], r = w->position[1];
+                                const int d = (c > toCol ? c - toCol : toCol - c) +
+                                              (r > toRow ? r - toRow : toRow - r);
+                                if (d < closest) closest = d;
+                            }
+                            printf("  sent %d cells; closest approach %d\n",
+                                   before, closest);
+                            expect("it walked most of the way",
+                                   closest * 4 < before, 1);
+                        }
 
                         // Dropping a choice restores what it changed.  Any of
                         // the player's own units will do; slot 1 is not

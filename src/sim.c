@@ -490,14 +490,17 @@ void simStep(Sim *sim) {
 /* -------------------------------------------------------------- routing */
 
 // The eight directions, as the table at 0x434434 numbers them.  It is indexed
-// table[dy * 3 + dx] about its own address, so the centre - a step to nowhere -
-// is 5.  That answers a question this port carried unresolved for a while:
-// a route byte of 5 means "stay", it is not a step at all.
+// table[dy * 3 + dx] about its own address:
 //
 //      dx:  -1   0   1
 //   dy -1:   1   2   3
 //   dy  0:   0   5   4
 //   dy  1:   7   6   5
+//
+// which is kStepDx/kStepDy exactly - 0 west, 2 north, 4 east, 6 south, the
+// odd numbers diagonal.  The centre holds 5 as filler, the same value the
+// south-east corner legitimately carries; (0, 0) never happens, so nothing
+// distinguishes them and a route byte of 5 is a step south-east, not a pause.
 //
 // Only the four cardinals are ever produced here, since the fill walks four
 // ways, so a route byte out of simRouteTo is always 0, 2, 4 or 6.
@@ -1673,6 +1676,17 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
 
     if (!payUpkeep(state, slot, index, faction)) return;
     trampleGround(state, index, faction);
+
+    // 00403170 wraps its whole switch in `if (+0x18 == 0x1f0)`: the order is
+    // only carried out once there is no route left to walk.  A unit still on
+    // its way falls straight through here and the caller walks it.
+    //
+    // This is not a detail.  Without it a unit sent across the map tries to
+    // carry the order out where it stands on the very first tick, finds
+    // nothing there to do, and drops the order - so nothing ever arrives
+    // anywhere.  That is exactly what the walking test caught.
+    if (entity->at18 != ROUTE_EMPTY) return;
+
     if (lashOut(sim, slot, col, row)) return;
 
     switch (entity->at0d & 0x0f) {
