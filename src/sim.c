@@ -757,6 +757,9 @@ void simUpdateBalloons(Sim *sim) {
 // What a unit goes looking for, one per standing order.  0041dfb0, 0041e0a0,
 // 0041e1d0, 0041e360, 0041e480 and 0041e560 are the same loop written out six
 // times with a different question in the middle of it, so here it is once.
+static int tooCloseToOwn(const GameState *state, unsigned faction, int col,
+                         int row);   // 0041e670, below
+
 typedef enum {
     LOOK_OWN_GROUND,        // 0041e560: an idle unit, its country's own cell
     LOOK_ENEMY,             // 0041e0a0: order 4, somebody else's unit cell
@@ -778,7 +781,17 @@ static int lookAccepts(const GameState *state, unsigned slot, LookFor what,
         return faction >= FACTION_COUNT ||
                state->factions[faction].at1e != (unsigned char)(terrain - 8);
     case LOOK_ROOM_TO_BUILD:
-        return terrain == 0 || (terrain >= 0x0c && terrain < 0x10);
+        // Bare ground, anybody's plain territory, and - 0041e1d0 is explicit
+        // about it - another country's settlement, which is built over rather
+        // than left alone.  Its own and its ally's are the two exceptions.
+        if (terrain == 0) return 1;
+        if (terrain >= 0x0c && terrain < 0x10) return 1;
+        if (terrain >= 8 && terrain < 0x0c) {
+            if ((unsigned char)(terrain - 8) == faction) return 0;
+            return faction >= FACTION_COUNT ||
+                   state->factions[faction].at1e != (unsigned char)(terrain - 8);
+        }
+        return 0;
     case LOOK_BUILDING:
         return terrain != 0 && terrain < 5;
     case LOOK_WALL:
@@ -827,6 +840,12 @@ static int lookAround(Sim *sim, unsigned slot, LookFor what,
         const unsigned char terrain =
             state->world.cells[WORLD_INDEX(c, r)].terrain;
         if (!lookAccepts(state, slot, what, terrain)) continue;
+        // 0041e1d0 alone asks one thing more of what it finds: a settlement
+        // may not be raised within a cell of one this country already holds.
+        // Leaving it out is what kept a unit shuttling between its own
+        // settlement and the ground beside it for the length of a stage.
+        if (what == LOOK_ROOM_TO_BUILD && tooCloseToOwn(state, faction, c, r))
+            continue;
         if (moveRefused(state, slot, c, r)) continue;
         *dxOut = kNearDx[i];
         *dyOut = kNearDy[i];
@@ -1430,6 +1449,24 @@ static WorldCell *targetCell(GameState *state, const Entity *entity,
 // strength comes off its value at a time; at nothing it goes back to bare land
 // at the usual hundred.  Unlike the others this works on the cell the unit is
 // standing on, not its target.
+// 0041ad90.  Whenever the ground opens up - a wall pulled down, a mine
+// harvested, a den broken, a monster chewing through - two things follow: every
+// cell works out afresh whether it can be walked on, and every idle unit that
+// was waiting on the old shape of the map takes the plain order again.  Without
+// the first, a square cleared at great expense stays impassable for ever.
+static void groundChanged(Sim *sim) {
+    GameState *state = sim->state;
+    stateMarkBlocked(state);
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        Entity *entity = &state->entities[i];
+        if (entity->flags & 0x80) continue;
+        if (entity->at18 != ROUTE_EMPTY) continue;
+        if (entity->at0d == 0 ||
+            (entity->faction != sim->humanFaction && entity->at0d == 2))
+            entity->at0d = 1;
+    }
+}
+
 SimActionResult simDemolishBuilding(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     if (slot >= ENTITY_COUNT) return SIM_ACTION_REFUSED;
@@ -1469,7 +1506,7 @@ SimActionResult simDemolishWall(Sim *sim, unsigned slot) {
         cell->value = 0;
     }
     cell->terrain = 0;
-    stateMarkBlocked(state);
+    groundChanged(sim);
     return SIM_ACTION_DONE;
 }
 
@@ -1526,7 +1563,7 @@ SimActionResult simBreakSpawner(Sim *sim, unsigned slot) {
         return SIM_ACTION_PROGRESS;
     }
     cell->terrain = 0x60;
-    stateMarkBlocked(state);
+    groundChanged(sim);
     return SIM_ACTION_DONE;
 }
 
@@ -1625,6 +1662,7 @@ SimActionResult simClearTarget(Sim *sim, unsigned slot) {
     // 0040b680 leaves the overshoot behind as the new cell's value.
     cell->value = amount - cell->value;
     cell->terrain = 0x20;
+    groundChanged(sim);
     return SIM_ACTION_DONE;
 }
 
@@ -2236,7 +2274,7 @@ static void stepNeutralEntity(Sim *sim, unsigned slot) {
             if (wall->value == 0) {
                 wall->value = 100;
                 wall->terrain = 0;
-                stateMarkBlocked(state);
+                groundChanged(sim);
             }
             return;
         }
@@ -2795,6 +2833,97 @@ static int openGround(Sim *sim, unsigned slot) {
     return 0;
 }
 
+// The four square directions, 00434420 and 00434428.  The wide finders below
+// look at a cell's neighbours through these.
+static const signed char kOrthDx[4] = {-1, 1, 0, 0};
+static const signed char kOrthDy[4] = {0, 0, -1, 1};
+
+// What 0041c800 and 0041c8e0 hand back: the square to work on, the square to
+// stand on while working, and what the walk to it costs.
+typedef struct {
+    unsigned char targetCol, targetRow;
+    unsigned char standCol, standRow;
+    unsigned cost;
+} Approach;
+
+// The half of both finders that is the same: of the four squares beside this
+// one, keep the cheapest to walk to.
+static void keepCheapestBeside(const GameState *state, int col, int row,
+                               Approach *best) {
+    for (int i = 0; i < 4; i++) {
+        const int nc = col + kOrthDx[i], nr = row + kOrthDy[i];
+        if (!inBounds(nc, nr)) continue;
+        const unsigned cost = state->world.cells[WORLD_INDEX(nc, nr)].cost;
+        if (cost >= best->cost) continue;
+        best->targetCol = (unsigned char)col;
+        best->targetRow = (unsigned char)row;
+        best->standCol = (unsigned char)nc;
+        best->standRow = (unsigned char)nr;
+        best->cost = cost;
+    }
+}
+
+// 0041c800.  Anywhere on the board there is a wall, and the cheapest way to
+// reach one.
+static int findWallToBreak(const GameState *state, Approach *out) {
+    out->cost = FILL_INFINITE;
+    for (int i = 0; i < WORLD_CELLS; i++)
+        if (state->world.cells[i].terrain == 0x7b)
+            keepCheapestBeside(state, i / WORLD_GRID, i % WORLD_GRID, out);
+    return out->cost < FILL_INFINITE;
+}
+
+// 0041c8e0.  The same for a mine, with three conditions the wall does not
+// carry: the country has to have five hundred to spend, the mine has to have
+// at least one neighbour the fill did not reach - digging one out of ground
+// already walked to gains nothing - and no unit worth a quarter of this one,
+// or more than four thousand, may be standing beside it.
+//
+// This is the only thing in the executable that opens a way through closed
+// ground of a country's own accord, so it is what decides whether four
+// countries penned in four corners ever meet.
+static int findMineToDig(Sim *sim, unsigned slot, Approach *out) {
+    GameState *state = sim->state;
+    out->cost = FILL_INFINITE;
+    if (!canAffordFor(sim, slot, 500)) return 0;
+
+    Entity *me = &state->entities[slot];
+    // The original clears its own square's occupant here and does not put it
+    // back; a unit that goes on to move writes itself in again.  Kept, because
+    // it is what decides whether a unit counts itself as the danger beside a
+    // mine it is already standing next to.
+    state->world.cells[WORLD_INDEX(me->position[0], me->position[1])].occupant =
+        CELL_NO_ENTITY;
+
+    for (int i = 0; i < WORLD_CELLS; i++) {
+        if (state->world.cells[i].terrain != 0x7a) continue;
+        const int col = i / WORLD_GRID, row = i % WORLD_GRID;
+        if (col <= 0 || row <= 0 || col >= WORLD_GRID - 1 ||
+            row >= WORLD_GRID - 1) continue;
+
+        // All four already reachable?  Then there is nothing behind it.
+        if ((state->world.cells[WORLD_INDEX(col, row - 1)].marked &
+             state->world.cells[WORLD_INDEX(col, row + 1)].marked &
+             state->world.cells[WORLD_INDEX(col + 1, row)].marked &
+             state->world.cells[WORLD_INDEX(col - 1, row)].marked & 1) != 0)
+            continue;
+
+        int clear = 1;
+        for (int d = 0; d < 4; d++) {
+            const int nc = col + kOrthDx[d], nr = row + kOrthDy[d];
+            const unsigned char who =
+                state->world.cells[WORLD_INDEX(nc, nr)].occupant;
+            if (who >= ENTITY_NONE) continue;
+            const unsigned strength = state->entities[who].at08;
+            if (strength > (me->at08 >> 2) || strength > 0x1000) clear = 0;
+        }
+        if (!clear) continue;
+
+        keepCheapestBeside(state, col, row, out);
+    }
+    return out->cost < FILL_INFINITE;
+}
+
 // 0041c410 and 00421d30.  The general question: of everything this unit can
 // reach, what is most worth walking to?  Everything is scored by its distance,
 // with eight added to it - except a neutral spawn, which is scored by distance
@@ -2848,7 +2977,36 @@ static int generalStrategy(Sim *sim, unsigned slot) {
         bestRow = row;
         bestTerrain = terrain;
     }
-    if (best >= FILL_INFINITE) return 0;
+    if (best >= FILL_INFINITE) {
+        // 00421d30's other half.  Nothing worth walking to in the open, so the
+        // country asks after the two things it can dig through instead: a wall
+        // first, then a mine, the mine judged twenty steps worse than it is so
+        // a wall of the same distance wins.  What it settles on has to be
+        // inside the fill, and worth less than half this unit's strength in
+        // steps - a small unit does not set out across the map.
+        Approach pick, found;
+        unsigned char order = 1;
+        unsigned cost = FILL_INFINITE;
+        memset(&pick, 0, sizeof pick);
+        if (findWallToBreak(state, &found) && found.cost < cost) {
+            order = 9;
+            pick = found;
+            cost = found.cost;
+        }
+        if (findMineToDig(sim, slot, &found) && found.cost + 0x14 < cost) {
+            order = 7;
+            pick = found;
+            cost = found.cost;
+        }
+        if (cost > FILL_INFINITE - 1) return 0;
+        if (entity->at08 <= cost * 2) return 0;
+
+        entity->at0d = order;
+        entity->at0f = 4;
+        entity->target[0] = pick.targetCol;
+        entity->target[1] = pick.targetRow;
+        return simRouteTo(state, slot, pick.standCol, pick.standRow) != 0;
+    }
 
     unsigned char order;
     if (bestTerrain == 0 || (bestTerrain >= 0x0c && bestTerrain < 0x10))
@@ -3271,14 +3429,209 @@ static void stepOrderedUnit(Sim *sim, unsigned slot) {
 }
 
 // 00401770.  The order a unit carries is the low nibble of +0x0d, and it acts
-// on it by itself - which is what makes a country play without being told.
+// 0041ecc0.  Two units walking into each other head on.  It looks at the cells
+// the first four table entries name and asks, of any other country's unit
+// standing there with a route of its own, whether that unit's next step is the
+// exact reverse of this one's.  If it is, this one gives way - to an ally
+// always, and otherwise to whoever is heavier.  Without it a pair meeting in a
+// corridor would trade places for ever.
+static int yieldToOncoming(const GameState *state, unsigned slot, int col,
+                           int row) {
+    const Entity *me = &state->entities[slot];
+    for (int i = 0; i < 4; i++) {
+        // The original starts this loop at zero where the finders start at
+        // one, so the first cell it asks about is the unit's own - which
+        // answers no, being the same country as itself.
+        const int nc = col + kLookDx[i], nr = row + kLookDy[i];
+        if (!passableCell(state, nc, nr)) continue;
+        const unsigned char who =
+            state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)].occupant;
+        if (who >= ENTITY_NONE) continue;
+        const Entity *other = &state->entities[who];
+        if (other->faction == me->faction) continue;
+        if (other->at18 == ROUTE_EMPTY) continue;
+        const unsigned char mine = (unsigned char)(me->at0c & 7);
+        const unsigned char back = (unsigned char)((other->at0c + 4) & 7);
+        if (kStepDx[back] != kStepDx[mine] || kStepDy[back] != kStepDy[mine])
+            continue;
+        if (me->faction < FACTION_COUNT &&
+            state->factions[me->faction].at1e == other->faction) return 1;
+        if (me->at08 < other->at08) return 1;
+    }
+    return 0;
+}
+
+// The step 0041e920 takes once it has picked a direction: the same fight,
+// merge, raid and move as a walk, but off the route rather than along it.
+static int shoveStep(Sim *sim, unsigned slot, unsigned col, unsigned row,
+                     unsigned char dir, int nc, int nr) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    entity->at0c = dir;
+    entity->at18 = ROUTE_EMPTY;
+    if (fightAt(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+    if (mergeAt(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+    if (entity->flags & 0x80) return 1;         // a merge can retire the mover
+    WorldCell *to = &state->world.cells[WORLD_INDEX((unsigned)nc,
+                                                    (unsigned)nr)];
+    if (to->occupant < ENTITY_NONE) return 0;
+    if (raidSettlement(sim, slot, (unsigned)nc, (unsigned)nr)) return 1;
+    state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+    to->occupant = (unsigned char)slot;
+    entity->position[0] = (unsigned char)nc;
+    entity->position[1] = (unsigned char)nr;
+    return 1;
+}
+
+// 0041e920.  What a computer unit does instead of its turn when it cannot go
+// where it meant to: it shoves.  A leader standing on its country's capital
+// column heads north for the castle - that is how a king who has wandered off
+// finds his way back.  Anybody else takes the first of the four square
+// directions, starting from the one it is already facing, that is open ground
+// and not refused, and steps there whatever its route said.
 //
-// Ported: the upkeep gate, the 0x0c state a unit falls into when its faction
-// loses its leader, standing on somebody else's castle, and orders 1, 2 and 3
-// - which all raise one of the faction's unit cells through 0040b330.  The
-// rest of that routine walks a unit toward a target through 0041ef80 and
-// handles the remaining orders; neither is read, so a unit with any other
-// order simply holds still.
+// The answer is 1 for "the turn is spent" - it moved, or there was nowhere to
+// move - and 0 only when the leader is already home or the shove was into
+// somebody.  Its caller runs the rest of the tick only on a 0.
+static int unstickUnit(Sim *sim, unsigned slot, unsigned col, unsigned row) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned faction = entity->faction;
+
+    if ((entity->at0d & 0x20) && faction < FACTION_COUNT &&
+        state->factions[faction].at08[0] == col) {
+        const unsigned home = state->factions[faction].at08[1];
+        if (row == home) return 0;
+        // Signed, so a leader that has strayed north of the castle is caught
+        // by this too - and walks north again, away from it.  That is what the
+        // original does.
+        if ((int)(row - home) < 3)
+            return shoveStep(sim, slot, col, row, 2, (int)col, (int)row - 1);
+    }
+
+    for (int i = 0; i < 8; i += 2) {
+        const unsigned char dir = (unsigned char)((entity->at0c + i) & 6);
+        const int dx = kStepDx[dir], dy = kStepDy[dir];
+        if (!stepInBounds(col, row, dx, dy)) continue;
+        const int nc = (int)col + dx, nr = (int)row + dy;
+        if (state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)].terrain
+            >= TERRAIN_WALKABLE_MAX) continue;
+        if (moveRefused(state, slot, nc, nr)) continue;
+        return shoveStep(sim, slot, col, row, dir, nc, nr);
+    }
+    return 1;
+}
+
+// 004215a0.  Break off and charge a particular entity: the fill is laid from
+// where this unit stands, the other one's square becomes its target, and if a
+// route comes back it takes the attacking order and four ticks of patience.
+static int chargeAt(Sim *sim, unsigned slot, unsigned other) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    simPrepareFill(state, slot, entity->position[0], entity->position[1]);
+    entity->target[0] = state->entities[other].position[0];
+    entity->target[1] = state->entities[other].position[1];
+    if (!simRouteTo(state, slot, entity->target[0], entity->target[1]))
+        return 0;
+    entity->at0d = 2;
+    entity->at0f = 4;
+    return 1;
+}
+
+// The walk inside 00401770, which is not 00403170's.  The difference that
+// matters is what happens when the next square is closed ground: a computer
+// unit does not shrug and go home, it takes the order that deals with what is
+// in the way - the mine order for a mine, the wall order for a wall - and
+// names that square as its target.  A country hemmed in by diggings gets out
+// this way.
+static void stepWalkPlain(Sim *sim, unsigned slot) {
+    GameState *state = sim->state;
+    Entity *entity = &state->entities[slot];
+    const unsigned col = entity->position[0];
+    const unsigned row = entity->position[1];
+    const unsigned char want = nextDirection(entity);
+
+    if (entity->at0c != want) {
+        // Turning costs the tick, and a unit that has just turned still asks
+        // whether it should be giving way instead.
+        entity->at0e = want;
+        entity->at0c = entity->at0e;
+        if (yieldToOncoming(state, slot, (int)col, (int)row))
+            unstickUnit(sim, slot, col, row);
+        return;
+    }
+    if (want >= 8) {
+        entity->at0d = 1;
+        entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+    const int dx = kStepDx[want], dy = kStepDy[want];
+    if (!stepInBounds(col, row, dx, dy)) {
+        entity->at18 = ROUTE_EMPTY;
+        entity->at0d = 1;
+        return;
+    }
+    const int nc = (int)col + dx, nr = (int)row + dy;
+
+    if (!passableCell(state, nc, nr)) {
+        if (entity->faction != sim->humanFaction) {
+            const unsigned char terrain =
+                state->world.cells[WORLD_INDEX((unsigned)nc, (unsigned)nr)]
+                    .terrain;
+            if (terrain == 0x7a) entity->at0d = 7;              // a mine
+            else if (terrain == 0x7b) entity->at0d = 9;         // a wall
+            else {
+                entity->at0d = 1;
+                entity->at18 = ROUTE_EMPTY;
+                return;
+            }
+            entity->target[0] = (unsigned char)nc;
+            entity->target[1] = (unsigned char)nr;
+        }
+        entity->at18 = ROUTE_EMPTY;
+        return;
+    }
+
+    if ((!yieldToOncoming(state, slot, (int)col, (int)row) ||
+         !unstickUnit(sim, slot, col, row)) &&
+        !fightAt(sim, slot, (unsigned)nc, (unsigned)nr) &&
+        !mergeAt(sim, slot, (unsigned)nc, (unsigned)nr)) {
+        if (entity->flags & 0x80) return;
+        WorldCell *to = &state->world.cells[WORLD_INDEX((unsigned)nc,
+                                                        (unsigned)nr)];
+        if (to->occupant < ENTITY_NONE) {
+            entity->at0d = 1;
+            entity->at18 = ROUTE_EMPTY;
+            return;
+        }
+        if (raidSettlement(sim, slot, (unsigned)nc, (unsigned)nr)) return;
+        state->world.cells[WORLD_INDEX(col, row)].occupant = CELL_NO_ENTITY;
+        to->occupant = (unsigned char)slot;
+        entity->position[0] = (unsigned char)nc;
+        entity->position[1] = (unsigned char)nr;
+        simAdvanceRoute(state, slot);
+    }
+}
+
+// The tail every working order in 00401770 shares - and only they: drop back
+// to the plain order and head for the country's own ground, or stand still if
+// none is near.  It is written out at each case in the original; here it is
+// one function called from those cases, and from nowhere else.  Giving it to
+// the building orders as well is what once had units stepping out and back
+// for ever.
+static void goHomeIdle(Sim *sim, unsigned slot) {
+    Entity *entity = &sim->state->entities[slot];
+    signed char dx = 0, dy = 0;
+    entity->at0d = 1;
+    if (lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy))
+        simMakeRoute(sim->state, slot, dx, dy);
+    else
+        entity->at0c = 6;
+}
+
+// 00401770.  The order a unit carries is the low nibble of +0x0d, and it acts
+// on it by itself - which is what makes a country play without being told.
+// There is no separate opponent anywhere in the executable: this is it.
 static void stepPlainUnit(Sim *sim, unsigned slot) {
     GameState *state = sim->state;
     Entity *entity = &state->entities[slot];
@@ -3306,6 +3659,13 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
 
     trampleGround(state, index, faction);
 
+    // A computer unit that cannot move gets one shove before anything else,
+    // and if the shove spends the tick the rest of the turn does not happen.
+    if (faction != sim->humanFaction &&
+        moveRefused(state, slot, (int)col, (int)row) == 1 &&
+        unstickUnit(sim, slot, col, row) == 1)
+        return;
+
     const unsigned onCastle = (unsigned)(state->world.cells[index].terrain
                                          - 0x14u);
     if (onCastle < 4 && onCastle != faction) {
@@ -3318,11 +3678,8 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
         return;
     }
 
-    // 00401770 wraps its own decisions in `if (+0x18 == 0x1f0)` the way
-    // 00403170 does, and walks when there is a route - so a unit that went
-    // looking for work walks to it.
     if (entity->at18 != ROUTE_EMPTY) {
-        stepWalkOrdered(sim, slot);
+        stepWalkPlain(sim, slot);
         return;
     }
 
@@ -3330,71 +3687,191 @@ static void stepPlainUnit(Sim *sim, unsigned slot) {
     // rather than getting on with its order.
     if (lashOut(sim, slot, col, row)) return;
 
-    // A plain unit's +0x0d is a preference, not an order: it says what this
-    // unit set out to do, and having arrived it does it here.
-    //
-    // 00401770 handles the cases in two shapes.  The plain preferences - 1, 2
-    // and 3 - build where the unit stands, and when that will not go the unit
-    // looks around (004219b0) and then, if the machine is playing it, thinks
-    // (00421ae0).  Every other case does its own work and, when that work is
-    // done or refused, drops back to the plain preference and heads for its
-    // own country's ground; if there is none within reach it faces south and
-    // waits.
-    const unsigned char preference = entity->at0d & 0x0f;
-    switch (preference) {
+    // Each case ends its own way, and the switch has no shared tail: an order
+    // that falls out of it simply does nothing more this tick.
+    signed char dx = 0, dy = 0;
+    const unsigned char order = entity->at0d & 0x0f;
+    switch (order) {
     case 1:
-    case 2:
     case 3: {
         const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
         if (r == SIM_ACTION_DONE || r == SIM_ACTION_SPENT_ENTITY) return;
         entity->at0c = 6;
-        if ((entity->flags & 8) == 0 && lookForWork(sim, slot)) return;
-        if (workBudget(sim, slot)) thinkStrategically(sim, slot);
+        if ((entity->flags & 8) == 0) {
+            if (!lookForWork(sim, slot) && workBudget(sim, slot))
+                thinkStrategically(sim, slot);
+        } else if (workBudget(sim, slot)) {
+            thinkStrategically(sim, slot);
+        }
         return;
     }
-    case 5: {
-        // A builder that succeeds looks for the next site rather than
-        // stopping, which is what makes a country spread rather than sprawl
-        // from one place.
+    case 2: {
+        entity->at0c = 6;
         const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
-        signed char dx = 0, dy = 0;
-        if (r == SIM_ACTION_DONE &&
-            lookAround(sim, slot, LOOK_ROOM_TO_BUILD, &dx, &dy)) {
-            simMakeRoute(state, slot, dx, dy);
+        if (r == SIM_ACTION_DONE || r == SIM_ACTION_SPENT_ENTITY) return;
+        const unsigned here = (unsigned)(state->world.cells[index].terrain
+                                         - 0x14u);
+        if (here >= 4) {
+            // Not on a castle.  A computer unit looks two rows up - where a
+            // castle's own square sits when a unit stands at its gate - and
+            // charges the defender if it is worth three of him.
+            if (faction != sim->humanFaction && row >= 2) {
+                const WorldCell *above =
+                    &state->world.cells[WORLD_INDEX(col, row - 2)];
+                const unsigned owner = (unsigned)(above->terrain - 0x14u);
+                if (owner < 4 && owner != faction) {
+                    const unsigned char who = above->occupant;
+                    if (who >= ENTITY_NONE) return;
+                    if (entity->at08 <= state->entities[who].at08 * 3) return;
+                    chargeAt(sim, slot, who);
+                    return;
+                }
+            }
+        } else if (faction != here) {
+            return;
+        }
+        if (((entity->flags & 8) != 0 || lookForWork(sim, slot) != 1) &&
+            workBudget(sim, slot) == 1)
+            thinkStrategically(sim, slot);
+        return;
+    }
+    case 4:
+        if (!lookAround(sim, slot, LOOK_ENEMY, &dx, &dy)) {
+            entity->at0d = 1;
+            if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                entity->at0c = 6;
+                return;
+            }
+        }
+        simMakeRoute(state, slot, dx, dy);
+        return;
+    case 5: {
+        const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
+        if (r == SIM_ACTION_DONE) {
+            // Built: on to the next site, and home only if there is none.
+            if (!lookAround(sim, slot, LOOK_ROOM_TO_BUILD, &dx, &dy)) {
+                entity->at0d = 1;
+                if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                    entity->at0c = 6;
+                    return;
+                }
+                simMakeRoute(state, slot, dx, dy);
+            }
+            return;
+        }
+        if (r == SIM_ACTION_NO_FUNDS) {
+            goHomeIdle(sim, slot);
             return;
         }
         if (r == SIM_ACTION_SPENT_ENTITY) return;
-        break;
-    }
-    case 6:
-        if (simBuildWall(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 7:
-        if (simClearTarget(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 8:
-        if (simDemolishBuilding(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 9:
-        if (simDemolishWall(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 10:
-        if (simMakeMine(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 0x0b:
-        if (simBreakSpawner(sim, slot) == SIM_ACTION_PROGRESS) return;
-        break;
-    case 4:
-    default:
-        break;
-    }
-
-    // Done, or nothing to do: back to the plain preference and home.
-    entity->at0d = 1;
-    signed char dx = 0, dy = 0;
-    if (lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+        // Refused: its own ground first, then anywhere it could build.
+        if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy) &&
+            !lookAround(sim, slot, LOOK_ROOM_TO_BUILD, &dx, &dy)) {
+            entity->at0d = 1;
+            if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                entity->at0c = 6;
+                return;
+            }
+        }
         simMakeRoute(state, slot, dx, dy);
         return;
     }
-    entity->at0c = 6;
+    case 6: {
+        const SimActionResult r = simBuildWall(sim, slot);
+        if (r > 0) {
+            if (r < SIM_ACTION_REFUSED) {
+                entity->at0d = 1;
+                if (lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                    simMakeRoute(state, slot, dx, dy);
+                    return;
+                }
+                entity->at0c = 6;
+            } else if (r == SIM_ACTION_PROGRESS) {
+                return;
+            }
+        }
+        // 004208b0 again, on the target rather than a step: when the square
+        // being walled has become somebody's settlement the work is off.
+        if (!raidSettlement(sim, slot, entity->target[0], entity->target[1]))
+            goHomeIdle(sim, slot);
+        return;
+    }
+    case 7:
+        if (simClearTarget(sim, slot) != SIM_ACTION_PROGRESS) goHomeIdle(sim, slot);
+        return;
+    case 8: {
+        if (simDemolishBuilding(sim, slot) == SIM_ACTION_PROGRESS) return;
+        const unsigned char here = state->world.cells[index].terrain;
+        if (here != 0 && here > 0x10) {
+            if (!lookAround(sim, slot, LOOK_BUILDING, &dx, &dy)) {
+                entity->at0d = 1;
+                if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                    entity->at0c = 6;
+                    return;
+                }
+            }
+            simMakeRoute(state, slot, dx, dy);
+            return;
+        }
+        if (tooCloseToOwn(state, faction, (int)col, (int)row) == 1) {
+            signed char ax = 0, ay = 0;
+            if (lookAround(sim, slot, LOOK_OWN_GROUND, &ax, &ay) == 1) {
+                if (ax == 3 || ay == 3) {
+                    entity->at0d = 1;
+                    simMakeRoute(state, slot, ax, ay);
+                    return;
+                }
+                if (ax + ay != 0) {
+                    simMakeRoute(state, slot, ax, ay);
+                    return;
+                }
+            }
+            const SimActionResult r = simBuildUnitCell(sim, slot, col, row);
+            if (r == SIM_ACTION_DONE || r == SIM_ACTION_SPENT_ENTITY) return;
+        }
+        if (!lookAround(sim, slot, LOOK_BUILDING, &dx, &dy)) {
+            entity->at0d = 1;
+            if (!lookAround(sim, slot, LOOK_OWN_GROUND, &dx, &dy)) {
+                entity->at0c = 6;
+                return;
+            }
+        }
+        simMakeRoute(state, slot, dx, dy);
+        return;
+    }
+    case 9:
+        if (simDemolishWall(sim, slot) != SIM_ACTION_PROGRESS) goHomeIdle(sim, slot);
+        return;
+    case 10: {
+        const SimActionResult r = simMakeMine(sim, slot);
+        if (r == SIM_ACTION_DONE) {
+            // The mine is dug: the digger moves on only once the square it
+            // was working has nothing left in it.
+            if (state->world.cells[WORLD_INDEX(entity->target[0],
+                                               entity->target[1])].value
+                == 0xff)
+                goHomeIdle(sim, slot);
+            return;
+        }
+        if (r != SIM_ACTION_PROGRESS) goHomeIdle(sim, slot);
+        return;
+    }
+    case 0x0b:
+        if (simBreakSpawner(sim, slot) != SIM_ACTION_PROGRESS) goHomeIdle(sim, slot);
+        return;
+    case 0x0c: {
+        const unsigned char becomes = state->factions[faction].at1f;
+        if (becomes == 4) {
+            simMarkDying(state, slot, 4);
+            return;
+        }
+        entity->faction = becomes;
+        entity->at0d = 1;
+        if (entity->faction == sim->humanFaction) entity->at0d = 0;
+        return;
+    }
+    default:
+        entity->at0c = 6;
+        return;
+    }
 }

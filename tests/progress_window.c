@@ -31,6 +31,8 @@ int main(int argc,char**argv){
     gw=&w;
     memset(px,UI_TRANSPARENT,sizeof px);
     blit(0,288,W,H,0,0);
+    // the top bar filled to a third, by copying the gradient below it up
+    blit(24,288+26,128/3,6,24,16);
     number(4868,80,40);        // funds, by the money bag
     number(17,144,40);         // tax, by the per-cent sign
     number(842,80,104);        // days, by the sun

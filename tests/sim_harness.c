@@ -47,6 +47,31 @@ static void report(GameState *game, const Sim *sim, const char *when) {
 }
 
 
+
+// An ASCII picture of who holds what, for looking at a stage the way the
+// player would.  Digits are a country's unit cells, the letters under them its
+// plain ground, '#' is anything a unit cannot walk on, and '*' a monster den.
+static void drawMap(const GameState *game) {
+    for (unsigned row = 0; row < WORLD_GRID; row++) {
+        for (unsigned col = 0; col < WORLD_GRID; col++) {
+            const unsigned char t =
+                game->world.cells[WORLD_INDEX(col, row)].terrain;
+            char c;
+            if (t == 0) c = '.';
+            else if (t == 5) c = '*';
+            else if (t >= 8 && t <= 0x0b) c = (char)('0' + (t - 8));
+            else if (t >= 0x0c && t <= 0x0f) c = (char)('a' + (t - 0x0c));
+            else if (t >= 0x14 && t <= 0x17) c = (char)('A' + (t - 0x14));
+            else if (t == 0x7a) c = 'm';
+            else if (t == 0x7b) c = 'W';
+            else if (t >= 0x30) c = '#';
+            else c = '?';
+            putchar(c);
+        }
+        putchar(10);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
@@ -95,6 +120,7 @@ int main(int argc, char **argv) {
 
     for (int a = 4; a < argc; a++) {
         unsigned col = 0, row = 0;
+        if (strcmp(argv[a], "map") == 0) continue;
         if (sscanf(argv[a], "build:%u,%u", &col, &row) != 2) {
             fprintf(stderr, "cannot read %s\n", argv[a]);
             continue;
@@ -112,6 +138,8 @@ int main(int argc, char **argv) {
 
     for (long i = 0; i < sweeps; i++) simStep(&sim);
     report(&game, &sim, "end");
+    for (int a = 4; a < argc; a++)
+        if (strcmp(argv[a], "map") == 0) drawMap(&game);
     worldFree(&game.world);
     return 0;
 }

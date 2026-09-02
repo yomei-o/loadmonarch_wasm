@@ -20,8 +20,10 @@ extern "C" {
 #include "world.h"
 }
 
-#define VIEW_W 640
-#define VIEW_H 480
+// The largest view this will draw.  The map is 48 cells, so 768 shows all of
+// it at the middle zoom and there is no point going past that.
+#define VIEW_MAX_W 800
+#define VIEW_MAX_H 800
 // The campaign comes out of MAP/NAME.TXT - its order, which is not the order
 // the file names sort in, and its titles.  The list below is only what to fall
 // back on if that file is missing.
@@ -51,14 +53,15 @@ char g_message[256];
 // The screen the renderer writes, as palette indices, and the RGBA the canvas
 // wants.  Two buffers rather than one because the renderer is the same code
 // the native build hands to a DIB section.
-unsigned char g_indices[VIEW_W * VIEW_H];
-unsigned g_pixels[VIEW_W * VIEW_H];
+unsigned char g_indices[VIEW_MAX_W * VIEW_MAX_H];
+unsigned g_pixels[VIEW_MAX_W * VIEW_MAX_H];
 Surface g_surface;
+int g_viewW = 640, g_viewH = 480;
 
 void clampView() {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
-    const int maxX = span - VIEW_W, maxY = span - VIEW_H;
+    const int maxX = span - g_viewW, maxY = span - g_viewH;
     if (g_viewX > maxX) g_viewX = maxX;
     if (g_viewY > maxY) g_viewY = maxY;
     if (g_viewX < 0) g_viewX = 0;
@@ -92,8 +95,8 @@ int loadStage(int stage) {
     simSeedLeaders(&g_sim);
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
-    g_viewX = (span - VIEW_W) / 2;
-    g_viewY = (span - VIEW_H) / 2;
+    g_viewX = (span - g_viewW) / 2;
+    g_viewY = (span - g_viewH) / 2;
     clampView();
     g_lastAction = 0;
     return 1;
@@ -122,13 +125,24 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
-    surfaceInit(&g_surface, VIEW_W, VIEW_H, g_indices);
+    surfaceInit(&g_surface, g_viewW, g_viewH, g_indices);
     return stageCount();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *lm_message(void) { return g_message; }
-EMSCRIPTEN_KEEPALIVE int lm_width(void) { return VIEW_W; }
-EMSCRIPTEN_KEEPALIVE int lm_height(void) { return VIEW_H; }
+EMSCRIPTEN_KEEPALIVE int lm_width(void) { return g_viewW; }
+EMSCRIPTEN_KEEPALIVE int lm_height(void) { return g_viewH; }
+
+// How big a view to draw.  The original's is fixed at what a 1997 screen had;
+// a page can have as much as it can show, up to the whole 48-cell map at the
+// middle zoom.
+EMSCRIPTEN_KEEPALIVE void lm_set_view(int w, int h) {
+    if (w < 160 || h < 120 || w > VIEW_MAX_W || h > VIEW_MAX_H) return;
+    g_viewW = w;
+    g_viewH = h;
+    surfaceInit(&g_surface, g_viewW, g_viewH, g_indices);
+    clampView();
+}
 EMSCRIPTEN_KEEPALIVE const char *lm_stage_name(void) {
     return stageFile(g_stage);
 }
@@ -158,7 +172,7 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     // rather than only when a stage loads.
     unsigned char colours[256][3];
     renderPalette(&g_game, g_zoom, colours);
-    for (int i = 0; i < VIEW_W * VIEW_H; i++) {
+    for (int i = 0; i < g_viewW * g_viewH; i++) {
         const unsigned char *rgb = colours[g_indices[i]];
         g_pixels[i] = 0xff000000u | (unsigned)rgb[0] |
                       ((unsigned)rgb[1] << 8) | ((unsigned)rgb[2] << 16);
@@ -174,6 +188,13 @@ EMSCRIPTEN_KEEPALIVE void lm_scroll(int dx, int dy) {
     clampView();
 }
 
+// Scroll by pixels rather than whole cells, for dragging and the wheel.
+EMSCRIPTEN_KEEPALIVE void lm_scroll_by(int dx, int dy) {
+    g_viewX += dx;
+    g_viewY += dy;
+    clampView();
+}
+
 EMSCRIPTEN_KEEPALIVE void lm_set_zoom(int zoom) {
     if (zoom < 0) zoom = 0;
     if (zoom > 2) zoom = 2;
@@ -182,8 +203,8 @@ EMSCRIPTEN_KEEPALIVE void lm_set_zoom(int zoom) {
     const TileBank *to = worldBank(&g_game.world, zoom);
     if (from->tileSize > 0 && to->tileSize > 0) {
         const double scale = (double)to->tileSize / from->tileSize;
-        g_viewX = (int)((g_viewX + VIEW_W / 2) * scale) - VIEW_W / 2;
-        g_viewY = (int)((g_viewY + VIEW_H / 2) * scale) - VIEW_H / 2;
+        g_viewX = (int)((g_viewX + g_viewW / 2) * scale) - g_viewW / 2;
+        g_viewY = (int)((g_viewY + g_viewH / 2) * scale) - g_viewH / 2;
     }
     g_zoom = zoom;
     clampView();

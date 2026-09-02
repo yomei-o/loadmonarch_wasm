@@ -51,6 +51,7 @@
   main { flex: 1; display: flex; min-height: 0; }
   #stage { flex: 1; position: relative; min-width: 0; display: grid; place-items: center; background: #070a06; }
   #view { image-rendering: pixelated; max-width: 100%; max-height: 100%; }
+  #stage { min-height: 240px; }
   #drop {
     position: absolute; inset: 0;
     display: grid; place-items: center;
@@ -132,6 +133,12 @@
   <button id="artBtn" disabled>絵</button>
   <button id="saveBtn" disabled>保存</button>
   <button id="loadBtn" disabled>再開</button>
+  <span class="sep"></span>
+  <label style="color:var(--muted)">速さ
+    <input id="speed" type="range" min="0" max="29" value="25"
+           style="vertical-align:middle;width:90px">
+    <span id="speedRead" style="color:var(--ink)"></span>
+  </label>
   <button id="pause" disabled>一時停止</button>
   <button id="music" class="on" disabled>音楽</button>
   <span id="note"></span>
@@ -180,7 +187,7 @@
        その国を操作します（&#9654; が今の自国）。</p>
   </aside>
 </main>
-<footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
+<footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
 <script src="loadmonarch.js"></script>
 <script>
@@ -270,6 +277,17 @@ createLordMonarch().then(function (M) {
     blitSheet(g, 0, PROG_WIN_TOP + 96, 176, 80, 0, 96);
 
     var me = M._lm_human();
+
+    // The bar at the top is two rows in one frame: an empty one above and a
+    // full gradient below it, grey through yellow to red.  The gradient is the
+    // scale - filling the bar means copying its first N pixels up into the
+    // empty row, so the bar changes colour as it grows.  What it measures is
+    // not written anywhere; the share of the board is the reading that suits a
+    // window called Progress, and it is the one number this port has exactly.
+    var share = M._lm_area(me) / 10000;             // hundredths of a per cent
+    var filled = Math.max(0, Math.min(128, Math.round(share * 128)));
+    if (filled > 0) blitSheet(g, 24, PROG_WIN_TOP + 26, filled, 6, 24, 16);
+
     blitNumber(g, M._lm_funds(me), 80, 40);         // the money bag's slot
     blitNumber(g, M._lm_tax(me), 144, 40);          // the one marked per cent
     blitNumber(g, M._lm_days(), 80, 104);           // the sun
@@ -327,9 +345,21 @@ createLordMonarch().then(function (M) {
     artCanvas.hidden = true;
   });
 
-  var W = M._lm_width(), H = M._lm_height();
-  canvas.width = W;
-  canvas.height = H;
+  // As much view as the window can show, up to the whole 48-cell map at the
+  // middle zoom.  The original's is fixed at what a 1997 screen had.
+  var W, H;
+  function fitView() {
+    var stage = document.getElementById('stage');
+    var w = Math.max(320, Math.min(800, Math.floor(stage.clientWidth)));
+    var h = Math.max(240, Math.min(800, Math.floor(stage.clientHeight)));
+    M._lm_set_view(w, h);
+    W = M._lm_width();
+    H = M._lm_height();
+    canvas.width = W;
+    canvas.height = H;
+  }
+  fitView();
+  window.addEventListener('resize', function () { if (loaded) fitView(); });
 
   // The countries and the sixteen orders are named in the large terrain file,
   // differently in every scenery set, so they arrive per stage rather than
@@ -685,8 +715,19 @@ createLordMonarch().then(function (M) {
             Math.floor((e.clientY - r.top) * canvas.height / r.height)];
   }
 
+  // Dragging with the right button moves the view, and so does the wheel -
+  // the map is 48 cells across and the window shows a part of it, so getting
+  // about has to be easy.
+  var panning = null;
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
+    if (e.button === 2 || e.button === 1) {
+      panning = { x: e.clientX, y: e.clientY };
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     var p = viewPoint(e);
     // With units chosen, a click is where they are being sent - that is the
     // original's flow.  With none chosen it puts a new unit down.
@@ -700,12 +741,31 @@ createLordMonarch().then(function (M) {
     refreshPanel();
   });
 
+  canvas.addEventListener('pointerup', function (e) {
+    if (panning) { panning = null; e.preventDefault(); }
+  });
+  canvas.addEventListener('wheel', function (e) {
+    if (!loaded) return;
+    M._lm_scroll_by(e.shiftKey ? Math.round(e.deltaY) : 0,
+                    e.shiftKey ? 0 : Math.round(e.deltaY));
+    e.preventDefault();
+  }, { passive: false });
+
   // The cursor follows the pointer, as sprite 0xcc laid on the cell - and with
   // units chosen, each of them answers in its balloon whether it can get to
   // where the pointer is.
   var aimCol = -1, aimRow = -1;
   canvas.addEventListener('pointermove', function (e) {
     if (!loaded) return;
+    if (panning) {
+      var r = canvas.getBoundingClientRect();
+      var scale = canvas.width / r.width;
+      M._lm_scroll_by(Math.round((panning.x - e.clientX) * scale),
+                      Math.round((panning.y - e.clientY) * scale));
+      panning.x = e.clientX;
+      panning.y = e.clientY;
+      return;
+    }
     var p = viewPoint(e);
     M._lm_set_cursor(p[0], p[1]);
     if (M._lm_selected() > 0) {
@@ -814,10 +874,35 @@ createLordMonarch().then(function (M) {
   };
 
   /* ---------------------------------------------------------------- loop */
+  //
+  // The original's pace, which this page had wrong by a factor of five.  Its
+  // message loop runs a tick only when a counter has reached zero, and a
+  // 16-millisecond multimedia timer is what counts it down:
+  //
+  //     if (DAT_004344e0 == 0) { DAT_004344e0 = 0x1e - speed; tick(); }
+  //
+  // So a tick is (30 - speed) sixteenths of a second, and the speed setting
+  // starts at 25 - four ticks a second, not sixty.  Everything moved five
+  // times too fast here, which is why the units looked frantic.
+  var speed = 25;                       // DAT_00437698
+  var nextTick = 0;
+  function tickInterval() { return (30 - speed) * 16; }
+
+  var speedInput = document.getElementById('speed');
+  speedInput.oninput = function () {
+    speed = Math.max(0, Math.min(29, parseInt(speedInput.value, 10) || 0));
+    document.getElementById('speedRead').textContent =
+        speed + ' (' + tickInterval() + 'ms)';
+  };
+  speedInput.oninput();
+
   var lastPanel = 0;
   function frame(now) {
     if (loaded) {
-      M._lm_step(1);
+      if (now >= nextTick) {
+        M._lm_step(1);
+        nextTick = now + tickInterval();
+      }
       present();
       if (now - lastPanel > 250) { refreshPanel(); lastPanel = now; }
     }
