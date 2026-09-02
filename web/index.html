@@ -492,7 +492,15 @@ createLordMonarch().then(function (M) {
     var over = M._lm_outcome();
     if (over && !said) {
       said = true;
-      say(over === 1 ? countryName(0) + ' の勝利' : countryName(0) + ' は敗れた');
+      // Whichever country the player has, not always the first one.  With
+      // nobody at the keyboard - the watch button - the verdict belongs to
+      // whoever is left standing.
+      var me = M._lm_human();
+      var winner = me;
+      if (me > 3) for (var w = 0; w < 4; w++) if (!M._lm_out(w)) winner = w;
+      say(over === 1
+              ? countryName(winner) + ' の勝利 — 次の面へ進めます'
+              : countryName(me) + ' は敗れた');
       // The game's own ending picture for a win; the interlude for a loss.
       showPicture(over === 1 ? 'END' : 'GAKU');
       // And its own tunes for them - SOUND.CFG entry 2 is "Winner!", 3 is
