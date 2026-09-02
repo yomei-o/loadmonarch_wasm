@@ -135,6 +135,14 @@ createLordMonarch().then((M) => {
     expect('the war asks for the stage tune', M._lm_music_wanted(), set);
     console.log(`  music wanted: ${M._lm_music_wanted()} (set ${set})`);
 
+    // SOUND.CFG names the tunes, and says which of them loop.
+    const tune = M.UTF8ToString(M._lm_tune_name(set));
+    expect('the stage tune has a name', tune.length, (n) => n > 0);
+    expect('and it loops', M._lm_tune_loops(set), 1);
+    // Entry 0 is the Ending Theme, which plays once.
+    expect('the ending theme does not', M._lm_tune_loops(0), 0);
+    console.log(`  tune ${set}: ${tune}`);
+
     M._lm_music_stop();
     expect('stopping stops it', M._lm_music_playing(), 0);
 

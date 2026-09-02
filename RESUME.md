@@ -1214,6 +1214,30 @@ WASM は `lm_picture_open/width/height/pixels`、ページは「絵」ボタン�
 **どの面のセーブかはファイルに入っていない** — 原作も別で持っている。
 ページは localStorage に面番号と操作国を添えて保存する。
 
+## SOUND/SOUND.CFG = サウンドトラック表
+
+NAME.TXT と同じ ini。94項目。各ブロックが `ENTRY=`（**そのままファイル番号** —
+entry 10 は LM010.MID）、`NAME=`（曲名）、`MIDI=`、`LOOP=`、`CD=`（CD版の
+トラック番号）を持つ。
+
+**曲名が仕掛けを裏付けている**: 各背景セットに **Normal / Happy / Pause** の
+3曲があり、0040a110 が選ぶのはまさに Normal と Happy。
+
+```
+entry  0 Ending Theme (LOOP=0)     entry 10/11/12 Lord Monarch Night (set 10)
+entry  2 Winner!                   entry 20/21/22 Food Panic        (set 20)
+entry  3 Game Over                 entry 30/31/32 China Wars        (set 30)
+entry  4 Award(class)              ...
+entry  6 Days Passed
+```
+
+末尾の項目（entry 05007 など）は**効果音の名前だけで MIDI ファイルが無い** —
+"Build Bridge"、"I've lost..."、"Giddyup!"、"SIGH"、"Magic Sound"、"Bird"。
+**この版に効果音は入っていない**（CD版か別デバイス用）。音楽だけ。
+
+`worldReadTunes()` が読み、WASM は `lm_tune_name` / `lm_tune_loops`。
+ページは曲が変わるときに曲名を出す。
+
 ## 引き継ぎ (2026-09-02 時点)
 
 **動いているもの**: マップ・スプライト（3ズーム）・パレットの脈動・

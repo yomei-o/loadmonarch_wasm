@@ -633,7 +633,9 @@ createLordMonarch().then(function (M) {
     var want = M._lm_music_wanted();
     if (want < 0 || want === playing) return;
     playing = want;
-    M._lm_music_play(playing, 1);
+    M._lm_music_play(playing, M._lm_tune_loops(playing));
+    var name = heapString(M._lm_tune_name(playing));
+    if (name) say('♪ ' + name);
   }
 
   function startMusic() {

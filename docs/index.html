@@ -176,7 +176,7 @@
 </main>
 <footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902033719"></script>
+<script src="loadmonarch.js?v=20260902034044"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -633,7 +633,9 @@ createLordMonarch().then(function (M) {
     var want = M._lm_music_wanted();
     if (want < 0 || want === playing) return;
     playing = want;
-    M._lm_music_play(playing, 1);
+    M._lm_music_play(playing, M._lm_tune_loops(playing));
+    var name = heapString(M._lm_tune_name(playing));
+    if (name) say('♪ ' + name);
   }
 
   function startMusic() {

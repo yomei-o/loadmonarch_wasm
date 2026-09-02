@@ -82,6 +82,27 @@ typedef struct {
 // Reads it, or returns 0 and leaves the list empty.
 int worldReadStages(StageList *stages, const Host *host);
 
+// SOUND/SOUND.CFG: the soundtrack, in the same shape as the campaign list.
+// Each block gives an ENTRY - which is the number in the file name, so entry 10
+// is LM010.MID - a NAME, a MIDI file, whether it LOOPs, and a CD track for the
+// release that had one.  The names say what the tunes are for: every scenery
+// set has a Normal, a Happy and a Pause, which is exactly the pair 0040a110
+// chooses between.
+//
+// The last entries name sound effects and carry no file: this release has no
+// effects, only music.
+#define TUNE_MAX  40
+#define TUNE_NAME 40
+
+typedef struct {
+    unsigned count;
+    unsigned entry[TUNE_MAX];       // the file number, e.g. 10 for LM010.MID
+    char name[TUNE_MAX][TUNE_NAME];
+    unsigned char loops[TUNE_MAX];
+} TuneList;
+
+int worldReadTunes(TuneList *tunes, const Host *host);
+
 // data1.bz, laid out by 00407560: a 256-wide sheet of everything the
 // interface is drawn from, with 0x70 standing for transparent.
 #define UI_SHEET_W 256

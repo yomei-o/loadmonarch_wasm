@@ -111,6 +111,60 @@ int worldReadStages(StageList *stages, const Host *host) {
     return stages->count > 0;
 }
 
+// SOUND.CFG, the same ini shape as NAME.TXT.  Only the blocks that name a
+// MIDI file are kept - the rest are sound effects this release does not ship.
+int worldReadTunes(TuneList *tunes, const Host *host) {
+    memset(tunes, 0, sizeof *tunes);
+    static unsigned char text[16384];
+    unsigned size = 0;
+    if (!hostRead(host, "SOUND/SOUND.CFG", text, sizeof text - 1, &size))
+        return 0;
+    text[size] = 0;
+
+    int entry = -1;
+    unsigned char loops = 0;
+    char name[TUNE_NAME] = {0};
+    int hasFile = 0;
+    const char *p = (const char *)text;
+
+    for (;;) {
+        const char *end = p;
+        while (*end && *end != 10 && *end != 13) end++;
+        const size_t length = (size_t)(end - p);
+
+        const int newBlock = length > 2 && p[0] == '[';
+        if ((newBlock || *p == 0) && entry >= 0 && hasFile &&
+            tunes->count < TUNE_MAX) {
+            const unsigned at = tunes->count++;
+            tunes->entry[at] = (unsigned)entry;
+            tunes->loops[at] = loops;
+            memcpy(tunes->name[at], name, sizeof name);
+        }
+        if (newBlock) {
+            entry = -1;
+            loops = 0;
+            hasFile = 0;
+            name[0] = 0;
+        } else if (length > 6 && strncmp(p, "ENTRY=", 6) == 0) {
+            entry = atoi(p + 6);
+        } else if (length > 5 && strncmp(p, "LOOP=", 5) == 0) {
+            loops = (unsigned char)atoi(p + 5);
+        } else if (length > 5 && strncmp(p, "MIDI=", 5) == 0) {
+            hasFile = length > 6;       // "MIDI=" with nothing after it is none
+        } else if (length > 5 && strncmp(p, "NAME=", 5) == 0) {
+            size_t take = length - 5;
+            if (take > TUNE_NAME - 1) take = TUNE_NAME - 1;
+            memcpy(name, p + 5, take);
+            name[take] = 0;
+        }
+
+        if (*end == 0) break;
+        p = end;
+        while (*p == 10 || *p == 13) p++;
+    }
+    return tunes->count > 0;
+}
+
 static int loadBank(TileBank *bank, const Host *host, const char *path,
                     int tileSize, NameTable *names, char *message,
                     unsigned messageSize) {

@@ -36,6 +36,7 @@ namespace {
 GameState g_game;
 Sim g_sim;
 StageList g_stages;
+TuneList g_tunes;
 Host g_host;
 unsigned char *g_archive;
 unsigned g_archiveSize;
@@ -119,6 +120,7 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
         return 0;
     }
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
+    worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
     surfaceInit(&g_surface, VIEW_W, VIEW_H, g_indices);
     return stageCount();
@@ -497,6 +499,18 @@ extern "C" {
 
 // Names are the ones in the zip: SOUND/LM000.MID and up.  Non-zero when it
 // will play.
+// SOUND.CFG's own name for a tune, and whether it loops.
+EMSCRIPTEN_KEEPALIVE const char *lm_tune_name(int number) {
+    for (unsigned i = 0; i < g_tunes.count; i++)
+        if (g_tunes.entry[i] == (unsigned)number) return g_tunes.name[i];
+    return "";
+}
+EMSCRIPTEN_KEEPALIVE int lm_tune_loops(int number) {
+    for (unsigned i = 0; i < g_tunes.count; i++)
+        if (g_tunes.entry[i] == (unsigned)number) return g_tunes.loops[i];
+    return 1;
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop) {
     char path[64];
     snprintf(path, sizeof path, "SOUND/LM%03d.MID", number);
