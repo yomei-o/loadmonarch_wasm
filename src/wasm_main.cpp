@@ -328,6 +328,15 @@ EMSCRIPTEN_KEEPALIVE const char *lm_country_name(int faction) {
 EMSCRIPTEN_KEEPALIVE const char *lm_order_name(int order) {
     return worldOrderName(&g_game.world, (unsigned)(order < 0 ? 99 : order));
 }
+// Which country the player has.  DAT_004365cd in the original, where it comes
+// from the campaign; here it is a choice, since any of the four plays the same
+// way and watching a different one is half the interest of a port.
+EMSCRIPTEN_KEEPALIVE void lm_set_human(int faction) {
+    if (faction < 0 || faction >= 4) return;
+    g_sim.humanFaction = (unsigned)faction;
+}
+EMSCRIPTEN_KEEPALIVE int lm_human(void) { return (int)g_sim.humanFaction; }
+
 // 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
 // outlasted the rest, 2 when the player is out.
 EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }

@@ -162,6 +162,14 @@ createLordMonarch().then((M) => {
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
     expect('and the count reads back', M._lm_selected(), picked);
+    // Which country is the player's is a choice here.
+    expect('the player starts as the first country', M._lm_human(), 0);
+    M._lm_set_human(2);
+    expect('and can be another', M._lm_human(), 2);
+    M._lm_set_human(9);
+    expect('but not a fifth', M._lm_human(), 2);
+    M._lm_set_human(0);
+
     // DATA/*.256: the title and the interludes.
     {
         const stem = 'LOGO';

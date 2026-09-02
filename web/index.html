@@ -93,6 +93,9 @@
   th { color: var(--muted); font-weight: normal; font-size: 11px; }
   td.name { text-align: left; }
   tr.out td { opacity: .45; }
+  #factions tbody tr { cursor: pointer; }
+  #factions tbody tr:hover td { background: #ffffff10; }
+  tr.mine td { color: var(--gold); }
   .swatch { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1px solid #0006; }
   footer {
     padding: 4px 12px; border-top: 1px solid var(--line);
@@ -165,6 +168,8 @@
        出ます。何も選んでいなければクリックでユニットを置きます（資金100）。</p>
     <p style="color:var(--muted)">国名と命令名はシナリオごとに違い、
        ゲームのデータから読んでいます。</p>
+    <p style="color:var(--muted)">上の表の国をクリックすると、
+       その国を操作します（&#9654; が今の自国）。</p>
   </aside>
 </main>
 <footer id="hint">矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
@@ -270,13 +275,23 @@ createLordMonarch().then(function (M) {
     for (var f = 0; f < 5; f++) {
       var tr = document.createElement('tr');
       if (M._lm_out(f)) tr.className = 'out';        // 0041b370's mark
+      if (mine) tr.className += ' mine';
+      tr.title = 'クリックでこの国を操作';
+      tr.onclick = (function (which) {
+        return function () {
+          M._lm_set_human(which);
+          M._lm_clear_selection();
+          refreshPanel();
+        };
+      })(f);
       // What the game's own Graph Window shows for each country: its purse,
       // its tax rate, its share of the board, its total strength, and its
       // leader's strength - which is deliberately not part of the total.
       var lead = M._lm_leader_strength(f);
+      var mine = f === M._lm_human();
       var cells = [
         '<span class="swatch" style="background:' + factionColours[f] +
-            '"></span>' + countryName(f),
+            '"></span>' + (mine ? '&#9654; ' : '') + countryName(f),
         M._lm_funds(f), M._lm_tax(f),
         (M._lm_area(f) / 100).toFixed(2) + '%',
         M._lm_strength(f), lead || '-',
