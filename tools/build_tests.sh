@@ -18,6 +18,8 @@ sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/state_test.exe     tests/st
 echo "built tests/state_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/growth_test.exe    tests/growth_test.c $SIM
 echo "built tests/growth_test.exe"
+sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/orders_test.exe    tests/orders_test.c $SIM
+echo "built tests/orders_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/stress_test.exe    tests/stress_test.c $SIM
 echo "built tests/stress_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/sim_harness.exe     tests/sim_harness.c $SIM
@@ -27,5 +29,6 @@ echo "built tests/sim_harness.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/frame_dump.exe      tests/frame_dump.c $SIM
 echo "built tests/frame_dump.exe"
 ./tests/state_test.exe
+./tests/orders_test.exe
 ./tests/stress_test.exe
 ./tests/growth_test.exe

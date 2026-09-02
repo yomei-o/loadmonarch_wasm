@@ -1697,6 +1697,10 @@ SimActionResult simDemolishBuilding(Sim *sim, unsigned slot) {
     if (left < 1) {
         cell->terrain = 0;
         cell->value = CELL_VALUE_RESET;
+        // 0040bc20 re-tiles too: the rest of the row of buildings has to know
+        // that one of them has gone.
+        retileAround(state, (int)entity->position[0],
+                     (int)entity->position[1]);
         return SIM_ACTION_DONE;
     }
     cell->value = (unsigned)left;
