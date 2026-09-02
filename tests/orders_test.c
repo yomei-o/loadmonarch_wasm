@@ -171,6 +171,71 @@ int main(void) {
                took, state.world.cells[WORLD_INDEX(22, 20)].terrain);
     }
 
+    // Order 4: go for a neighbour's settlement.  004208b0 takes its value
+    // down by the raider's strength and razes it when there is nothing left,
+    // and the loss goes on the neighbour's account.
+    board(&state, &sim, 8000);
+    state.world.cells[WORLD_INDEX(22, 20)].terrain = 9;      // faction 1's
+    state.world.cells[WORLD_INDEX(22, 20)].value = 100;
+    state.factions[1].at1e = 0x80;
+    stateMarkBlocked(&state);
+    {
+        const long took = carryOut(&sim, &state, 4, 22, 20, 9);
+        expect("order 4 got there", took > 0, 1);
+        expect("and razed the settlement",
+               state.world.cells[WORLD_INDEX(22, 20)].terrain, 0);
+        expect("which the neighbour paid for",
+               state.factions[1].at14 > 0, 1);
+        printf("  order 4 (raid) took %ld sweeps, cost the owner %u\n",
+               took, state.factions[1].at14);
+    }
+
+    // Order 2: strike a castle.  A unit that gets onto somebody's castle
+    // square drops everything, takes this order and lashes out; what this
+    // checks is that a player can send it there at all and that the defenders
+    // start losing.
+    board(&state, &sim, 20000);
+    state.world.cells[WORLD_INDEX(22, 20)].terrain = 0x15;   // faction 1's
+    state.world.cells[WORLD_INDEX(22, 20)].value = 100;
+    state.factions[1].at1e = 0x80;
+    state.factions[1].at08[0] = 22;
+    state.factions[1].at08[1] = 20;
+    {
+        Entity *king = &state.entities[2];
+        king->flags = 0;
+        king->faction = 1;
+        king->at0d = 0x20 | 1;
+        king->at08 = 2000;
+        king->at0c = 6;
+        king->at0f = 4;
+        king->at18 = 0x1f0;
+        king->position[0] = 22;
+        king->position[1] = 20;
+        king->target[0] = 22;
+        king->target[1] = 20;
+        state.world.cells[WORLD_INDEX(22, 20)].occupant = 2;
+    }
+    stateMarkBlocked(&state);
+    {
+        const unsigned was = state.entities[2].at08;
+        if (!simSelect(&sim, 1, 20, 20, 1)) {
+            printf("  FAIL order 2: the unit could not be chosen\n");
+            failures++;
+        }
+        simAimSelection(&sim, 22, 20);
+        expect("order 2 was taken up",
+               simOrderSelected(&sim, 2, 0, 22, 20) > 0, 1);
+        int hit = 0;
+        for (int i = 0; i < 400 && !hit; i++) {
+            simStep(&sim);
+            if (state.entities[2].at08 < was) hit = 1;
+            if (state.entities[2].flags & 0x80) hit = 1;
+        }
+        expect("and the castle's defender felt it", hit, 1);
+        printf("  order 2 (castle) took the king from %u to %u\n",
+               was, state.entities[2].at08);
+    }
+
     // Order 0: stand still.  Nothing to check on the board - what matters is
     // that the unit does not wander off, which is the whole point of it.
     board(&state, &sim, 8000);
