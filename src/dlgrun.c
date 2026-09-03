@@ -300,55 +300,42 @@ static const char *kHelpPages[4] = {
     "and the stage is yours.",
 };
 
-void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
-    if (!dlgRunUp(r)) return;
-    dlgDraw(out, &r->dlg);
-
-    int x, y, w, h;
+// What the original puts into these controls, it puts in with
+// SetDlgItemText: the control's own text is replaced and Windows repaints its
+// whole rectangle.  The port used to paint over the resource's text instead,
+// which showed in the Japanese release - a static twenty rows tall draws its
+// text two rows down, so the last two rows of "å¨é¨" stayed under the number
+// that was meant to replace it.  Anything that fits in a control's text goes
+// through dlgSetText now, and the two that do not - the rules page and the
+// tune's file - are painted after dlgDraw over a cleared rectangle.
+static void fillTexts(DlgRunner *r, const GameState *game) {
+    Dialog *d = &r->dlg;
     switch (r->which) {
     case DLG_INFORMATION:
-        if (dlgControlRect(&r->dlg, 1067, &x, &y, &w, &h))
-            fontDrawText(out, x, y, (unsigned char)UI_DARK,
-                         r->askKind ? "Powerful enemies in path."
-                                    : "Passage blocked by friendly unit");
+        dlgSetText(d, 1067, r->askKind ? "Powerful enemies in path."
+                                       : "Passage blocked by friendly unit");
         break;
     case DLG_ALLIANCE: {
-        // The countries' own colours go in the frames, and their names beside
-        // them - which is what the original fills those black frames with.
+        // The countries' names beside the frames their colours go in, which
+        // is what the original fills those statics with.
         const unsigned me = r->sim->humanFaction;
-        if (dlgControlRect(&r->dlg, 1076, &x, &y, &w, &h))
-            fontDrawText(out, x, y, (unsigned char)UI_DARK,
-                         worldCountryName(&game->world, me));
+        dlgSetText(d, 1076, worldCountryName(&game->world, me));
         static const int nameId[3] = {1079, 1085, 1088};
-        static const int frameId[3] = {1080, 1086, 1089};
         int n = 0;
         for (unsigned f = 0; f < PLAYABLE_FACTIONS && n < 3; f++) {
             if (f == me) continue;
-            if (dlgControlRect(&r->dlg, nameId[n], &x, &y, &w, &h))
-                fontDrawText(out, x, y, (unsigned char)UI_DARK,
-                             worldCountryName(&game->world, f));
-            if (dlgControlRect(&r->dlg, frameId[n], &x, &y, &w, &h)) {
-                const unsigned char ink = (unsigned char)(0x71 + f);
-                for (int j = 2; j < h - 2; j++)
-                    for (int i = 2; i < w - 2; i++)
-                        if (x + i >= 0 && x + i < out->width &&
-                            y + j >= 0 && y + j < out->height)
-                            out->pixels[(size_t)(y + j) * out->width + x + i] =
-                                ink;
-            }
+            dlgSetText(d, nameId[n], worldCountryName(&game->world, f));
             n++;
         }
-        if (dlgControlRect(&r->dlg, 1083, &x, &y, &w, &h) && r->allyPick >= 0)
-            fontDrawText(out, x, y, (unsigned char)UI_DARK,
-                         worldCountryName(&game->world,
-                                          (unsigned)r->allyPick));
+        dlgSetText(d, 1083, r->allyPick >= 0
+                   ? worldCountryName(&game->world, (unsigned)r->allyPick)
+                   : "");
         break;
     }
     case DLG_LOAD_QUEST_MAP: {
-        if (r->dlg.listSel >= 0 && r->dlg.listSel < r->dlg.items[0] &&
-            dlgControlRect(&r->dlg, 1039, &x, &y, &w, &h))
-            fontDrawText(out, x, y, (unsigned char)UI_DARK,
-                         r->dlg.item[0][r->dlg.listSel]);
+        dlgSetText(d, 1039,
+                   r->dlg.listSel >= 0 && r->dlg.listSel < r->dlg.items[0]
+                   ? r->dlg.item[0][r->dlg.listSel] : "---");
 
         // What the stage on the board is worth so far, which is what 0041aa30
         // and 0041aaf0 work out when it ends.  Before this the whole panel
@@ -363,7 +350,6 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
             {1115, 9}, {1118, 10},                          // Results
         };
         for (unsigned i = 0; i < sizeof slot / sizeof slot[0]; i++) {
-            if (!dlgControlRect(&r->dlg, slot[i].id, &x, &y, &w, &h)) continue;
             switch (slot[i].which) {
             case 0: snprintf(n, sizeof n, "%d", r->stageCount); break;
             case 1: snprintf(n, sizeof n, "%u", score.held); break;
@@ -381,14 +367,59 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
             case 9: snprintf(n, sizeof n, "%d", score.remaining); break;
             default: snprintf(n, sizeof n, "%u", score.daysLeft); break;
             }
-            // The resource fills these with "---" and the port has a number
-            // for them, so the slot is cleared before the number goes in.
-            for (int j = 0; j < 16 && y + j < out->height; j++) {
-                unsigned char *row = out->pixels + (size_t)(y + j) * out->width;
-                for (int i = 0; i < w && x + i < out->width; i++)
-                    if (x + i >= 0) row[x + i] = (unsigned char)UI_FACE;
+            dlgSetText(d, slot[i].id, n);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+// A control whose text is too long for DLG_ITEM_TEXT is painted after
+// dlgDraw, and the rectangle is cleared first so the resource's own
+// placeholder does not show through it.
+static int clearedSlot(Surface *out, const Dialog *d, int id,
+                       int *x, int *y, int *w, int *h) {
+    if (!dlgControlRect(d, id, x, y, w, h)) return 0;
+    for (int j = 0; j < *h; j++) {
+        const int py = *y + j;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int i = 0; i < *w; i++) {
+            const int pxx = *x + i;
+            if (pxx < 0 || pxx >= out->width) continue;
+            row[pxx] = (unsigned char)UI_FACE;
+        }
+    }
+    return 1;
+}
+
+void dlgRunDraw(Surface *out, DlgRunner *r, const GameState *game) {
+    if (!dlgRunUp(r)) return;
+    fillTexts(r, game);
+    dlgDraw(out, &r->dlg);
+
+    int x, y, w, h;
+    switch (r->which) {
+    case DLG_ALLIANCE: {
+        // The names are the statics' own text now; what is left is the
+        // countries' colours, which go in the black frames beside them.
+        const unsigned me = r->sim->humanFaction;
+        static const int frameId[3] = {1080, 1086, 1089};
+        int n = 0;
+        for (unsigned f = 0; f < PLAYABLE_FACTIONS && n < 3; f++) {
+            if (f == me) continue;
+            if (dlgControlRect(&r->dlg, frameId[n], &x, &y, &w, &h)) {
+                const unsigned char ink = (unsigned char)(0x71 + f);
+                for (int j = 2; j < h - 2; j++)
+                    for (int i = 2; i < w - 2; i++)
+                        if (x + i >= 0 && x + i < out->width &&
+                            y + j >= 0 && y + j < out->height)
+                            out->pixels[(size_t)(y + j) * out->width + x + i] =
+                                ink;
             }
-            fontDrawText(out, x, y, (unsigned char)UI_DARK, n);
+            n++;
         }
         break;
     }
@@ -400,7 +431,10 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
             char path[32];
             snprintf(path, sizeof path, "SOUND/LM%03d.MID",
                      r->host->tuneNumber(r->host->user, r->dlg.listSel));
-            fontDrawText(out, x + 4, y + 2, (unsigned char)UI_DARK, path);
+            // Where dlg.c draws an edit's own text, so it sits in the box
+            // whatever height the release gives it.
+            fontDrawText(out, x + 4, y + (h - 16) / 2,
+                         (unsigned char)UI_DARK, path);
         }
         break;
     }
@@ -408,7 +442,7 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
         const int page = dlgValue(&r->dlg, 1122);
         const int loaded = dlgHelpPages();
         if (page >= 0 && page < (loaded ? loaded : 4) &&
-            dlgControlRect(&r->dlg, 1123, &x, &y, &w, &h)) {
+            clearedSlot(out, &r->dlg, 1123, &x, &y, &w, &h)) {
             // 004145c0 puts the page the combo has selected into the static.
             // The game's own text is one paragraph a page with its own
             // newlines in it, so it is wrapped to the control; the port's four

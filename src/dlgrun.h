@@ -101,7 +101,7 @@ void dlgRunInit(DlgRunner *r, Sim *sim, const DlgHost *host);
 int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH);
 
 int dlgRunUp(const DlgRunner *r);
-void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game);
+void dlgRunDraw(Surface *out, DlgRunner *r, const GameState *game);
 void dlgRunHover(DlgRunner *r, int x, int y);
 
 // A click.  Answers non-zero when the dialog closed, so the caller knows the
