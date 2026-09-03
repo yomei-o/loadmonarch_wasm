@@ -204,22 +204,42 @@ createLordMonarch().then((M) => {
                M._lm_ui_region(0, 0, 999, 8), 0);
     }
 
-    // DATA/*.256: the title and the interludes.
+    // DATA/*.256: the title and the interludes, drawn over the frame in the
+    // one canvas rather than on a second one of the page's own.
     {
-        const stem = 'LOGO';
-        const p = M._lm_alloc(stem.length + 1);
-        for (let i = 0; i < stem.length; i++)
-            M.HEAPU8[p + i] = stem.charCodeAt(i);
-        M.HEAPU8[p + stem.length] = 0;
-        expect('the title picture reads', M._lm_picture_open(p), 1);
-        M._lm_free(p);
-        expect('and is the size its header says', M._lm_picture_width(), 256);
-        expect('its height too', M._lm_picture_height(), 192);
-        const pix = new Uint32Array(M.HEAPU8.buffer, M._lm_picture_pixels(),
-                                    256 * 192);
+        const show = (stem) => {
+            const p = M._lm_alloc(stem.length + 1);
+            for (let i = 0; i < stem.length; i++)
+                M.HEAPU8[p + i] = stem.charCodeAt(i);
+            M.HEAPU8[p + stem.length] = 0;
+            const ok = M._lm_picture_show(p);
+            M._lm_free(p);
+            return ok;
+        };
+        expect('the title picture reads', show('LOGO'), 1);
+        expect('and is up', M._lm_picture_up(), 1);
+        // 256 by 192 centred in the frame, so the middle of the frame is a
+        // pixel of the picture and the corner is the darkened board.
+        const frame = () => new Uint32Array(
+            M.HEAPU8.buffer, M._lm_frame(), M._lm_width() * M._lm_height());
+        let px = frame();
+        const mid = (M._lm_height() >> 1) * M._lm_width() +
+                    (M._lm_width() >> 1);
         const seen = new Set();
-        for (let i = 0; i < pix.length; i += 97) seen.add(pix[i]);
+        for (let y = -80; y < 80; y += 7)
+            for (let x = -120; x < 120; x += 11)
+                seen.add(px[mid + y * M._lm_width() + x]);
         expect('with real colours in it', seen.size, (n) => n > 8);
+        M._lm_picture_dismiss();
+        expect('a click puts it away', M._lm_picture_up(), 0);
+        px = frame();
+        const after = new Set();
+        for (let y = -80; y < 80; y += 7)
+            for (let x = -120; x < 120; x += 11)
+                after.add(px[mid + y * M._lm_width() + x]);
+        expect('and the board is back', [...after].join() !== [...seen].join(),
+               true);
+        expect('a picture that is not there fails', show('NOSUCH'), 0);
     }
 
     // 00426900's inspector: with the cursor somewhere, the cell answers.

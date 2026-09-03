@@ -25,6 +25,16 @@ extern "C" {
 
 // The largest view this will draw.  The map is 48 cells, so 768 shows all of
 // it at the middle zoom and there is no point going past that.
+// The windows are 176 across and sit in a column of their own with a four
+// pixel gutter on each side.  The board gets the rest.
+#define PANEL_COL (PANEL_SIDE + 8)
+
+// And the four countries' running totals get a band of their own above the
+// board.  They used to be written straight over the map, which is not where
+// the original has them: there they are four windows of their own (0xea66 to
+// 0xea69) and windows do not lie on top of one another.
+#define UI_STATUS_H 40
+
 #define VIEW_MAX_W 800
 #define VIEW_MAX_H 800
 // The campaign comes out of MAP/NAME.TXT - its order, which is not the order
@@ -78,15 +88,38 @@ char g_message[256];
 // the native build hands to a DIB section.
 unsigned char g_indices[VIEW_MAX_W * VIEW_MAX_H];
 unsigned g_pixels[VIEW_MAX_W * VIEW_MAX_H];
-Surface g_surface;              // the map, which starts under the menu bar
-Surface g_screen;               // all of it, bar included
+// The board and the column of windows beside it are drawn apart and put
+// together afterwards, because in the original they are separate windows and
+// separate windows do not lie on top of one another.  The board is as wide as
+// what the column leaves.
+unsigned char g_boardIdx[VIEW_MAX_W * VIEW_MAX_H];
+unsigned char g_sideIdx[PANEL_COL * VIEW_MAX_H];
+unsigned char g_bandIdx[VIEW_MAX_W * UI_STATUS_H];
+Surface g_surface;              // the board alone
+Surface g_side;                 // the column of windows down its right
+Surface g_band;                 // the totals, in a band above the board
+Surface g_screen;               // all of it, bars and windows included
+int g_boardW;                   // how much of the width the board gets
+int g_boardH;                   // and of the height, once the band has its
+int g_statusH;                  // how tall the band of totals is
+
+// DATA/*.256, the title and the interludes and the ending.  The original opens
+// each in a window of its own; here it goes over the frame in the one canvas,
+// and a click anywhere puts it away.
+Picture g_picture;
+int g_pictureUp;
+
+// The rectangle a left-drag gathers an army with, in screen pixels.
+int g_dragOn, g_dragX0, g_dragY0, g_dragX1, g_dragY1;
 MenuBar g_bar;
 int g_viewW = 640, g_viewH = 480;
 
 void clampView() {
+    const int viewW = g_boardW > 0 ? g_boardW : g_viewW;
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
-    const int maxX = span - g_viewW, maxY = span - g_viewH;
+    const int maxX = span - viewW;
+    const int maxY = span - (g_boardH > 0 ? g_boardH : g_viewH);
     if (g_viewX > maxX) g_viewX = maxX;
     if (g_viewY > maxY) g_viewY = maxY;
     if (g_viewX < 0) g_viewX = 0;
@@ -137,6 +170,106 @@ static void dialogsReady(void);
 extern "C" EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop);
 extern "C" EMSCRIPTEN_KEEPALIVE void lm_music_stop(void);
 
+// How many of the three windows are up, and so whether there is a column for
+// them at all.  Display / Unit, Progress and Graph Window turn them on and
+// off, and so do the first three buttons of the tool bar.
+static int windowsUp(void) {
+    return (g_windowShown[0] ? 1 : 0) + (g_windowShown[1] ? 1 : 0) +
+           (g_windowShown[2] ? 1 : 0);
+}
+
+// The board, the column, and the whole client area.  The board is a buffer of
+// its own rather than a slice of the screen, because it is narrower than the
+// screen whenever a window is up - that is the whole point of the column.
+static void layoutSurfaces(void) {
+    g_boardW = g_viewW - (windowsUp() ? PANEL_COL : 0);
+    if (g_boardW < 160) g_boardW = g_viewW;         // too narrow to give any up
+    g_statusH = g_showStatus ? UI_STATUS_H : 0;
+    g_boardH = g_viewH - g_statusH;
+    if (g_boardH < 120) { g_statusH = 0; g_boardH = g_viewH; }
+    surfaceInit(&g_screen, g_viewW, g_viewH + UI_CHROME_H, g_indices);
+    surfaceInit(&g_surface, g_boardW, g_boardH, g_boardIdx);
+    surfaceInit(&g_side, PANEL_COL, g_viewH, g_sideIdx);
+    surfaceInit(&g_band, g_boardW, UI_STATUS_H, g_bandIdx);
+}
+
+// Where the board's own first row is on screen: under the bars, and under the
+// band of totals when that is up.  Every click that means a square on the map
+// is measured from here.
+static int boardTop(void) { return UI_CHROME_H + g_statusH; }
+
+// Where each of the three sits in the column, top to bottom in the order the
+// Display menu lists them.  Answers the y, or -1 when that one is not up.
+static int windowTop(int which) {
+    int at = 4;
+    for (int i = 0; i < 3; i++) {
+        static const int order[3] = { 1, 0, 2 };    // Unit, Progress, Graph
+        const int w = order[i];
+        if (!g_windowShown[w]) continue;
+        if (w == which) return at;
+        at += PANEL_SIDE + 4;
+    }
+    return -1;
+}
+
+// The Graph Window is the last of the three and takes what is left, but never
+// less than this - a short view used to make it vanish altogether, which is
+// why only two of the three ever showed.
+#define GRAPH_MIN_H 176
+
+static int graphHeight(int top) {
+    const int left = g_viewH - top - 4;
+    return left < GRAPH_MIN_H ? GRAPH_MIN_H : left;
+}
+
+// A dashed white box, which is what a rubber band looks like everywhere.
+static void drawDragRect(void) {
+    const int x0 = g_dragX0 < g_dragX1 ? g_dragX0 : g_dragX1;
+    const int x1 = g_dragX0 < g_dragX1 ? g_dragX1 : g_dragX0;
+    const int y0 = g_dragY0 < g_dragY1 ? g_dragY0 : g_dragY1;
+    const int y1 = g_dragY0 < g_dragY1 ? g_dragY1 : g_dragY0;
+    for (int x = x0; x <= x1; x++)
+        for (int e = 0; e < 2; e++) {
+            const int y = e ? y1 : y0;
+            if (x < 0 || x >= g_viewW || y < 0 || y >= g_viewH) continue;
+            if (((x + y) / 3) % 2) continue;            // the dashes
+            g_indices[(size_t)(UI_CHROME_H + y) * g_viewW + x] = UI_LIGHT;
+        }
+    for (int y = y0; y <= y1; y++)
+        for (int e = 0; e < 2; e++) {
+            const int x = e ? x1 : x0;
+            if (x < 0 || x >= g_viewW || y < 0 || y >= g_viewH) continue;
+            if (((x + y) / 3) % 2) continue;
+            g_indices[(size_t)(UI_CHROME_H + y) * g_viewW + x] = UI_LIGHT;
+        }
+}
+
+// The picture, in its own colours rather than the board's - which is why it
+// goes on after the palette has been resolved.  Centred, with the frame behind
+// it darkened so it reads as a window over the game.
+static void drawPicture(void) {
+    const int W = g_viewW, H = g_viewH + UI_CHROME_H;
+    for (int i = 0; i < W * H; i++) {
+        const unsigned was = g_pixels[i];
+        g_pixels[i] = 0xff000000u |
+            (((was & 0xffu) >> 2)) |
+            ((((was >> 8) & 0xffu) >> 2) << 8) |
+            ((((was >> 16) & 0xffu) >> 2) << 16);
+    }
+    const int dx = (W - (int)g_picture.width) / 2;
+    const int dy = (H - (int)g_picture.height) / 2;
+    for (unsigned y = 0; y < g_picture.height; y++) {
+        const int py = dy + (int)y;
+        if (py < 0 || py >= H) continue;
+        for (unsigned x = 0; x < g_picture.width; x++) {
+            const int px = dx + (int)x;
+            if (px < 0 || px >= W) continue;
+            g_pixels[(size_t)py * W + px] =
+                g_picture.pixels[(size_t)y * g_picture.width + x];
+        }
+    }
+}
+
 extern "C" {
 
 // The player's zip, copied in by the page.  Returns the number of stages when
@@ -155,12 +288,14 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
                  "that file is not a zip this can read");
         return 0;
     }
+    // A zeroed MenuBar reads as "the first menu is open", so the bar has to be
+    // told to start closed - until it was, the System menu was hanging down
+    // over the board the moment the game appeared.
+    uiBarInit(&g_bar);
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
-    surfaceInit(&g_screen, g_viewW, g_viewH + UI_CHROME_H, g_indices);
-    surfaceInit(&g_surface, g_viewW, g_viewH,
-                g_indices + (size_t)UI_CHROME_H * g_viewW);
+    layoutSurfaces();
     dialogsReady();
     return stageCount();
 }
@@ -186,7 +321,7 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_height(void) { return UI_BAR_H; }
 // is y; -1 when the window is not up.
 EMSCRIPTEN_KEEPALIVE int lm_progress_origin(int axis) {
     if (!g_windowShown[0] || g_progressY < 0) return -1;
-    return axis ? UI_CHROME_H + g_progressY : g_viewW - PANEL_SIDE - 4;
+    return axis ? UI_CHROME_H + g_progressY : g_boardW + 4;
 }
 
 // DAT_0043769c, which 0041dc60 reads and a drag on the tax strip clears.
@@ -197,7 +332,7 @@ EMSCRIPTEN_KEEPALIVE int lm_auto_tax(void) { return g_sim.autoTax ? 1 : 0; }
 // the clock strip sets DAT_00437698.  Non-zero when the point was on one.
 EMSCRIPTEN_KEEPALIVE int lm_panel_drag(int x, int y) {
     if (!g_windowShown[0] || g_progressY < 0) return 0;
-    const int px = x - (g_viewW - PANEL_SIDE - 4);
+    const int px = x - (g_boardW + 4);
     const int py = y - UI_CHROME_H - g_progressY;
     int value = 0;
     switch (panelProgressSlider(px, py, &value)) {
@@ -216,21 +351,12 @@ EMSCRIPTEN_KEEPALIVE int lm_panel_drag(int x, int y) {
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_panel_hit(int x, int y) {
-    const int left = g_viewW - PANEL_SIDE - 4;
-    if (x < left || x >= left + PANEL_SIDE) return 0;
+    // The column is the column: a click anywhere in it is a click on a window
+    // and never reaches the board, the way it cannot reach a window's own
+    // client area in the original.
+    if (!windowsUp() || x < g_boardW) return 0;
     const int my = y - UI_CHROME_H;
-    int at = 4;
-    if (g_windowShown[1]) {
-        if (my >= at && my < at + PANEL_SIDE) return 1;
-        at += PANEL_SIDE + 4;
-    }
-    if (g_windowShown[0]) {
-        if (my >= at && my < at + PANEL_SIDE) return 1;
-        at += PANEL_SIDE + 4;
-    }
-    if (g_windowShown[2] && g_viewH - at > 100)
-        return my >= at && my < g_viewH - 4;
-    return 0;
+    return my >= 0 && my < g_viewH;
 }
 
 // How big a view to draw.  The original's is fixed at what a 1997 screen had;
@@ -241,9 +367,7 @@ EMSCRIPTEN_KEEPALIVE void lm_set_view(int w, int h) {
         return;
     g_viewW = w;
     g_viewH = h;
-    surfaceInit(&g_screen, g_viewW, g_viewH + UI_CHROME_H, g_indices);
-    surfaceInit(&g_surface, g_viewW, g_viewH,
-                g_indices + (size_t)UI_CHROME_H * g_viewW);
+    layoutSurfaces();
     clampView();
 }
 EMSCRIPTEN_KEEPALIVE const char *lm_stage_name(void) {
@@ -270,34 +394,59 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
-    if (g_showStatus) renderStatus(&g_game, &g_surface);
+    if (g_statusH) {
+        // Black, not the face grey the rest of the chrome is: renderStatus
+        // writes in the game's own white and red number fonts, and white on
+        // grey is not readable.
+        memset(g_bandIdx, UI_DARK, (size_t)g_boardW * UI_STATUS_H);
+        renderStatus(&g_game, &g_band);
+    }
 
-    // The three windows, down the right of the board where the original puts
-    // them, drawn from the game's own art rather than by the page.
-    {
-        int at = 4;
-        if (g_windowShown[1]) {
+    // The three windows, in a column of their own beside the board rather than
+    // on top of it - which is how the original has them, four separate
+    // windows that do not overlap.  All three are drawn whenever all three
+    // are asked for; the last takes whatever height is left.
+    if (windowsUp()) {
+        memset(g_sideIdx, UI_FACE, (size_t)PANEL_COL * g_viewH);
+        int at = windowTop(1);
+        if (at >= 0) {
             const int onBoard = g_game.cursorCol < WORLD_GRID &&
                                 g_game.cursorRow < WORLD_GRID;
             const WorldCell *under = onBoard
                 ? &g_game.world.cells[WORLD_INDEX(g_game.cursorCol,
                                                   g_game.cursorRow)] : NULL;
-            panelUnitWindow(&g_surface, &g_game, g_viewW - PANEL_SIDE - 4, at,
+            panelUnitWindow(&g_side, &g_game, 4, at,
                             under ? (int)under->terrain : -1,
                             under ? under->value : 0u);
-            at += PANEL_SIDE + 4;
         }
-        if (g_windowShown[0]) {
-            panelProgressWindow(&g_surface, &g_game, g_sim.humanFaction,
-                                g_sim.days, g_sim.countdown, g_speed,
-                                g_viewW - PANEL_SIDE - 4, at);
+        at = windowTop(0);
+        if (at >= 0) {
+            panelProgressWindow(&g_side, &g_game, g_sim.humanFaction,
+                                g_sim.days, g_sim.countdown, g_speed, 4, at);
             g_progressY = at;
-            at += PANEL_SIDE + 4;
         }
-        if (g_windowShown[2] && g_viewH - at > 100)
-            panelGraphWindow(&g_surface, &g_game, g_viewW - PANEL_SIDE - 4, at,
-                             PANEL_SIDE, g_viewH - at - 4);
+        at = windowTop(2);
+        if (at >= 0)
+            panelGraphWindow(&g_side, &g_game, 4, at, PANEL_SIDE,
+                             graphHeight(at));
     }
+
+    // And the two put together, board first and the column after it.
+    for (int y = 0; y < g_viewH; y++) {
+        unsigned char *row = g_indices + (size_t)(UI_CHROME_H + y) * g_viewW;
+        if (y < g_statusH)
+            memcpy(row, g_bandIdx + (size_t)y * g_boardW, (size_t)g_boardW);
+        else
+            memcpy(row, g_boardIdx + (size_t)(y - g_statusH) * g_boardW,
+                   (size_t)g_boardW);
+        if (g_boardW < g_viewW)
+            memcpy(row + g_boardW, g_sideIdx + (size_t)y * PANEL_COL,
+                   (size_t)(g_viewW - g_boardW));
+    }
+
+    // The rectangle a left-drag gathers an army with.  The page used to draw
+    // this one itself on top of the canvas; it belongs here with the rest.
+    if (g_dragOn) drawDragRect();
     uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
     // Hidden bars still take their room - the board is where it was, and the
     // strip is drawn in the face grey - because a map that jumps about when a
@@ -314,7 +463,36 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         g_pixels[i] = 0xff000000u | (unsigned)rgb[0] |
                       ((unsigned)rgb[1] << 8) | ((unsigned)rgb[2] << 16);
     }
+    if (g_pictureUp && g_picture.pixels) drawPicture();
     return g_pixels;
+}
+
+// Show one of DATA/*.256 over the frame: LOGO to open with, GAKU and GAKU1 to
+// GAKU4 between stages, END at the end.
+EMSCRIPTEN_KEEPALIVE int lm_picture_show(const char *stem) {
+    pictureFree(&g_picture);
+    if (!pictureLoad(&g_picture, &g_host, stem)) return 0;
+    g_pictureUp = 1;
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int lm_picture_up(void) { return g_pictureUp; }
+EMSCRIPTEN_KEEPALIVE void lm_picture_dismiss(void) { g_pictureUp = 0; }
+
+// The rubber band a left-drag draws.  on = 0 puts it away.
+EMSCRIPTEN_KEEPALIVE void lm_drag_rect(int on, int x0, int y0, int x1, int y1) {
+    g_dragOn = on;
+    g_dragX0 = x0 - 0;
+    g_dragY0 = y0 - UI_CHROME_H;
+    g_dragX1 = x1 - 0;
+    g_dragY1 = y1 - UI_CHROME_H;
+}
+
+// Every country's purse filled, for trying a stage out without playing the
+// first half of it.  Not in the original - the one thing on this page that is
+// not - which is why it says so.
+EMSCRIPTEN_KEEPALIVE void lm_cheat_funds(void) {
+    if (g_sim.humanFaction >= FACTION_COUNT) return;
+    g_game.factions[g_sim.humanFaction].funds = 0xffffu;
 }
 
 EMSCRIPTEN_KEEPALIVE void lm_scroll(int dx, int dy) {
@@ -363,7 +541,7 @@ EMSCRIPTEN_KEEPALIVE void lm_set_cursor(int x, int y) {
         stateMoveCursor(&g_game, -1, -1);
         return;
     }
-    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y - UI_CHROME_H) / ts);
+    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y - boardTop()) / ts);
 }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_col(void) { return g_game.cursorCol; }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_row(void) { return g_game.cursorRow; }
@@ -376,7 +554,7 @@ EMSCRIPTEN_KEEPALIVE int lm_click(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     g_lastCol = (unsigned)((g_viewX + x) / ts);
-    g_lastRow = (unsigned)((g_viewY + y - UI_CHROME_H) / ts);
+    g_lastRow = (unsigned)((g_viewY + y - boardTop()) / ts);
     const unsigned actor = simHumanActor(&g_sim);
     g_lastAction = actor < ENTITY_COUNT
         ? (int)simBuildUnitCell(&g_sim, actor, g_lastCol, g_lastRow)
@@ -447,7 +625,7 @@ EMSCRIPTEN_KEEPALIVE int lm_select_at(int x, int y, int force) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y - UI_CHROME_H) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     const unsigned char slot =
         g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
@@ -463,8 +641,8 @@ EMSCRIPTEN_KEEPALIVE int lm_select_rect(int x0, int y0, int x1, int y1,
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     int c0 = (g_viewX + (x0 < x1 ? x0 : x1)) / ts;
     int c1 = (g_viewX + (x0 < x1 ? x1 : x0)) / ts;
-    int r0 = (g_viewY + (y0 < y1 ? y0 : y1) - UI_CHROME_H) / ts;
-    int r1 = (g_viewY + (y0 < y1 ? y1 : y0) - UI_CHROME_H) / ts;
+    int r0 = (g_viewY + (y0 < y1 ? y0 : y1) - boardTop()) / ts;
+    int r1 = (g_viewY + (y0 < y1 ? y1 : y0) - boardTop()) / ts;
     if (c0 < 0) c0 = 0;
     if (r0 < 0) r0 = 0;
     if (c1 > WORLD_GRID - 1) c1 = WORLD_GRID - 1;
@@ -488,7 +666,7 @@ EMSCRIPTEN_KEEPALIVE int lm_unit_here(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y - UI_CHROME_H) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     const unsigned char slot =
         g_game.world.cells[WORLD_INDEX((unsigned)col, (unsigned)row)].occupant;
@@ -514,7 +692,7 @@ EMSCRIPTEN_KEEPALIVE int lm_aim(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y - UI_CHROME_H) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     return simAimSelection(&g_sim, col, row);
 }
@@ -525,7 +703,7 @@ EMSCRIPTEN_KEEPALIVE int lm_order_at(int order, int modifier, int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y - UI_CHROME_H) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) return 0;
     return simOrderSelected(&g_sim, (unsigned)order, modifier, col, row);
 }
@@ -543,7 +721,7 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_open(int x, int y) {
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
     const int col = (g_viewX + x) / ts;
-    const int row = (g_viewY + y - UI_CHROME_H) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
     return uiOrderOpen(&g_menu, &g_game, col, row, x, y, g_viewW,
                        g_viewH + UI_CHROME_H);
 }
@@ -757,14 +935,23 @@ EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
     case 40061:                                     // Overall Order, all
         lm_select_all(1);
         return 1;
+    // Opening or closing one of the three changes how much of the width the
+    // board has, so the surfaces are laid out again and the view pulled back
+    // inside the map.
     case 60001:                                     // Unit Window
         g_windowShown[1] = !g_windowShown[1];
+        layoutSurfaces();
+        clampView();
         return 1;
     case 60002:                                     // Progress Window
         g_windowShown[0] = !g_windowShown[0];
+        layoutSurfaces();
+        clampView();
         return 1;
     case 60003:                                     // Graph Window
         g_windowShown[2] = !g_windowShown[2];
+        layoutSurfaces();
+        clampView();
         return 1;
     case 40080: case 40081: case 40082: case 40083: {
         // Leader Position: mark that country's king and look at him.
@@ -786,12 +973,16 @@ EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
         return 1;
     case 40120:                                     // Status Window
         g_showStatus = !g_showStatus;
+        layoutSurfaces();
+        clampView();
         return 1;
     case 40111:                                     // Set Windows to default
         g_showBar = 1;
         g_showTool = 1;
         g_showStatus = 1;
         g_windowShown[0] = g_windowShown[1] = g_windowShown[2] = 1;
+        layoutSurfaces();
+        clampView();
         return 1;
     case 40044:                                     // Quit
         g_running = 0;
@@ -940,26 +1131,6 @@ EMSCRIPTEN_KEEPALIVE int lm_human(void) { return (int)g_sim.humanFaction; }
 // 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
 // outlasted the rest, 2 when the player is out.
 EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }
-
-/* ------------------------------------------------------------ pictures */
-
-// The title, the five interludes and the ending, straight out of DATA/.  The
-// page asks for one by name and draws it on its own canvas.
-Picture g_picture;
-
-EMSCRIPTEN_KEEPALIVE int lm_picture_open(const char *stem) {
-    pictureFree(&g_picture);
-    return pictureLoad(&g_picture, &g_host, stem);
-}
-EMSCRIPTEN_KEEPALIVE int lm_picture_width(void) {
-    return (int)g_picture.width;
-}
-EMSCRIPTEN_KEEPALIVE int lm_picture_height(void) {
-    return (int)g_picture.height;
-}
-EMSCRIPTEN_KEEPALIVE const unsigned *lm_picture_pixels(void) {
-    return g_picture.pixels;
-}
 
 /* ------------------------------------------- what is under the cursor */
 

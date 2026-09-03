@@ -7,7 +7,6 @@
 <style>
   :root {
     --bg: #10120e;
-    --panel: #1a1d16;
     --line: #33392a;
     --ink: #d8dfc8;
     --muted: #8c9678;
@@ -49,9 +48,9 @@
   button:disabled { opacity: .4; cursor: default; }
   .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
   main { flex: 1; display: flex; min-height: 0; }
-  #stage { flex: 1; position: relative; min-width: 0; display: grid; place-items: center; background: #070a06; }
+  #stage { flex: 1; position: relative; min-width: 0; min-height: 240px;
+           display: grid; place-items: center; background: #070a06; }
   #view { image-rendering: pixelated; max-width: 100%; max-height: 100%; }
-  #stage { min-height: 240px; }
   #drop {
     position: absolute; inset: 0;
     display: grid; place-items: center;
@@ -59,13 +58,6 @@
     background: rgba(7, 10, 6, .94);
   }
   #drop.hide { display: none; }
-  #art {
-    position: absolute; inset: 0; margin: auto;
-    max-width: 100%; max-height: 100%;
-    image-rendering: pixelated;
-    background: #000; cursor: pointer;
-    box-shadow: 0 0 0 100vmax rgba(7, 10, 6, .8);
-  }
   #drop .box {
     border: 2px dashed var(--line);
     border-radius: 6px;
@@ -76,90 +68,29 @@
   #drop h1 { font-size: 20px; margin: 0 0 6px; color: var(--gold); letter-spacing: 1px; }
   #drop p { color: var(--muted); margin: 8px 0; }
   #drop code { color: var(--ink); }
-  aside {
-    width: 300px; flex-shrink: 0;
-    border-left: 1px solid var(--line);
-    background: var(--panel);
-    padding: 12px;
-    overflow-y: auto;
-  }
-  aside h2 {
-    font-size: 11px; letter-spacing: 2px; color: var(--muted);
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 4px; margin: 14px 0 8px;
-  }
-  aside h2:first-child { margin-top: 0; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: right; padding: 2px 3px; font-variant-numeric: tabular-nums; }
-  th { color: var(--muted); font-weight: normal; font-size: 11px; }
-  td.name { text-align: left; }
-  tr.out td { opacity: .45; }
-  #factions tbody tr { cursor: pointer; }
-  #factions tbody tr:hover td { background: #ffffff10; }
-  tr.mine td { color: var(--gold); }
-  .swatch { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1px solid #0006; }
-  footer {
-    padding: 4px 12px; border-top: 1px solid var(--line);
-    color: var(--muted); font-size: 11px;
-    white-space: nowrap; overflow: hidden;
-  }
   #note { color: var(--gold); }
 </style>
 </head>
 <body>
+<!--
+  Everything the game does is drawn by the port itself, in the one canvas, out
+  of the executable's own art: the menu bar, the tool bar, the dialogs, the
+  order menu and the three windows.  What is left up here is the little a page
+  has to own - which release to fetch, and a purse to fill when trying a stage
+  out.  Nothing else belongs to the page any more.
+-->
 <header>
   <span class="brand">LORD MONARCH<small>移植途中 / a port in progress</small></span>
   <button id="langE" class="on">English</button>
   <button id="langJ">日本語</button>
   <label class="filebtn">zip を開く<input type="file" id="file" accept=".zip" hidden></label>
   <span class="sep"></span>
-  <button id="prev" disabled>&lt; 面</button>
-  <span id="stageName">-</span>
-  <button id="next" disabled>面 &gt;</button>
-  <span class="sep"></span>
-  <button class="zoom" id="z0" disabled>8px</button>
-  <button class="zoom on" id="z1" disabled>16px</button>
-  <button class="zoom" id="z2" disabled>32px</button>
-  <span class="sep"></span>
-  <button id="attack" disabled>全軍 攻撃</button>
-  <button id="hold" disabled>全軍 待機</button>
-  <button id="home" disabled>全軍 帰還</button>
-  <span class="sep"></span>
-  <button id="pickIdle" disabled>手空きを選択</button>
-  <button id="pickAll" disabled>全部選択</button>
-  <button id="pickNone" disabled>選択解除</button>
-  <select id="orderPick" disabled
-          title="新しい部隊が持つ命令（原作の Default Orders）。選択中の部隊への命令はマップをクリックしたときに出るメニューで選びます"></select>
-  <select id="strengthPick" disabled
-          title="原作の命令メニューは6つの命令をそれぞれ3段で並べている（+0x00 / +0x50 / +0x90）">
-    <option value="0">終わったら帰る</option>
-    <option value="1">終わったらその場で待つ</option>
-    <option value="2">終わったら次を探す</option>
-  </select>
-  <span class="sep"></span>
-  <button id="pathBtn" disabled
-          title="命令7。未開拓のマス（風景・海）を道や橋にする">道/橋</button>
-  <button id="blockBtn" disabled
-          title="命令10。開通済みのマスを塞いで通れなくする">塞ぐ</button>
-  <button id="artBtn" disabled>絵</button>
-  <button id="saveBtn" disabled>保存</button>
-  <button id="loadBtn" disabled>再開</button>
-  <span class="sep"></span>
-  <label style="color:var(--muted)">速さ
-    <input id="speed" type="range" min="0" max="29" value="25"
-           style="vertical-align:middle;width:90px">
-    <span id="speedRead" style="color:var(--ink)"></span>
-  </label>
-  <button id="recall" disabled title="Orders メニューの Recall Leader (40113)">王を呼び戻す</button>
-  <button id="watch" disabled title="4か国すべてを機械にまかせて見物する">観戦</button>
-  <button id="pause" disabled>一時停止</button>
-  <button id="music" class="on" disabled>音楽</button>
+  <button id="cashBtn" disabled title="原作にはありません。試すため用">金MAX</button>
   <span id="note"></span>
 </header>
 <main>
   <div id="stage">
     <canvas id="view" width="640" height="480"></canvas>
-    <canvas id="art" hidden></canvas>
     <div id="drop">
       <div class="box">
         <h1 id="dropTitle">読み込んでいます…</h1>
@@ -170,35 +101,7 @@
       </div>
     </div>
   </div>
-  <aside>
-    <h2>FACTIONS</h2>
-    <table id="factions">
-      <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <!-- The Progress and Unit windows are the game's own now: it draws
-         them in the canvas from its own art, where the original has
-         them.  Display / Progress Window and Unit Window turn them on
-         and off, as does the tool bar. -->
-    <h2>CURSOR</h2>
-    <table id="cursor"><tbody></tbody></table>
-    <h2>WORLD</h2>
-    <table id="world"><tbody></tbody></table>
-    <h2>移植の状況</h2>
-    <p style="color:var(--muted)">地形とタイル、領土の拡大、経済（税と維持費）、
-       戦闘、ユニットの自律行動、命令16種と経路探索まで実行ファイルから移植済み。
-       税は<b>首都から歩いて行ける領地からしか集まりません</b> —
-       分断されると収入が止まります。</p>
-    <p style="color:var(--muted)"><b>部隊を選んでから地図をクリック</b>すると、
-       選んだ命令をその場所で実行しに向かいます。選択中の部隊には吹き出しが
-       出ます。何も選んでいなければクリックでユニットを置きます（資金100）。</p>
-    <p style="color:var(--muted)">国名と命令名はシナリオごとに違い、
-       ゲームのデータから読んでいます。</p>
-    <p style="color:var(--muted)">上の表の国をクリックすると、
-       その国を操作します（&#9654; が今の自国）。</p>
-  </aside>
 </main>
-<footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
 <script src="loadmonarch.js"></script>
 <script>
@@ -211,68 +114,10 @@ createLordMonarch().then(function (M) {
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
 
-  // 00426900, the game's Unit Window, put back together from its own art.
-  //
-  // The window is 176 by 176, and its background is a 176-wide strip of the
-  // interface sheet - two panels of 96 rows stacked, each with a tall slot on
-  // the left and three across on the right.  The routine's own coordinates
-  // land in the lower one: the 32-pixel terrain tile at (16, 112), the number
-  // at (64, 120), and the gauge along y = 96 from x = 72.  If those line up
-  // The Unit and Progress windows used to be drawn here, out of the same
-  // sheet: rows 112 to 287 for one and 288 to 463 for the other.  src/panels.c
-  // does it now, in the canvas, so that both hosts show the same window and
-  // the pointer never has to leave the game to read one.
-
-  // 00426900's gauge, drawn from the game's own art: up to thirty pieces of
-  // eight by sixteen at row (n / 10 + 4) * 16, column (n % 10) * 8 - which is
-  // three rows of ten on the sheet, blue then green then yellow, so a full bar
-  // changes colour as it fills.  A settlement's bar is its worth over 0x90,
-  // anything else's over 0xff.
-  var gaugeCanvas = document.getElementById('gauge');
-  function drawGauge() {
-    var g = gaugeCanvas.getContext('2d');
-    g.clearRect(0, 0, gaugeCanvas.width, gaugeCanvas.height);
-    var t = M._lm_cursor_terrain();
-    if (t < 0) return;
-    var value = M._lm_cursor_value();
-    var over = (t >= 8 && t < 12) ? 0x90 : 0xff;
-    var n = Math.min(30, Math.floor(value * 30 / over));
-    for (var i = 0; i < n; i++) {
-      var sx = (i % 10) * 8;
-      var sy = (Math.floor(i / 10) + 4) * 16;
-      var ptr = M._lm_ui_region(sx, sy, 8, 16);
-      if (!ptr) return;
-      var img = new ImageData(
-          new Uint8ClampedArray(M.HEAPU8.buffer, ptr, 8 * 16 * 4).slice(), 8, 16);
-      g.putImageData(img, i * 8, 0);
-    }
+  function say(text) {
+    note.textContent = text;
+    setTimeout(function () { note.textContent = ''; }, 2000);
   }
-
-  // DATA/*.256: the title, the five interludes and the ending.  Shown over
-  // the map, cleared by a click.
-  var artCanvas = document.getElementById('art');
-  var artButton = document.getElementById('artBtn');
-  function showPicture(stem) {
-    if (!M._lm_picture_open) return false;
-    var name = M._lm_alloc(stem.length + 1);
-    for (var i = 0; i < stem.length; i++) M.HEAPU8[name + i] = stem.charCodeAt(i);
-    M.HEAPU8[name + stem.length] = 0;
-    var ok = M._lm_picture_open(name);
-    M._lm_free(name);
-    if (!ok) return false;
-    var w = M._lm_picture_width(), h = M._lm_picture_height();
-    artCanvas.width = w;
-    artCanvas.height = h;
-    var ptr = M._lm_picture_pixels();
-    var img = new ImageData(
-        new Uint8ClampedArray(M.HEAPU8.buffer, ptr, w * h * 4).slice(), w, h);
-    artCanvas.getContext('2d').putImageData(img, 0, 0);
-    artCanvas.hidden = false;
-    return true;
-  }
-  artCanvas.addEventListener('pointerdown', function () {
-    artCanvas.hidden = true;
-  });
 
   // As much view as the window can show, up to the whole 48-cell map at the
   // middle zoom.  The original's is fixed at what a 1997 screen had.
@@ -291,189 +136,14 @@ createLordMonarch().then(function (M) {
   fitView();
   window.addEventListener('resize', function () { if (loaded) fitView(); });
 
-  // The countries and the sixteen orders are named in the large terrain file,
-  // differently in every scenery set, so they arrive per stage rather than
-  // being written here.  The Japanese release writes them in Shift-JIS, which
-  // is ASCII-compatible, so decoding both releases that way is right for both.
-  var sjis = new TextDecoder('shift_jis');
-  function heapString(pointer) {
-    if (!pointer) return '';
-    var end = pointer;
-    while (M.HEAPU8[end]) end++;
-    return sjis.decode(M.HEAPU8.subarray(pointer, end)).trim();
-  }
-  var fallbackNames = ['緑', '赤', '青', '黄', '中立'];
-  function countryName(f) {
-    return heapString(M._lm_country_name(f)) || fallbackNames[f];
-  }
-  // Only a fallback.  Each scenery set picks its own colour for each country
-  // and keeps the palette index in the name table, so the swatch asks the game
-  // rather than guessing.
-  var fallbackColours = ['#4c9a3a', '#b8402f', '#3a63b8', '#c9a227', '#7a7a7a'];
-  function countryColour(f) {
-    var rgb = loaded ? M._lm_country_colour(f) : 0;
-    if (!rgb) return fallbackColours[f];
-    return '#' + ('000000' + (rgb >>> 0).toString(16)).slice(-6);
-  }
-
+  // The whole frame comes out of the port already resolved to RGBA - board,
+  // bars, windows, dialogs, the order menu, the rubber band and whatever
+  // picture is up.  All this does is hand it to the canvas.
   function present() {
     var ptr = M._lm_frame();
     var img = new ImageData(
         new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4).slice(), W, H);
     ctx.putImageData(img, 0, 0);
-    if (dragFrom && dragTo) {
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 3]);
-      ctx.strokeRect(Math.min(dragFrom[0], dragTo[0]) + 0.5,
-                     Math.min(dragFrom[1], dragTo[1]) + 0.5,
-                     Math.abs(dragTo[0] - dragFrom[0]),
-                     Math.abs(dragTo[1] - dragFrom[1]));
-      ctx.setLineDash([]);
-    }
-  }
-
-  // 4 sends a unit after a neighbour's settlement, 0 stops it where it is and
-  // 1 is the automatic behaviour it starts with.
-  var orderButtons = [['attack', 4], ['hold', 0], ['home', 1]];
-
-  function nameOrderButtons() {
-    orderButtons.forEach(function (pair) {
-      var name = heapString(M._lm_order_name(pair[1]));
-      if (name) document.getElementById(pair[0]).textContent = '全軍 ' + name;
-    });
-    // All sixteen, in the wording this campaign uses for them.
-    var pick = document.getElementById('orderPick');
-    var keep = pick.value;
-    pick.innerHTML = '';
-    for (var o = 0; o < 16; o++) {
-      var name = heapString(M._lm_order_name(o));
-      if (!name) continue;
-      var option = document.createElement('option');
-      option.value = o;
-      option.textContent = o + ' ' + name;
-      pick.appendChild(option);
-    }
-    pick.value = keep && pick.querySelector('[value="' + keep + '"]') ? keep : 1;
-  }
-
-  function refreshPanel() {
-    // MAP/NAME.TXT gives the campaign its order and its titles.
-    const title = heapString(M._lm_stage_title());
-    document.getElementById('stageName').textContent =
-        (M._lm_stage() + 1) + '/' + M._lm_stage_count() + ' ' +
-        (title || M.UTF8ToString(M._lm_stage_name()));
-    var body = document.querySelector('#factions tbody');
-    body.innerHTML = '';
-    M._lm_update_areas();       // 0041b640, for the panel rather than the tick
-    for (var f = 0; f < 5; f++) {
-      var tr = document.createElement('tr');
-      var mine = f === M._lm_human();
-      if (M._lm_out(f)) tr.className = 'out';        // 0041b370's mark
-      if (mine) tr.className += ' mine';
-      tr.title = 'クリックでこの国を操作';
-      tr.onclick = (function (which) {
-        return function () {
-          M._lm_set_human(which);
-          M._lm_clear_selection();
-          refreshPanel();
-        };
-      })(f);
-      // What the game's own Graph Window shows for each country: its purse,
-      // its tax rate, its share of the board, its total strength, and its
-      // leader's strength - which is deliberately not part of the total.
-      var lead = M._lm_leader_strength(f);
-      var cells = [
-        '<span class="swatch" style="background:' + countryColour(f) +
-            '"></span>' + (mine ? '&#9654; ' : '') + countryName(f),
-        M._lm_funds(f), M._lm_tax(f),
-        (M._lm_area(f) / 100).toFixed(2) + '%',
-        M._lm_strength(f), lead || '-',
-      ];
-      cells.forEach(function (value, i) {
-        var td = document.createElement('td');
-        if (i === 0) { td.className = 'name'; td.innerHTML = value; }
-        else td.textContent = value;
-        tr.appendChild(td);
-      });
-      body.appendChild(tr);
-    }
-    // 00426900's own panel: what the cell under the cursor is, and the
-    // number it holds - NUM over a settlement, DEF over anything else.
-    var cur = document.querySelector('#cursor tbody');
-    var t = M._lm_cursor_terrain();
-    if (t < 0) {
-      cur.innerHTML = row('マス', '-');
-    } else {
-      var kind, num = 'DEF';
-      if (t === 0) kind = '空き地';
-      else if (t < 5) kind = '建物';
-      else if (t === 5) kind = '中立の湧き点';
-      else if (t >= 8 && t < 12) { kind = countryName(t - 8) + ' の集落'; num = 'NUM'; }
-      else if (t >= 12 && t < 16) kind = countryName(t - 12) + ' の領地';
-      else if (t >= 20 && t < 24) kind = countryName(t - 20) + ' の城';
-      else if (t === 0x7a) kind = '鉱山 - 命令7で掘れる';
-      else if (t === 0x7b) kind = '壁 - 命令9で壊せる';
-      // 0040b680 takes anything from 0x30 to 0x5f, and that range is scenery
-      // on land and open water at sea - clearing it is how a road or a bridge
-      // gets built.  Above it is rock, which nothing in the game removes.
-      else if (t >= 0x30 && t < 0x60) kind = '未開拓 - 命令7で道/橋になる';
-      else if (t >= 0x60 && t < 0x70) kind = '岩 - 開拓できない';
-      else if (t >= 0x20 && t < 0x30) kind = '開拓済み - 通れる';
-      else kind = '地形 ' + t;
-      var unit = M._lm_cursor_unit();
-      cur.innerHTML =
-          row('マス', M._lm_cursor_col() + ',' + M._lm_cursor_row()) +
-          row('中身', kind) +
-          row(num, M._lm_cursor_value()) +
-          row('部隊', unit < 0 ? '-' :
-              countryName(M._lm_cursor_unit_faction()) + ' ' + unit);
-    }
-
-    followTheWar();             // 0040a110
-
-    // 0041f4c0 says when a stage is over.
-    var over = M._lm_outcome();
-    if (over && !said) {
-      said = true;
-      // Whichever country the player has, not always the first one.  With
-      // nobody at the keyboard - the watch button - the verdict belongs to
-      // whoever is left standing.
-      var me = M._lm_human();
-      var winner = me;
-      if (me > 3) for (var w = 0; w < 4; w++) if (!M._lm_out(w)) winner = w;
-      say(over === 1
-              ? countryName(winner) + ' の勝利 — 次の面へ進めます'
-              : countryName(me) + ' は敗れた');
-      // The game's own ending picture for a win; the interlude for a loss.
-      showPicture(over === 1 ? 'END' : 'GAKU');
-      // And its own tunes for them - SOUND.CFG entry 2 is "Winner!", 3 is
-      // "Game Over", and neither loops.
-      if (musicOn) {
-        playing = over === 1 ? 2 : 3;
-        M._lm_music_play(playing, M._lm_tune_loops(playing));
-      }
-    }
-
-    // The Unit and Progress windows are the game's own now - it draws them in
-    // the canvas from its own art, where the original puts them - so the two
-    // that were here are gone.  The country table stays, because it is the
-    // Graph Window's information in a form a page can sort and click.
-    document.getElementById('factions').style.display =
-        M._lm_window_shown(2) ? '' : 'none';
-
-    var world = document.querySelector('#world tbody');
-    var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];
-    world.innerHTML =
-        row('日数', M._lm_days() + ' / 3000') +
-        row('掃引', Math.round(M._lm_sweeps())) +
-        row('背景セット', M._lm_scenery()) +
-        row('最後のクリック', M._lm_last_col() + ',' + M._lm_last_row() + ' ' +
-            (actions[M._lm_last_action()] || '-'));
-  }
-
-  function row(name, value) {
-    return '<tr><td class="name">' + name + '</td><td>' + value + '</td></tr>';
   }
 
   /* ------------------------------------------------------- loading a zip */
@@ -482,7 +152,7 @@ createLordMonarch().then(function (M) {
   // has to drop a file if they would rather use their own copy.  A File and a
   // fetched Response both answer arrayBuffer(), so this takes either.
   function openZip(file) {
-    file.arrayBuffer().then(function (buffer) {
+    return file.arrayBuffer().then(function (buffer) {
       var bytes = new Uint8Array(buffer);
       var p = M._lm_alloc(bytes.length);
       M.HEAPU8.set(bytes, p);
@@ -495,25 +165,25 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       drop.classList.add('hide');
-      ['prev', 'next', 'pause', 'watch', 'recall', 'music', 'strengthPick', 'attack', 'hold', 'home',
-       'pickIdle', 'pickAll', 'pickNone', 'orderPick', 'artBtn',
-       'saveBtn', 'loadBtn', 'pathBtn', 'blockBtn',
-       'z0', 'z1', 'z2'].forEach(function (id) {
-        document.getElementById(id).disabled = false;
-      });
+      document.getElementById('cashBtn').disabled = false;
       canvas.focus();
-      // The orders are named by the scenery set too - "Destroy" in one, "Now
-      // Open" in another - so the buttons say what this campaign calls them.
-      nameOrderButtons();
+      fitView();
       showPicture('LOGO');          // the title, until it is clicked away
-      artAt = 1;
-      present();
-      refreshPanel();
       // Opening the zip is a user gesture, which is the one thing a browser
       // insists on before it will make a sound - so the music starts here
       // rather than waiting to be asked.
       startMusic();
     });
+  }
+
+  function showPicture(stem) {
+    var name = M._lm_alloc(stem.length + 1);
+    for (var i = 0; i < stem.length; i++)
+      M.HEAPU8[name + i] = stem.charCodeAt(i);
+    M.HEAPU8[name + stem.length] = 0;
+    var ok = M._lm_picture_show(name);
+    M._lm_free(name);
+    return ok;
   }
 
   document.getElementById('file').onchange = function (e) {
@@ -543,57 +213,9 @@ createLordMonarch().then(function (M) {
           'お手元の zip を落とすか、上のボタンから開いてください。';
     });
   }
-
-  // LOGO is the title, GAKU and GAKU1 to 4 the interludes, END the ending.
-  var artNames = ['LOGO', 'GAKU', 'GAKU1', 'GAKU2', 'GAKU3', 'GAKU4', 'END'];
-  var artAt = 0;
-  artButton.onclick = function () {
-    for (var tries = 0; tries < artNames.length; tries++) {
-      var name = artNames[artAt];
-      artAt = (artAt + 1) % artNames.length;
-      if (showPicture(name)) { say(name); return; }
-    }
-    say('絵が読めません');
-  };
-
-  // The original's own save format - the faction records, the cells and the
-  // entities, one after another with no header - kept in the browser.  The
-  // stage is not part of it, so it is kept alongside.
-  var SAVE_KEY = 'lord-monarch-save';
-  document.getElementById('saveBtn').onclick = function () {
-    var size = M._lm_save_size();
-    var bytes = new Uint8Array(M.HEAPU8.buffer, M._lm_save(), size);
-    var text = '';
-    for (var i = 0; i < size; i++) text += String.fromCharCode(bytes[i]);
-    try {
-      localStorage.setItem(SAVE_KEY, btoa(text));
-      localStorage.setItem(SAVE_KEY + '-stage', String(M._lm_stage()));
-      localStorage.setItem(SAVE_KEY + '-human', String(M._lm_human()));
-      say('保存しました');
-    } catch (e) {
-      say('保存できません: ' + e.message);
-    }
-  };
-  document.getElementById('loadBtn').onclick = function () {
-    var text;
-    try { text = localStorage.getItem(SAVE_KEY); } catch (e) { text = null; }
-    if (!text) { say('保存がありません'); return; }
-    var raw = atob(text);
-    var size = M._lm_save_size();
-    if (raw.length !== size) { say('保存が壊れています'); return; }
-    var stage = parseInt(localStorage.getItem(SAVE_KEY + '-stage'), 10) || 0;
-    goStage(stage);
-    var p = M._lm_alloc(size);
-    for (var i = 0; i < size; i++) M.HEAPU8[p + i] = raw.charCodeAt(i);
-    var ok = M._lm_load(p, size);
-    M._lm_free(p);
-    M._lm_set_human(parseInt(localStorage.getItem(SAVE_KEY + '-human'), 10) || 0);
-    say(ok ? '再開しました' : '読めません');
-    refreshPanel();
-  };
-
   langE.onclick = function () { fetchRelease('e'); };
   langJ.onclick = function () { fetchRelease('j'); };
+
   ['dragenter', 'dragover'].forEach(function (t) {
     document.addEventListener(t, function (e) {
       e.preventDefault();
@@ -613,90 +235,17 @@ createLordMonarch().then(function (M) {
     if (file) openZip(file);
   });
 
-  /* ------------------------------------------------------------- controls */
-  function setZoom(z) {
-    M._lm_set_zoom(z);
-    [0, 1, 2].forEach(function (i) {
-      document.getElementById('z' + i).classList.toggle('on', i === M._lm_zoom());
-    });
-  }
-  [0, 1, 2].forEach(function (i) {
-    document.getElementById('z' + i).onclick = function () { setZoom(i); };
-  });
-  function goStage(to) {
-    M._lm_load_stage(to);
-    said = false;
-    nameOrderButtons();         // another set, another wording
-    refreshPanel();
-  }
-  document.getElementById('prev').onclick = function () {
-    goStage(M._lm_stage() - 1);
-  };
-  document.getElementById('next').onclick = function () {
-    goStage(M._lm_stage() + 1);
-  };
-  var pause = document.getElementById('pause');
-  pause.onclick = function () {
-    M._lm_pause(M._lm_running() ? 1 : 0);
-    pause.textContent = M._lm_running() ? '一時停止' : '再開';
+  // Not in the original: a purse filled, so a stage can be tried without
+  // playing the first half of it first.
+  document.getElementById('cashBtn').onclick = function () {
+    M._lm_cheat_funds();
+    say('資金を満たしました');
   };
 
-  // The orders the original routes through its command window: 4 sends a unit
-  // after a neighbour's settlement, 0 holds it, 1 sends it home and back to
-  // building.  New units carry whichever is selected, the way DAT_004365e0
-  // works in the executable.
-  function say(text) {
-    note.textContent = text;
-    setTimeout(function () { note.textContent = ''; }, 2000);
-  }
-
-  orderButtons.forEach(function (pair) {
-    document.getElementById(pair[0]).onclick = function () {
-      var how = strength();
-      M._lm_set_order(pair[1], how);
-      say(M._lm_order_all(pair[1], how) + ' 部隊に命令');
-      refreshPanel();
-    };
-  });
-
-  // Choosing units, then a place: 00409e90 picks them all up, 00409f10 only
-  // the idle ones, and the next click on the map says where they are going.
-  var orderPick = document.getElementById('orderPick');
-  // What 00403170 does once the work is finished, which is the only difference
-  // between the three rows of the original's order menu: go home, wait where
-  // you are, or look for another one like it.
-  var strengthPick = document.getElementById('strengthPick');
-  function strength() { return parseInt(strengthPick.value, 10) || 0; }
-  document.getElementById('pickIdle').onclick = function () {
-    var n = M._lm_select_all(0);
-    say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : '手のあいた部隊がいません');
-  };
-  document.getElementById('pickAll').onclick = function () {
-    var n = M._lm_select_all(1);
-    say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : '選べる部隊がいません');
-  };
-  document.getElementById('pickNone').onclick = function () {
-    M._lm_clear_selection();
-    say('選択を解除');
-  };
-
-  function viewPoint(e) {
-    var r = canvas.getBoundingClientRect();
-    return [Math.floor((e.clientX - r.left) * canvas.width / r.width),
-            Math.floor((e.clientY - r.top) * canvas.height / r.height)];
-  }
-
-  // Dragging with the right button moves the view, and so does the wheel -
-  // the map is 48 cells across and the window shows a part of it, so getting
-  // about has to be easy.
-  var panning = null;
-  var sliding = false;          // dragging one of the Progress Window's strips
-  var dragFrom = null;          // a left-drag gathers an army
-  var dragTo = null;
-  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  // The save slots.  The dialogs are the game's own and live in the canvas;
-  // the bytes live here, because localStorage is the page's business.
-  var SLOT_KEY = SAVE_KEY + '-slot';
+  /* ------------------------------------------------------- the save slots */
+  // The dialogs are the game's own and live in the canvas; only the bytes are
+  // the page's, because localStorage is the one thing C cannot reach.
+  var SLOT_KEY = 'lord-monarch-save-slot';
 
   function slotLoadNames() {
     for (var i = 0; i < M._lm_slot_count(); i++) {
@@ -736,6 +285,7 @@ createLordMonarch().then(function (M) {
       M.HEAPU8.set(bytes, p);
       var ok = M._lm_load(p, bytes.length);
       M._lm_free(p);
+      said = false;
       say(ok ? (slot + 1) + ' 番から再開しました' : 'その枠は読めません');
     } else if (what === 2) {
       var ptr = M._lm_save();
@@ -760,65 +310,68 @@ createLordMonarch().then(function (M) {
       } catch (e) {}
       say((slot + 1) + ' 番を消しました');
     }
-    refreshPanel();
   }
 
-  // What the host still owns of MENU 101.  Everything that has a dialog now
-  // goes to the game's own; only these are the page's.
+  // What the host still owns of MENU 101: opening a dialog, and putting the
+  // windows back where they belong.  Everything else the port does itself.
   function hostCommand(id) {
     if (M._lm_dialog_open(id)) { slotLoadNames(); return; }
-    if (id === 40111) { fitView(); say('窓を並べ直しました'); return; }
-    if (id === 60001 || id === 60002 || id === 60003) {
-      say('その窓はページの右側に出ています');
-      return;
-    }
-    if (id === 60005) { say('道具箱の出し入れは未実装です'); return; }
+    if (id === 40111) { fitView(); return; }
   }
+
+  /* ------------------------------------------------------------- pointer */
+  function viewPoint(e) {
+    var r = canvas.getBoundingClientRect();
+    return [Math.floor((e.clientX - r.left) * canvas.width / r.width),
+            Math.floor((e.clientY - r.top) * canvas.height / r.height)];
+  }
+
+  var panning = null;
+  var sliding = false;          // dragging one of the Progress Window's strips
+  var dragFrom = null;          // a left-drag gathers an army
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
+    // A picture is over everything, and a click anywhere puts it away.
+    if (M._lm_picture_up()) {
+      M._lm_picture_dismiss();
+      e.preventDefault();
+      return;
+    }
     // A dialog is modal: while one is up nothing else sees the pointer.
     if (M._lm_dialog_up()) {
       var q = viewPoint(e);
       M._lm_dialog_click(q[0], q[1]);
       slotService();
-      refreshPanel();
       e.preventDefault();
       return;
     }
-    // The menu bar, which is the game's own and drawn in the canvas: a click
-    // there never reaches the map.
+    // The menu bar and the tool bar are the game's own, drawn in the canvas:
+    // a click there never reaches the map.
     var b = viewPoint(e);
     var cmd = M._lm_bar_click(b[0], b[1]);
     if (cmd >= 0) {
       if (cmd > 0 && !M._lm_command(cmd)) hostCommand(cmd);
-      if (cmd > 0) refreshPanel();
       e.preventDefault();
       return;
     }
-    // The three windows down the right are windows: a click on one of them
-    // does not reach the board under it - and the Progress Window's two
-    // strips are draggable, which is how the tax and the clock are set by
-    // hand.  Touching the tax turns the automatic one off, as it does in the
-    // original.
+    // The column of windows down the right is windows: a click there does not
+    // reach the board - and the Progress Window's two strips are draggable,
+    // which is how the tax and the clock are set by hand.  Touching the tax
+    // turns the automatic one off, as it does in the original.
     if (M._lm_panel_hit(b[0], b[1])) {
       var slider = M._lm_panel_drag(b[0], b[1]);
       if (slider) {
         sliding = true;
         canvas.setPointerCapture(e.pointerId);
         if (slider === 1) say('税率を手で決めました（自動課税は切れます）');
-        speedFromGame();
       }
-      refreshPanel();
       e.preventDefault();
       return;
     }
     if (M._lm_menu_up()) {
-      var q = viewPoint(e);
-      var took = M._lm_menu_click(q[0], q[1]);
-      if (took > 0) say(took + ' 部隊が向かいます');
-      else if (took < 0) say('やめました');
-      refreshPanel();
+      M._lm_menu_click(b[0], b[1]);
       e.preventDefault();
       return;
     }
@@ -828,8 +381,8 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
-    dragFrom = viewPoint(e);
-    dragTo = dragFrom;
+    dragFrom = b;
+    M._lm_drag_rect(1, b[0], b[1], b[0], b[1]);
     canvas.setPointerCapture(e.pointerId);
   });
 
@@ -838,42 +391,33 @@ createLordMonarch().then(function (M) {
   //
   //   drag over the map          gather every unit of yours inside it
   //   click one of your units    choose that one
-  //   click anywhere, chosen     send them there with the order in the box
+  //   click anywhere, chosen     the order menu comes up on that square
   //   click bare ground, none    put a settlement down
   //
   // Both ways of choosing are deliberate, so both pick a unit up even when it
-  // already carries an order - 00409e90 rather than 00409f10.  The 待機中 button
-  // is the other one.  Shift adds to what is already chosen.
+  // already carries an order - 00409e90 rather than 00409f10.  Shift adds to
+  // what is already chosen.
   function finishDrag(e) {
     var p = viewPoint(e);
     var moved = dragFrom &&
         (Math.abs(p[0] - dragFrom[0]) > 6 || Math.abs(p[1] - dragFrom[1]) > 6);
+    M._lm_drag_rect(0, 0, 0, 0, 0);
 
     if (moved) {
       if (!e.shiftKey) M._lm_clear_selection();
-      var n = M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
-      say(n ? n + ' 部隊を選択 - 地図をクリックで送る' : 'その範囲に部隊がいません');
+      M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
     } else if (M._lm_selected() > 0) {
       // 00423940: the order is chosen *after* the square, from a menu that
       // comes up where the pointer is and offers only what that square
-      // accepts.  Click water and the one thing on it is 踏切を作る.
-      if (M._lm_menu_open(p[0], p[1])) {
-        say('命令を選んでください');
-      } else {
-        say('そのマスには出せる命令がありません');
-      }
+      // accepts.  Click water and the one thing on it is a bridge.
+      M._lm_menu_open(p[0], p[1]);
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_at(p[0], p[1], 1);
-      say('1 部隊を選択 - 地図をクリックで送る');
     } else {
-      var placed = M._lm_click(p[0], p[1]);
-      var word = ['', '置いた', '資金不足', '置けない', '', '', '使い切った'];
-      say(word[placed] || '置けない');
+      M._lm_click(p[0], p[1]);
     }
     dragFrom = null;
-    dragTo = null;
-    refreshPanel();
   }
 
   canvas.addEventListener('pointerup', function (e) {
@@ -883,7 +427,7 @@ createLordMonarch().then(function (M) {
   });
   canvas.addEventListener('pointercancel', function () {
     dragFrom = null;
-    dragTo = null;
+    M._lm_drag_rect(0, 0, 0, 0, 0);
   });
   canvas.addEventListener('wheel', function (e) {
     if (!loaded) return;
@@ -908,18 +452,12 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
-    if (sliding) {
-      M._lm_panel_drag(p[0], p[1]);
-      speedFromGame();
-      return;
-    }
+    if (sliding) { M._lm_panel_drag(p[0], p[1]); return; }
+    if (M._lm_picture_up()) return;
     if (M._lm_dialog_up()) { M._lm_dialog_hover(p[0], p[1]); return; }
     if (M._lm_bar_hover(p[0], p[1])) return;
-    if (M._lm_menu_up()) {
-      M._lm_menu_hover(p[0], p[1]);
-      return;
-    }
-    if (dragFrom) dragTo = p;
+    if (M._lm_menu_up()) { M._lm_menu_hover(p[0], p[1]); return; }
+    if (dragFrom) M._lm_drag_rect(1, dragFrom[0], dragFrom[1], p[0], p[1]);
     M._lm_set_cursor(p[0], p[1]);
     if (!dragFrom && M._lm_selected() > 0) {
       var col = M._lm_cursor_col(), row = M._lm_cursor_row();
@@ -934,6 +472,9 @@ createLordMonarch().then(function (M) {
     if (loaded) M._lm_set_cursor(-1, -1);
   });
 
+  // The map is 48 cells across and the window shows a part of it, so the
+  // arrows and the wheel scroll.  Everything else goes through the game's own
+  // menus, which is where the original has it.
   document.addEventListener('keydown', function (e) {
     if (!loaded) return;
     var moves = {
@@ -943,13 +484,7 @@ createLordMonarch().then(function (M) {
     if (moves[e.key]) {
       M._lm_scroll(moves[e.key][0], moves[e.key][1]);
       e.preventDefault();
-      return;
     }
-    if (e.key === '1' || e.key === '2' || e.key === '3') {
-      setZoom(e.key.charCodeAt(0) - 49);
-      return;
-    }
-    if (e.key === ' ') { pause.click(); e.preventDefault(); }
   });
 
   /* --------------------------------------------------------------- music */
@@ -959,7 +494,6 @@ createLordMonarch().then(function (M) {
   // suspended and never makes a sound, which is the trap the simtower port
   // spent an afternoon on.
   var audio = null, node = null, musicOn = false;
-  var musicButton = document.getElementById('music');
   // 0040a110 chooses between a stage's two tunes by how the war is going, and
   // leaves the one that is playing alone in between.  0 is the opening tune,
   // which is what plays before a stage is under way.
@@ -971,8 +505,6 @@ createLordMonarch().then(function (M) {
     if (want < 0 || want === playing) return;
     playing = want;
     M._lm_music_play(playing, M._lm_tune_loops(playing));
-    var name = heapString(M._lm_tune_name(playing));
-    if (name) say('♪ ' + name);
   }
 
   function startMusic() {
@@ -990,125 +522,45 @@ createLordMonarch().then(function (M) {
       });
     }
     if (audio.state === 'suspended') audio.resume();
-    // The synthesiser builds its wavetables from the rate, so it has to be told
-    // before the tune is loaded rather than at render time.
+    // The synthesiser builds its wavetables from the rate, so it has to be
+    // told before the tune is loaded rather than at render time.
     M._lm_music_rate(audio.sampleRate | 0);
-    if (!M._lm_music_play(playing, 1)) {
-      note.textContent = '音楽が読めません';
-      musicButton.classList.remove('on');
-      return;
-    }
-    var size = 2048;
-    if (audio.audioWorklet === undefined || true) {
-      // A ScriptProcessor is deprecated but needs no separate module file,
-      // which keeps this page a single file the way the rest of it is.
-      node = audio.createScriptProcessor(size, 0, 2);
-      var cap = M._lm_music_capacity2();
-      node.onaudioprocess = function (e) {
-        var l = e.outputBuffer.getChannelData(0);
-        var r = e.outputBuffer.getChannelData(1);
-        var frames = Math.min(l.length, cap);
-        var ptr = M._lm_music_render2(frames, audio.sampleRate | 0);
-        var left = new Float32Array(M.HEAPU8.buffer, ptr, frames);
-        var right = new Float32Array(M.HEAPU8.buffer, ptr + cap * 4, frames);
-        l.set(left.subarray(0, Math.min(frames, l.length)));
-        r.set(right.subarray(0, Math.min(frames, r.length)));
-        if (frames < l.length) { l.fill(0, frames); r.fill(0, frames); }
-        if (!M._lm_music_playing()) M._lm_music_play(playing, 1);
-      };
-      node.connect(audio.destination);
-    }
+    if (!M._lm_music_play(playing, 1)) return;
+    // A ScriptProcessor is deprecated but needs no separate module file,
+    // which keeps this page a single file the way the rest of it is.
+    node = audio.createScriptProcessor(2048, 0, 2);
+    var cap = M._lm_music_capacity2();
+    node.onaudioprocess = function (e) {
+      var l = e.outputBuffer.getChannelData(0);
+      var r = e.outputBuffer.getChannelData(1);
+      var frames = Math.min(l.length, cap);
+      var ptr = M._lm_music_render2(frames, audio.sampleRate | 0);
+      var left = new Float32Array(M.HEAPU8.buffer, ptr, frames);
+      var right = new Float32Array(M.HEAPU8.buffer, ptr + cap * 4, frames);
+      l.set(left.subarray(0, Math.min(frames, l.length)));
+      r.set(right.subarray(0, Math.min(frames, r.length)));
+      if (frames < l.length) { l.fill(0, frames); r.fill(0, frames); }
+      if (!M._lm_music_playing()) M._lm_music_play(playing, 1);
+    };
+    node.connect(audio.destination);
     musicOn = true;
-    musicButton.classList.add('on');
   }
-
-  function stopMusic() {
-    if (node) { node.disconnect(); node.onaudioprocess = null; node = null; }
-    M._lm_music_stop();
-    musicOn = false;
-    musicButton.classList.remove('on');
-  }
-
-  musicButton.onclick = function () {
-    if (musicOn) stopMusic(); else startMusic();
-  };
 
   /* ---------------------------------------------------------------- loop */
   //
-  // The original's pace, which this page had wrong by a factor of five.  Its
-  // message loop runs a tick only when a counter has reached zero, and a
-  // 16-millisecond multimedia timer is what counts it down:
+  // The original's pace.  Its message loop runs a tick only when a counter has
+  // reached zero, and a 16-millisecond multimedia timer is what counts it down:
   //
   //     if (DAT_004344e0 == 0) { DAT_004344e0 = 0x1e - speed; tick(); }
   //
   // So a tick is (30 - speed) sixteenths of a second, and the speed setting
-  // starts at 25 - four ticks a second, not sixty.  Everything moved five
-  // times too fast here, which is why the units looked frantic.
-  var speed = 25;                       // DAT_00437698
+  // starts at 25 - four ticks a second, not sixty.  The setting itself lives in
+  // the port, where the Progress Window's lower strip and System Setting both
+  // reach it.
   var nextTick = 0;
-  function tickInterval() { return (30 - speed) * 16; }
+  function tickInterval() { return (30 - M._lm_speed()) * 16; }
 
-  // System Setting's trackbar is the same number, so whichever was touched
-  // last wins and the other follows.
-  function speedFromGame() {
-    if (!loaded) return;
-    var s = M._lm_speed();
-    if (s === speed) return;
-    speed = s;
-    speedInput.value = String(s);
-    document.getElementById('speedRead').textContent =
-        speed + ' (' + tickInterval() + 'ms)';
-  }
-
-  var speedInput = document.getElementById('speed');
-  speedInput.oninput = function () {
-    speed = Math.max(0, Math.min(29, parseInt(speedInput.value, 10) || 0));
-    if (loaded) M._lm_set_speed(speed);
-    document.getElementById('speedRead').textContent =
-        speed + ' (' + tickInterval() + 'ms)';
-  };
-  speedInput.oninput();
-
-  // Watching.  Handing the player's country to nobody leaves all four to the
-  // machine; the country the player had is remembered so the button gives it
-  // back.
-  document.getElementById('pathBtn').onclick = function () {
-    orderPick.value = 7;
-    say(M._lm_selected() > 0
-            ? '未開拓のマスをクリックしてください'
-            : '部隊を選んでから未開拓のマスをクリックしてください');
-  };
-
-  // 0040b960 is the other half of 0040b680: what order 7 opens, order 10
-  // shuts again, and what order 10 shuts order 7 reopens for a fifteenth of
-  // the price.
-  document.getElementById('blockBtn').onclick = function () {
-    orderPick.value = 10;
-    say(M._lm_selected() > 0
-            ? '塞ぐマスをクリックしてください'
-            : '部隊を選んでから塞ぐマスをクリックしてください');
-  };
-
-  document.getElementById('recall').onclick = function () {
-    say(M._lm_recall_leader() ? '王が城へ戻ります' : '王は戻れません');
-  };
-
-  var watchBtn = document.getElementById('watch');
-  var watchedFrom = 0;
-  watchBtn.onclick = function () {
-    if (M._lm_human() < 4) {
-      watchedFrom = M._lm_human();
-      M._lm_set_human(4);
-      M._lm_clear_selection();
-      watchBtn.className = 'on';
-    } else {
-      M._lm_set_human(watchedFrom);
-      watchBtn.className = '';
-    }
-    refreshPanel();
-  };
-
-  var lastPanel = 0;
+  var lastHost = 0;
   function frame(now) {
     if (loaded) {
       if (now >= nextTick) {
@@ -1116,10 +568,23 @@ createLordMonarch().then(function (M) {
         nextTick = now + tickInterval();
       }
       present();
-      if (now - lastPanel > 250) {
-        refreshPanel();
-        speedFromGame();
-        lastPanel = now;
+      // The few things the page has to keep an eye on, four times a second.
+      if (now - lastHost > 250) {
+        lastHost = now;
+        M._lm_update_areas();       // 0041b640, for the windows
+        followTheWar();             // 0040a110
+        // 0041f4c0 says when a stage is over: the game's own ending picture
+        // for a win, the interlude for a loss, and its own tunes for them -
+        // SOUND.CFG entry 2 is "Winner!", 3 is "Game Over", neither loops.
+        var over = M._lm_outcome();
+        if (over && !said) {
+          said = true;
+          showPicture(over === 1 ? 'END' : 'GAKU');
+          if (musicOn) {
+            playing = over === 1 ? 2 : 3;
+            M._lm_music_play(playing, M._lm_tune_loops(playing));
+          }
+        }
       }
     }
     requestAnimationFrame(frame);

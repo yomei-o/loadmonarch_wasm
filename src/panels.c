@@ -236,32 +236,40 @@ void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
         }
     }
 
+    // 00404e40 writes four things per country - "%s Area Occupied: %3.2f",
+    // "%s Funds: %d", "%s Leader Strength: %d" and "%s Unit and Base Totals:
+    // %d" - into a window the player sizes and drags, so it can afford two
+    // columns of full sentences.  This one lives in a column a hundred and
+    // seventy-six across, which is twenty-two characters of the half-width
+    // font, so the same four numbers go under each name as a row instead.
+    // The leader's strength is deliberately not part of the total, as in the
+    // original.
     char line[80];
     unsigned total = 0;
+    int at = y + 4;
+    fontDrawText(out, x + 6, at, (unsigned char)UI_DARK,
+                 "Area%   Funds  Units");
+    at += 16;
     for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        if (at + 32 > y + h) break;                 // no room for another
         const char *name = worldCountryName(&game->world, f);
         const Faction *c = &game->factions[f];
-        const int row = (int)f * 40;
-        if (c->flags & 0x40) {
-            snprintf(line, sizeof line, "%s Defeated", name);
-            fontDrawText(out, x + 6, y + 4 + row, (unsigned char)UI_DARK, line);
-            continue;
-        }
-        snprintf(line, sizeof line, "%s Area Occupied: %d.%02d", name,
-                 (int)c->area, (int)((c->area - (int)c->area) * 100.0f));
-        fontDrawText(out, x + 6, y + 4 + row, (unsigned char)UI_DARK, line);
-        snprintf(line, sizeof line, "%s Funds: %u", name, c->funds);
-        fontDrawText(out, x + 6, y + 22 + row, (unsigned char)UI_DARK, line);
-
         const unsigned leader = c->at0c < ENTITY_COUNT
             ? game->entities[c->at0c].at08 : 0u;
-        snprintf(line, sizeof line, "%s Leader Strength: %u", name, leader);
-        fontDrawText(out, x + w / 2, y + 4 + row, (unsigned char)UI_DARK, line);
-        snprintf(line, sizeof line, "%s Unit Totals: %u", name, c->strength);
-        fontDrawText(out, x + w / 2, y + 22 + row, (unsigned char)UI_DARK,
-                     line);
+        if (c->flags & 0x40) {
+            snprintf(line, sizeof line, "%s Defeated", name);
+            fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
+            at += 16;
+            continue;
+        }
+        snprintf(line, sizeof line, "%s (K %u)", name, leader);
+        fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
+        snprintf(line, sizeof line, "%2d.%02d %6u %6u", (int)c->area,
+                 (int)((c->area - (int)c->area) * 100.0f), c->funds,
+                 c->strength);
+        fontDrawText(out, x + 6, at + 16, (unsigned char)UI_DARK, line);
+        at += 34;
         total += c->strength;
     }
-    snprintf(line, sizeof line, "Unit and Base Totals: %u", total);
-    fontDrawText(out, x + 6, y + h - 20, (unsigned char)UI_DARK, line);
+
 }
