@@ -222,6 +222,71 @@ int main(void) {
         expect("and closes", press(&r, 9), 1);
     }
 
+    // 118, the one that changes the game: 00423cc0 stops on every unit whose
+    // route is only a hard one and asks about it.  Three units are chosen and
+    // the middle one is awkward, so the loop has to stop once, take an answer,
+    // and carry on with the other two.
+    {
+        memset(&state.entities, 0, sizeof state.entities);
+        for (int i = 0; i < ENTITY_COUNT; i++) {
+            state.entities[i].flags = 0x80;
+            state.entities[i].at18 = 0x1f0;
+            state.entities[i].at220 = 0xff;
+        }
+        for (int i = 0; i < WORLD_CELLS; i++) {
+            state.world.cells[i].terrain = 0;
+            state.world.cells[i].value = 100;
+            state.world.cells[i].occupant = CELL_NO_ENTITY;
+        }
+        stateMarkBlocked(&state);
+        state.factions[0].funds = 100000;
+        for (int i = 1; i <= 3; i++) {
+            Entity *e = &state.entities[i];
+            e->flags = 0;
+            e->faction = 0;
+            e->at08 = 4000;
+            e->at0c = 6;
+            e->at0f = 10;
+            e->at18 = 0x1f0;
+            e->position[0] = (unsigned char)(20 + i);
+            e->position[1] = 20;
+            e->target[0] = e->position[0];
+            e->target[1] = e->position[1];
+            state.world.cells[WORLD_INDEX(e->position[0], 20)].occupant =
+                (unsigned char)i;
+            e->flags21c |= 1;               // all three are chosen
+            e->at220 = 2;                   // and can get there cleanly
+        }
+        // The middle one can only get there through a friend, which is the
+        // balloon 00412ff0 calls "Passage blocked by friendly unit".
+        state.entities[2].at220 = 4;
+
+        int given = simOrderSelected(&sim, 1, 0, 25, 25);
+        expect("the loop stopped to ask", given, SIM_ORDER_ASK);
+        expect("about the awkward one", sim.askUnit, 2);
+        expect("and says which trouble it is", sim.askKind, 0);
+
+        given = simOrderAnswer(&sim, 1);    // Don't go, for that one only
+        expect("and then finished", given >= 0, 1);
+        expect("with the other two under orders", given, 2);
+        expect("and the one held back not", state.entities[2].at0d & 0x10, 0);
+        printf("  118 stopped once and %d of 3 went\n", given);
+
+        // Remainder don't go: nobody after the awkward one moves.
+        for (int i = 1; i <= 3; i++) {
+            state.entities[i].flags21c |= 1;
+            state.entities[i].at0d = 0;
+            state.entities[i].at18 = 0x1f0;
+            state.entities[i].at220 = 2;
+        }
+        state.entities[1].at220 = 3;        // enemies in the path, this time
+        given = simOrderSelected(&sim, 1, 0, 25, 25);
+        expect("it asks about the first", sim.askUnit, 1);
+        expect("and this trouble is the other kind", sim.askKind, 1);
+        given = simOrderAnswer(&sim, 3);    // Remainder don't go
+        expect("so nobody went", given, 0);
+    }
+
     printf(failures ? "%d dialog check(s) failed\n" : "dialog checks ok\n",
            failures);
     return failures ? 1 : 0;

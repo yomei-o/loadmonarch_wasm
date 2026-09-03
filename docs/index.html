@@ -200,7 +200,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260903031725"></script>
+<script src="loadmonarch.js?v=20260903033341"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -795,6 +795,9 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
+    // The three windows down the right are windows: a click on one of them
+    // does not reach the board under it.
+    if (M._lm_panel_hit(b[0], b[1])) { e.preventDefault(); return; }
     if (M._lm_menu_up()) {
       var q = viewPoint(e);
       var took = M._lm_menu_click(q[0], q[1]);

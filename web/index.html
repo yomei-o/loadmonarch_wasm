@@ -795,6 +795,9 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
+    // The three windows down the right are windows: a click on one of them
+    // does not reach the board under it.
+    if (M._lm_panel_hit(b[0], b[1])) { e.preventDefault(); return; }
     if (M._lm_menu_up()) {
       var q = viewPoint(e);
       var took = M._lm_menu_click(q[0], q[1]);

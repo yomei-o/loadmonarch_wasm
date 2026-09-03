@@ -176,6 +176,27 @@ EMSCRIPTEN_KEEPALIVE int lm_bar_height(void) { return UI_CHROME_H; }
 // The menu bar's own share of that, which is where a dropped menu starts.
 EMSCRIPTEN_KEEPALIVE int lm_menu_height(void) { return UI_BAR_H; }
 
+// Whether a surface point lands on one of the three windows down the right.
+// They are windows, so they eat the click rather than letting it reach the
+// board underneath - which is what the original's do by being windows at all.
+EMSCRIPTEN_KEEPALIVE int lm_panel_hit(int x, int y) {
+    const int left = g_viewW - PANEL_SIDE - 4;
+    if (x < left || x >= left + PANEL_SIDE) return 0;
+    const int my = y - UI_CHROME_H;
+    int at = 4;
+    if (g_windowShown[1]) {
+        if (my >= at && my < at + PANEL_SIDE) return 1;
+        at += PANEL_SIDE + 4;
+    }
+    if (g_windowShown[0]) {
+        if (my >= at && my < at + PANEL_SIDE) return 1;
+        at += PANEL_SIDE + 4;
+    }
+    if (g_windowShown[2] && g_viewH - at > 100)
+        return my >= at && my < g_viewH - 4;
+    return 0;
+}
+
 // How big a view to draw.  The original's is fixed at what a 1997 screen had;
 // a page can have as much as it can show, up to the whole 48-cell map at the
 // middle zoom.
