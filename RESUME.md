@@ -1364,6 +1364,96 @@ Progress Window は絵そのものが中身を教えてくれる — 金袋・%�
 * ページ: 国一覧が1行ずれて印を付けていた（`mine` を代入の1行前で読んでいた）。
 * ページ: **観戦ボタン**。`lm_set_human(4)` で4か国とも機械にまかせる。
 
+## インターフェイス一式（メニュー・ツールバー・16ダイアログ・3つの窓）
+
+**全部 canvas に、実行ファイルの資源そのままで描いている。** HTML の部品は
+（zip を読ませるドロップ枠と右の補助表を除いて）無くなった。
+
+### 資源の在り処
+
+| 型 | id | 中身 |
+|---|---|---|
+| MENU 4 | 101 | メニューバー。`tools/dump_dialogs.py` は資源全部を出す |
+| DIALOG 5 | 104..127 の**16個** | 下の表 |
+| STRING 6 | — | メニューとダイアログの文言 |
+| BITMAP 2 | 102 | **368x16 4bpp = ツールバーのアイコン23個** |
+| 241 | 102 | **MFC のツールバー定義**（16x16、32ボタン、0が区切り）|
+| 240 | 123 | test1/test2/test3 の残骸。使われていない |
+
+**ダイアログの資源は2種類混ざっている** — `DLGTEMPLATEEX`（先頭が
+`01 00 ff ff`、id が DWORD）と素の `DLGTEMPLATE`。最初に素だけを仮定して
+解析したら全部ゴミになった。`tools/dump_dialogs.py` は両方読む。
+
+### ツールバー（`tools/make_toolbar.py` → `src/toolbar.c`）
+
+    Start Pause Restart Alliance | Recall Leader, Leader Position |
+    Overall Order(new) Overall Order(all) Default Orders |
+    Unit Progress Graph | Status | Small Medium Large |
+    Load Quest Map, Load Single Map | Load Save | System Sound | Quick Rules
+
+アイコンは自前の16色パレットを持つ（標準VGA、7番=192,192,192 が透明の下地）。
+パレットは `renderPalette` が **0xd0..0xdf** に入れる。
+Start/Pause と地図サイズ3つは、いまの状態に合わせて押し込んだ見た目になる。
+
+### ダイアログ（`src/dlg.c` 部品 / `src/dlgdefs.c` 資源の転記 / `src/dlgrun.c` 動作）
+
+| 資源 | 実装 |
+|---|---|
+| 124 Default Orders | `0x434444` の7命令＋3段 → `pendingOrder` |
+| 115 System Setting | 3窓・**Game Restart Timer**(=`DAT_00437698`)・Help Balloons |
+| 107 Load / 106 Save | 8枠。Save New は最初の空き、Delete は消して開いたまま |
+| 104 Load Quest Map | 一覧＋Information/Area/Battle/Results（数値は資源どおり "---"）|
+| 127 Load Single Map | 面の一覧 |
+| 119 Alliance Setting | 各国の色を枠に。**大きい国は誘えない**(`00413390`) |
+| 126 Sound Setting / 112 Customize Sounds | SOUND.CFG の曲一覧、Play/Stop が鳴る |
+| 123 Help / 120 Version | |
+| **118 Information** | 下記 |
+| 105 / 114 / 121 | 制御を1つも持たない = **Unit / Progress / Graph の3窓**。`src/panels.c` |
+| 122 | 165x44、未解明 |
+
+**罠2つ**:
+* **コンボボックスの資源の高さは「リストが降りる深さ」で、コントロールの高さ
+  ではない。** 124 の最初のコンボは71単位あって、2つ目のコンボと OK/Cancel を
+  全部覆っていた（何も押せなかった）。`dlg.c` はコンボだけ高さを1行に潰す。
+* ダイアログ単位→ピクセルは 2倍にしてある（`DLG_SCALE`）。
+
+### 118 Information = 命令を出したときの確認
+
+`00423cc0` はループの途中で、経路が難しいユニットごとにモーダルで訊く:
+
+* 吹き出し 3 → "Powerful enemies in path."
+* 吹き出し 4 → "Passage blocked by friendly unit"
+* Go! / Don't go! / **Remainder go! / Remainder don't go!**（後者2つは
+  2部隊以上選んでいるときだけ有効 — `00412ff0`）
+
+ブラウザはモーダルで止められないので **`simOrderSelected` を再開可能に**した。
+`SIM_ORDER_ASK`(-1) を返して止まり、`simOrderAnswer(choice)` が続きから回す。
+`DAT_00434548` が方針（0 訊く / 1 残り全部行く / 2 残り全部行かない）。
+
+### Leader Position (40080..40083)
+
+`00408aa0` が面の読み込み時に **4国の名前でメニュー項目を書き換える**。
+選ぶとその国の `+0x0c`（王の実体番号）を読んで、王に吹き出し 0x0c を付け、
+前に付いていたユニットからは外し、`00423f90` で視点をそこへ飛ばす。
+`simShowLeader()`。
+
+### メニューの全32コマンドが動く
+
+`tests/wasm_check.js` が毎回、**「何もしないコマンドが1つも無い」**ことを
+確かめる。唯一グレーなのは Float Tool Bar（canvas に浮かべる先が無い）。
+
+`Hide Title Bar`(40108) はメニューバー、`Hide Tool Bar`(60005) は道具箱、
+`Status Window`(40120) は盤面上の数字を消す。隠しても場所は空けたままにする
+（盤面が飛ぶほうが悪い）。`Set Windows to default`(40111) で全部戻る。
+
+### 同盟について（移植側の判断）
+
+`00413390` は `+0x1e` を読み、`00411eb0` は 0x80 を書いて解消する。
+だが **国番号を書き込むコードが実行ファイル中に1つも無い** — 発売前に
+commit 側が落とされている。エンジン側は塗り・戦闘・探索すべてが同盟を見るので、
+**移植ではダイアログの意味どおり両側に書く**ことにした。
+`src/dlgrun.c` のその行にそう書いてある。
+
 ## 音楽は windepth_wasm のシンセに載せ替えた
 
 `src/midi.c` は1音1本の鈍らせた鋸波だけで、プログラムチェンジも打楽器も

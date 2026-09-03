@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
         game.cursorRow = 20;
         const WorldCell *under =
             &game.world.cells[WORLD_INDEX(game.cursorCol, game.cursorRow)];
-        int at = 4;
+        int at = 48;                    // under the two bars
         panelUnitWindow(&surface, &game, W - PANEL_SIDE - 4, at,
                         (int)under->terrain, under->value);
         at += PANEL_SIDE + 4;
