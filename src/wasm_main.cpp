@@ -1012,6 +1012,8 @@ static int hostStageName(void *, int stage, char *out, int size) {
     snprintf(out, (size_t)size, "%s", name ? name : "");
     return 1;
 }
+static int hostCampaignRank(void *) { return (int)g_campaign.rank; }
+
 static int hostLoadStage(void *, int stage, int quest) {
     g_quest = quest;
     return lm_load_stage(stage);
@@ -1041,6 +1043,7 @@ static void dialogsReady(void) {
     g_dlgHost.stageName = hostStageName;
     g_dlgHost.stages = lm_stage_count();
     g_dlgHost.loadStage = hostLoadStage;
+    g_dlgHost.campaignRank = hostCampaignRank;
     g_dlgHost.getWindow = hostGetWindow;
     g_dlgHost.setWindow = hostSetWindow;
     g_dlgHost.user = nullptr;
@@ -1439,6 +1442,23 @@ EMSCRIPTEN_KEEPALIVE int lm_end_rank_up(void) { return g_endRankUp; }
 // Dialog 114.  A click closes it like every other control-less window, and
 // what was waiting behind it happens then: 0041f6c0 opens the certificate and
 // only afterwards calls FUN_004067c0 for the next stage.
+// What dialog 104's two right-hand buttons asked for, taken and cleared:
+// 1 the ending picture, 2 the certificate.  The page shows the first and the
+// module puts the second up itself.
+EMSCRIPTEN_KEEPALIVE int lm_dialog_request(void) {
+    if (g_dlg.showAwards) {
+        g_dlg.showAwards = 0;
+        openAwards(g_campaign.rank);
+        g_afterAwards = 1;              // nothing waiting behind it
+        return 2;
+    }
+    if (g_dlg.showEnding) {
+        g_dlg.showEnding = 0;
+        return 1;
+    }
+    return 0;
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_awards_up(void) { return g_awards.up; }
 EMSCRIPTEN_KEEPALIVE int lm_awards_rank(void) { return (int)g_awards.rank; }
 EMSCRIPTEN_KEEPALIVE int lm_awards_click(void) {
@@ -1475,6 +1495,10 @@ EMSCRIPTEN_KEEPALIVE void lm_campaign_set(int stage, int remaining) {
     g_campaign.remaining[stage] = (unsigned)(remaining > 0 ? remaining : 0);
     if (remaining > 0 && g_campaign.reached <= stage)
         g_campaign.reached = stage + 1;
+    // 0041f6c0 works the class out of the table every time, and the score
+    // file the original keeps holds the same number - so a campaign read
+    // back comes with its class rather than starting again at nothing.
+    g_campaign.rank = campaignRank(&g_campaign);
 }
 
 /* ------------------------------------------- what is under the cursor */

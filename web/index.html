@@ -456,6 +456,10 @@ createLordMonarch().then(function (M) {
       var q = viewPoint(e);
       M._lm_dialog_click(q[0], q[1]);
       slotService();
+      // 104's Awards and Ending.  The certificate puts itself up; the ending
+      // is dialog 121, which is the picture.
+      var asked = M._lm_dialog_request();
+      if (asked === 1) showPicture('END');
       e.preventDefault();
       return;
     }

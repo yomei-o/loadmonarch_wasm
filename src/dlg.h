@@ -97,6 +97,9 @@ int dlgIsOpen(const Dialog *d);
 int dlgValue(const Dialog *d, int id);
 void dlgSetValue(Dialog *d, int id, int value);
 void dlgEnable(Dialog *d, int id, int enabled);
+// And whether it is, which is what a test asks when the program is the one
+// that decides - 104's Awards button is disabled in the resource.
+int dlgEnabled(const Dialog *d, int id);
 
 void dlgClearItems(Dialog *d);
 void dlgAddItem(Dialog *d, const char *text);

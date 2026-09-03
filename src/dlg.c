@@ -118,6 +118,11 @@ void dlgSetValue(Dialog *d, int id, int value) {
     if (s) s->value = value;
 }
 
+int dlgEnabled(const Dialog *d, int id) {
+    const DlgState *st = stateOfConst(d, id);
+    return st ? st->enabled : 1;
+}
+
 void dlgEnable(Dialog *d, int id, int enabled) {
     DlgState *s = stateOf(d, id);
     if (s) s->enabled = enabled;

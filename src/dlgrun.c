@@ -138,9 +138,11 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
     case DLG_LOAD_SINGLE_MAP:
     case DLG_LOAD_QUEST_MAP:
         fillStages(r);
-        // 104 keeps Awards greyed in the resource itself; the port has no
-        // campaign record behind the rest, so those statics stay at "---".
-        dlgEnable(&r->dlg, 1188, 0);
+        // The resource has Awards disabled; it is the program that turns it
+        // on, and there is nothing to award until a stage has been cleared.
+        dlgEnable(&r->dlg, 1188,
+                  r->host && r->host->campaignRank
+                      ? r->host->campaignRank(r->host->user) > 0 : 0);
         break;
     case DLG_CUSTOM_SOUNDS:
         dlgClearItems(&r->dlg);
@@ -491,6 +493,10 @@ int dlgRunClick(DlgRunner *r, int x, int y) {
         if (id == 1040 && r->dlg.listSel >= 0 && r->host && r->host->loadStage)
             r->host->loadStage(r->host->user, r->dlg.listSel,
                                r->which == DLG_LOAD_QUEST_MAP);
+        else if (id == 1188) {                  // Awards
+            r->showAwards = 1;
+            break;
+        }
         else if (id == 1189) {                  // Ending
             r->showEnding = 1;
             break;

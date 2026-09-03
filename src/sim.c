@@ -25,7 +25,6 @@
 #define ROUTE_EMPTY 0x1f0          // what +0x18 holds when there is no route
 #define FILL_INFINITE 0x1f0        // and how far 0041a680 calls unreached
 #define SIM_DAY_BUDGET 3000        // 00405c60's allowance for a stage
-#define FILL_INFINITE 0x1f0        // and how far 0041a680 says an unreached cell is
 
 // The eight neighbours, from the paired tables at 00434420 and 00434428:
 // west, east, north, south, then the four diagonals.

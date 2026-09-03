@@ -83,6 +83,9 @@ static int stageName(void *host, int stage, char *out, int size) {
     return 1;
 }
 static int g_questWanted = -1;
+static int g_rank = 0;
+
+static int campaignRankOf(void *host) { (void)host; return g_rank; }
 
 static int loadStage(void *host, int stage, int quest) {
     (void)host;
@@ -133,6 +136,7 @@ int main(void) {
     host.stageName = stageName;
     host.stages = 6;
     host.loadStage = loadStage;
+    host.campaignRank = campaignRankOf;
     host.getWindow = getWindow;
     host.setWindow = setWindow;
 
@@ -200,6 +204,20 @@ int main(void) {
         // DAT_004365cc: a single map is not the campaign, and 0041f4c0
         // ends it in mode 4 - no record, and nowhere to go afterwards.
         expect("as a single map, not the campaign", g_questWanted, 0);
+
+        // 104's Awards button: the resource has it disabled and the
+        // program turns it on, which it can only do once the campaign
+        // has a class to show.
+        g_rank = 0;
+        dlgRunOpen(&r, DLG_LOAD_QUEST_MAP, 640, 480);
+        expect("Awards is greyed with nothing to show",
+               dlgEnabled(&r.dlg, 1188), 0);
+        g_rank = 3;
+        dlgRunOpen(&r, DLG_LOAD_QUEST_MAP, 640, 480);
+        expect("and live once there is", dlgEnabled(&r.dlg, 1188), 1);
+        press(&r, 1188);
+        expect("pressing it asks for the certificate", r.showAwards, 1);
+        r.showAwards = 0;
 
         dlgRunOpen(&r, DLG_LOAD_QUEST_MAP, 640, 480);
         pressRow(&r, 1002, 2);

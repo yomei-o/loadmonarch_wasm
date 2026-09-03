@@ -61,6 +61,9 @@ typedef struct {
     // nowhere afterwards.  FUN_004067c0 puts it back to one when the campaign
     // moves on by itself.
     int (*loadStage)(void *user, int stage, int quest);
+    // 0041f6c0's class, so 104 can grey its Awards button while there is
+    // nothing to show.
+    int (*campaignRank)(void *user);
 
     // Whether a window is showing, and turning it on or off.  0 progress,
     // 1 unit, 2 graph.
@@ -84,7 +87,11 @@ typedef struct {
     int firstEmpty;             // the save slot Save New will use, or -1
     int lastOrdered;            // how many took the order the Information
                                 // dialog was asking about
-    int showEnding;             // 104's Ending was pressed; the host reads it
+    // 104's two buttons on the right, which the host carries out: Awards
+    // opens dialog 114 with the class the campaign has reached, and Ending
+    // shows dialog 121, which is END.256.  Cleared when the host takes it.
+    int showEnding;
+    int showAwards;
 } DlgRunner;
 
 void dlgRunInit(DlgRunner *r, Sim *sim, const DlgHost *host);
