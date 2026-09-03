@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903231727"></script>
+<script src="loadmonarch.js?v=20260903232629"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -117,6 +117,7 @@ createLordMonarch().then(function (M) {
   var note = document.getElementById('note');
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
+  var awardsPlayed = false;   // the certificate's tune, started once
 
   // Which build this page is, and whether a newer one is up.  The stamp is
   // written in by tools/build_wasm.sh, and docs/version.txt carries the same
@@ -124,7 +125,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903231727';
+  var BUILD = '20260903232629';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -799,6 +800,22 @@ createLordMonarch().then(function (M) {
         // Over", and neither loops.  The ending picture is not a stage's; it
         // belongs to finishing the campaign, which is what 0041f6c0 runs
         // FUN_00409570 for, and lm_end_click says when that happens.
+        // 004126e6: the certificate has a tune of its own, and it plays
+        // whenever that window opens - at the end of a stage, and from Load
+        // Quest Map's Awards button too.  Below the tenth rank it is
+        // "Award(class)" and from the tenth up "Award(degree)"; the call
+        // passes nought for the loop, so neither repeats.
+        if (M._lm_awards_up()) {
+          if (!awardsPlayed) {
+            awardsPlayed = true;
+            if (musicOn) {
+              playing = M._lm_awards_rank() < 10 ? 4 : 5;
+              M._lm_music_play(playing, M._lm_tune_loops(playing));
+            }
+          }
+        } else {
+          awardsPlayed = false;
+        }
         if (M._lm_end_up() && !said) {
           said = true;
           if (musicOn) {
