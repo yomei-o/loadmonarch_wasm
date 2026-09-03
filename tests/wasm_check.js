@@ -404,6 +404,23 @@ createLordMonarch().then((M) => {
         expect('a save of the wrong size is refused', M._lm_load(p, 10), 0);
     }
 
+    // Every M.something the page names has to exist on the module.  The
+    // opening picture was guarded by `if (!M.ccall)` for weeks, and ccall is
+    // not one of the runtime methods this build hands out - so the guard was
+    // always taken and the picture never once appeared.
+    {
+        const page = fs.readFileSync(
+            path.join(__dirname, '..', 'web', 'index.html'), 'utf8');
+        const wanted = new Set();
+        const re = /\bM\.([A-Za-z_$][A-Za-z0-9_$]*)/g;
+        let m;
+        while ((m = re.exec(page))) wanted.add(m[1]);
+        const missing = [...wanted].filter((n) => M[n] === undefined);
+        expect('the page names nothing the module lacks',
+               missing.join(', '), '');
+        console.log(`  ${wanted.size} module names used by the page, all there`);
+    }
+
     // The Progress Window's two strips, 0041a1b0.  The window has to be up
     // for a drag to land on it, and the readings are taken in screen pixels
     // the way a mouse gives them.

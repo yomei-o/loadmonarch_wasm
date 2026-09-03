@@ -200,7 +200,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260903055023"></script>
+<script src="loadmonarch.js?v=20260903055428"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -253,7 +253,7 @@ createLordMonarch().then(function (M) {
   var artCanvas = document.getElementById('art');
   var artButton = document.getElementById('artBtn');
   function showPicture(stem) {
-    if (!M.ccall) return false;
+    if (!M._lm_picture_open) return false;
     var name = M._lm_alloc(stem.length + 1);
     for (var i = 0; i < stem.length; i++) M.HEAPU8[name + i] = stem.charCodeAt(i);
     M.HEAPU8[name + stem.length] = 0;

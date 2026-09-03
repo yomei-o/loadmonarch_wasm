@@ -253,7 +253,7 @@ createLordMonarch().then(function (M) {
   var artCanvas = document.getElementById('art');
   var artButton = document.getElementById('artBtn');
   function showPicture(stem) {
-    if (!M.ccall) return false;
+    if (!M._lm_picture_open) return false;
     var name = M._lm_alloc(stem.length + 1);
     for (var i = 0; i < stem.length; i++) M.HEAPU8[name + i] = stem.charCodeAt(i);
     M.HEAPU8[name + stem.length] = 0;
