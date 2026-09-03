@@ -745,6 +745,54 @@ void uiToolDraw(Surface *out, const ToolBar *tool, int running, int zoom) {
             }
         image++;
     }
+
+    // And the tooltip for whatever the pointer is over, under the bar and
+    // just right of the icon, the way a Windows one sits.  Drawn last so it
+    // is over everything the bar has.
+    if (tool->hot >= 0 && tool->hot < kToolbarButtons) {
+        const char *tip = uiToolTip(kToolbarCommand[tool->hot]);
+        if (tip && *tip) {
+            const int tw = fontTextWidth(tip);
+            int tx = toolPlace(tool->hot) + 6;
+            const int ty = UI_BAR_H + UI_TOOL_H + 2;
+            if (tx + tw + 6 > out->width) tx = out->width - tw - 7;
+            if (tx < 0) tx = 0;
+            fill(out, tx, ty, tw + 6, 20, (unsigned char)UI_TIP_FACE);
+            fill(out, tx, ty, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
+            fill(out, tx, ty + 19, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
+            fill(out, tx, ty, 1, 20, (unsigned char)UI_TIP_TEXT);
+            fill(out, tx + tw + 5, ty, 1, 20, (unsigned char)UI_TIP_TEXT);
+            fontDrawText(out, tx + 3, ty + 2, (unsigned char)UI_TIP_TEXT, tip);
+        }
+    }
+}
+
+// The tool bar's tooltips, by command.  Filled from the STRINGTABLE of
+// whichever release was opened; empty until then, and then nothing is drawn.
+#define UI_TIP_MAX 40
+static unsigned short g_tipCommand[32];
+static char g_tipText[32][UI_TIP_MAX];
+static int g_tips;
+
+void uiToolSetTip(unsigned command, const char *text) {
+    if (!command || !text || !text[0]) return;
+    int at = -1;
+    for (int i = 0; i < g_tips; i++)
+        if (g_tipCommand[i] == command) at = i;
+    if (at < 0) {
+        if (g_tips >= 32) return;
+        at = g_tips++;
+        g_tipCommand[at] = (unsigned short)command;
+    }
+    int i = 0;
+    for (; text[i] && i < UI_TIP_MAX - 1; i++) g_tipText[at][i] = text[i];
+    g_tipText[at][i] = 0;
+}
+
+const char *uiToolTip(unsigned command) {
+    for (int i = 0; i < g_tips; i++)
+        if (g_tipCommand[i] == command) return g_tipText[i];
+    return NULL;
 }
 
 int uiToolHover(ToolBar *tool, int x, int y) {

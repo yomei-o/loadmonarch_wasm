@@ -313,3 +313,44 @@ int rsrcDialog(const Pe *pe, unsigned id, RsrcDialog *out) {
     }
     return 1;
 }
+
+/* ---------------------------------------------------------------- strings */
+
+int rsrcString(const Pe *pe, unsigned id, char *out, int size) {
+    if (size > 0) out[0] = 0;
+    unsigned length = 0;
+    const unsigned char *p =
+        peResource(pe, RSRC_TYPE_STRING, id / 16u + 1u, &length);
+    if (!p) return 0;
+    const unsigned char *end = p + length;
+    // Sixteen counted strings, one after another; the wanted one is the
+    // (id & 15)th, and a zero count is a string that is not there.
+    for (unsigned i = 0; i < 16 && p + 2 <= end; i++) {
+        const unsigned words = rd16(p);
+        p += 2;
+        if (i == (id & 15u)) {
+            if (!words) return 0;
+            // readText wants a nought-terminated run; this one is counted, so
+            // it is copied out by hand through the same conversion.
+            int at = 0;
+            for (unsigned k = 0; k < words && p + 2 <= end; k++) {
+                const unsigned w = rd16(p + k * 2);
+                if (w < 0x80) {
+                    if (at < size - 1) out[at++] = (char)w;
+                    continue;
+                }
+                const unsigned char *sjis = toSjis(w);
+                if (!sjis) {
+                    if (at < size - 1) out[at++] = '?';
+                    continue;
+                }
+                for (int b = 0; sjis[b] && at < size - 1; b++)
+                    out[at++] = (char)sjis[b];
+            }
+            out[at] = 0;
+            return at > 0;
+        }
+        p += words * 2;
+    }
+    return 0;
+}

@@ -62,6 +62,33 @@ int main(int argc, char **argv) {
     check(peOpen(&pe, image, got), "it is a PE32");
     printf("  ImageBase %08x, %u sections\n", pe.base, pe.sections);
 
+    /* ----------------------------------------------------- STRINGTABLE */
+
+    // The tool bar's tooltips: one string a command, which is what
+    // LoadStringA is imported for.  Both releases carry them.
+    {
+        static const unsigned kWanted[] = {40045, 40030, 40012, 40020, 40037};
+        int got = 0;
+        char text[64];
+        for (unsigned i = 0; i < sizeof kWanted / sizeof kWanted[0]; i++) {
+            if (!rsrcString(&pe, kWanted[i], text, sizeof text)) continue;
+            got++;
+            if (i == 0) printf("  40045 is \"%s\"\n", text);
+        }
+        // And through the store the tool bar reads them out of.
+        if (rsrcString(&pe, 40045, text, sizeof text)) {
+            uiToolSetTip(40045, text);
+            const char *back = uiToolTip(40045);
+            check(back && strcmp(back, text) == 0,
+                  "the tool bar keeps the string it is given");
+        }
+        if (got != (int)(sizeof kWanted / sizeof kWanted[0])) {
+            printf("FAIL  %d of %d tool bar strings read\n", got,
+                   (int)(sizeof kWanted / sizeof kWanted[0]));
+            failures++;
+        }
+    }
+
     /* -------------------------------------------------------- MENU 101 */
     static RsrcMenuBar bar;
     check(rsrcMenuBar(&pe, 101, &bar), "MENU 101 reads");

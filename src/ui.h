@@ -31,6 +31,10 @@
 // cut in and the red its penalty line is.  See src/endstage.c.
 #define UI_END_GREY  0xf7u      // 80,80,80
 #define UI_END_RED   0xf8u      // 245,0,0
+// A tooltip's own two, which are the desktop's rather than the game's:
+// COLOR_INFOBK and COLOR_INFOTEXT.
+#define UI_TIP_FACE  0xf9u      // 255,255,225
+#define UI_TIP_TEXT  0xfau      // 0,0,0
 
 // 0040a870, the string drawer the game's own painted windows use.  It builds
 // twelve COLORREFs on the stack, and every call names two of them: the ink,
@@ -187,6 +191,14 @@ unsigned uiBarItemCommand(int menu, int item);
 // same commands - which tests/rsrc_test.c checks against both.  Shift-JIS,
 // like everything else the port draws.  A null or empty string puts the
 // built-in English back.
+// What the tool bar says about the icon under the pointer.  The original
+// imports LoadStringA and builds its bar with CreateToolbarEx, whose
+// tooltips come out of the STRINGTABLE keyed by command - "Alliance
+// Setting" for 40012 - so this is that string, in whichever language the
+// release is.  A null or empty one puts the tooltip away.
+void uiToolSetTip(unsigned command, const char *text);
+const char *uiToolTip(unsigned command);
+
 void uiBarSetMenuName(int menu, const char *text);
 void uiBarSetItemText(int menu, int item, const char *text);
 // And whether anything has been set, so a host can say where its words came

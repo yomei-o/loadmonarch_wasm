@@ -102,4 +102,14 @@ typedef struct {
 // Reads DIALOG `id`, plain template or DLGTEMPLATEEX.
 int rsrcDialog(const Pe *pe, unsigned id, RsrcDialog *out);
 
+/* ---------------------------------------------------------------- strings */
+
+// One entry of the STRINGTABLE, which the executable keeps in blocks of
+// sixteen: string `id` lives in block id / 16 + 1 at index id & 15.  Both
+// releases carry one keyed by command number - "Alliance Setting" for 40012 -
+// which is what LoadStringA is imported for and what the tool bar CreateToolbarEx
+// makes shows in its tooltips.  Answers non-zero when there is one.
+#define RSRC_TYPE_STRING 6
+int rsrcString(const Pe *pe, unsigned id, char *out, int size);
+
 #endif

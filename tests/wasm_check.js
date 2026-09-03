@@ -615,6 +615,23 @@ createLordMonarch().then((M) => {
         M._lm_end_click();
     }
 
+    // The tool bar's tooltips, which come out of the release's STRINGTABLE -
+    // the same one LoadStringA is imported for.  40045 is Start.
+    {
+        expect('the tool bar knows what Start is called',
+               M.UTF8ToString(M._lm_tool_tip(40045)), 'Start');
+        expect('and what 40012 is', M.UTF8ToString(M._lm_tool_tip(40012)),
+               'Alliance Setting');
+        expect('a command with no string has none',
+               M.UTF8ToString(M._lm_tool_tip(1)), '');
+        // A separator has no button under it, and nothing to say.
+        M._lm_bar_hover(100, 32);
+        expect('a separator is nothing to hover', M._lm_tool_hot(), -1);
+        M._lm_bar_hover(40, 32);
+        expect('and an icon is', M._lm_tool_hot() >= 0, true);
+        console.log('  the tool bar reads its tooltips out of the release');
+    }
+
     // The page's own script, parsed.  Nothing here runs it - it wants a DOM -
     // but a syntax error in it is otherwise found only by opening the page,
     // and every one of the names it calls is checked above.

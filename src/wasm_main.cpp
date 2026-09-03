@@ -16,6 +16,7 @@ extern "C" {
 #include "picture.h"
 #include "font.h"
 #include "rsrc.h"
+#include "toolbar.h"
 #include "render.h"
 #include "sim.h"
 #include "dlgload.h"
@@ -178,6 +179,17 @@ static void loadMenuText(void) {
     }
     static Pe pe;
     if (!peOpen(&pe, image, got)) return;
+    // The tool bar's tooltips first: the STRINGTABLE keyed by command, which
+    // is what LoadStringA is imported for.
+    for (int i = 0; i < kToolbarButtons; i++) {
+        const unsigned command = kToolbarCommand[i];
+        char tip[64];
+        if (!command) continue;
+        if (!rsrcString(&pe, command, tip, sizeof tip)) continue;
+        if (!fontCanDraw(tip, nullptr)) continue;
+        uiToolSetTip(command, tip);
+    }
+
     static RsrcMenuBar bar;
     if (!rsrcMenuBar(&pe, 101, &bar)) return;
     if (bar.menus != UI_MENU_MAX) return;
@@ -1175,6 +1187,15 @@ EMSCRIPTEN_KEEPALIVE int lm_bar_hover(int x, int y) {
     const int onBar = g_showBar && uiBarHover(&g_bar, x, y);
     const int onTool = g_showTool && uiToolHover(&g_tool, x, y);
     return onBar || onTool;
+}
+
+// What the tool bar says about a command, out of the STRINGTABLE of the
+// release that was opened - the tooltip its own CreateToolbarEx shows.
+EMSCRIPTEN_KEEPALIVE int lm_tool_hot(void) { return g_tool.hot; }
+
+EMSCRIPTEN_KEEPALIVE const char *lm_tool_tip(int command) {
+    const char *tip = uiToolTip((unsigned)command);
+    return tip ? tip : "";
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_bar_open(void) {

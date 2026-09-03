@@ -301,7 +301,7 @@ void renderPalette(const GameState *game, int zoom,
     // uses 0xf0 and up, and these are the Windows 95 system colours the
     // original's menus were drawn in - it is an MFC application, so its menus
     // were whatever the desktop's scheme said, and this is that scheme.
-    static const unsigned char chrome[9][3] = {
+    static const unsigned char chrome[11][3] = {
         {192, 192, 192},        // UI_FACE
         {255, 255, 255},        // UI_LIGHT
         {128, 128, 128},        // UI_SHADOW
@@ -311,8 +311,10 @@ void renderPalette(const GameState *game, int zoom,
         {128, 128, 128},        // UI_GREY_TEXT
         {80, 80, 80},           // UI_END_GREY, 0040a870's heading grey
         {245, 0, 0},            // UI_END_RED, its penalty red
+        {255, 255, 225},        // UI_TIP_FACE, COLOR_INFOBK
+        {0, 0, 0},              // UI_TIP_TEXT
     };
-    for (unsigned i = 0; i < 9; i++)
+    for (unsigned i = 0; i < 11; i++)
         for (int c = 0; c < 3; c++) table[0xf0 + i][c] = chrome[i][c];
 
     // And the tool bar's own sixteen, which BITMAP 102 brings with it - the
