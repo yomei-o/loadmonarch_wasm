@@ -103,7 +103,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903061755"></script>
+<script src="loadmonarch.js?v=20260903062817"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -168,7 +168,10 @@ createLordMonarch().then(function (M) {
       document.getElementById('cashBtn').disabled = false;
       canvas.focus();
       fitView();
-      showPicture('LOGO');          // the title, until it is clicked away
+      // The opening picture is up already - lm_open_zip puts it there - and a
+      // click anywhere puts it away.  The stage under it is laid out and
+      // stopped, waiting for Go on the tool bar, which is where the original
+      // leaves it too.
       // Opening the zip is a user gesture, which is the one thing a browser
       // insists on before it will make a sound - so the music starts here
       // rather than waiting to be asked.

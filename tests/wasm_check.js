@@ -29,6 +29,25 @@ createLordMonarch().then((M) => {
         process.exit(1);
     }
     expect('stage count', stages, 15);
+
+    // A stage loads stopped, the way the original leaves it: 18727 puts 1 into
+    // DAT_00434524 as it lays a stage out and 00422a90 returns at once while
+    // that is set.  Start - the Go button on the tool bar - is what clears it.
+    // And the opening picture is up over nothing: the game's window is not
+    // built behind it.
+    expect('a stage loads stopped', M._lm_running(), 0);
+    M._lm_step(50);
+    expect('and nothing moves until Go', M._lm_sweeps(), 0);
+    expect('the opening picture is up', M._lm_picture_up(), 1);
+    M._lm_picture_dismiss();
+    M._lm_step(50);
+    expect('putting the picture away is not Go either', M._lm_sweeps(), 0);
+    expect('Go starts it', M._lm_command(40045), 1);
+    expect('and now it is running', M._lm_running(), 1);
+    expect('Pause stops it again', M._lm_command(40030), 1);
+    expect('so it is stopped', M._lm_running(), 0);
+    M._lm_command(40045);
+
     expect('first stage', M.UTF8ToString(M._lm_stage_name()), 'B_000.MAP');
     // MAP/NAME.TXT gives the campaign its order and its titles.
     expect('the quest has a name',
@@ -37,8 +56,10 @@ createLordMonarch().then((M) => {
            M.UTF8ToString(M._lm_stage_title()).length, (n) => n > 0);
     expect('the second stage is the one the list names', (() => {
         M._lm_load_stage(1);
+        M._lm_command(40045);           // a stage loads stopped: press Go
         const name = M.UTF8ToString(M._lm_stage_name());
         M._lm_load_stage(0);
+        M._lm_command(40045);           // a stage loads stopped: press Go
         return name;
     })(), 'B_003.MAP');
     expect('its scenery set', M._lm_scenery(), 10);
@@ -65,8 +86,9 @@ createLordMonarch().then((M) => {
 
     // The simulation advances, and the neutral cells put entities out.
     const before = M._lm_count(4, 3);
+    const sweptBefore = M._lm_sweeps();
     M._lm_step(600);
-    expect('sweeps counted', M._lm_sweeps(), (n) => n === 600);
+    expect('sweeps counted', M._lm_sweeps() - sweptBefore, 600);
     expect('neutral cells produced entities', M._lm_count(4, 3),
            (n) => n > before);
 
@@ -93,11 +115,13 @@ createLordMonarch().then((M) => {
     // Every stage loads.
     for (let s = 0; s < 15; s++) {
         expect(`stage ${s} loads`, M._lm_load_stage(s), 1);
+        M._lm_command(40045);           // a stage loads stopped: press Go
         M._lm_step(30);
     }
 
     // Orders: giving the whole army one takes and shows up in their state.
     M._lm_load_stage(1);                    // B_003, which starts with units
+    M._lm_command(40045);           // a stage loads stopped: press Go
     // A unit that spawns weak spends itself on the first settlement it raises
     // - 0040b330 returns "used up" whenever the unit is worth 200 or less - so
     // there is no army at all for the first few hundred sweeps.  This waits
@@ -115,6 +139,7 @@ createLordMonarch().then((M) => {
 
     // The music: a tune loads out of the zip and renders real samples.
     M._lm_load_stage(0);
+    M._lm_command(40045);           // a stage loads stopped: press Go
     expect('a tune loads', M._lm_music_play(0, 1), 1);
     expect('and reports playing', M._lm_music_playing(), 1);
     const frames = Math.min(2048, M._lm_music_capacity());
@@ -138,6 +163,7 @@ createLordMonarch().then((M) => {
     // 0040a110: which tune the war calls for.  One country against three is
     // behind all of them put together, so a stage opens on its first tune.
     M._lm_load_stage(1);
+    M._lm_command(40045);           // a stage loads stopped: press Go
     const set = M._lm_scenery();
     expect('the war asks for the stage tune', M._lm_music_wanted(), set);
     console.log(`  music wanted: ${M._lm_music_wanted()} (set ${set})`);
@@ -155,6 +181,7 @@ createLordMonarch().then((M) => {
 
     // The scenery set's own wording, and the cursor.
     M._lm_load_stage(2);
+    M._lm_command(40045);           // a stage loads stopped: press Go
     const country = M.UTF8ToString(M._lm_country_name(0));
     const order = M.UTF8ToString(M._lm_order_name(1));
     expect('country 0 has a name', country.length, (n) => n > 0);
@@ -179,6 +206,7 @@ createLordMonarch().then((M) => {
 
     // Choosing units and sending them: the original's own flow.
     M._lm_load_stage(1);                    // B_003 again
+    M._lm_command(40045);           // a stage loads stopped: press Go
     for (let i = 0; i < 300; i++) M._lm_step(1);
     const picked = M._lm_select_all(1);
     expect('units can be chosen', picked, (n) => n > 0);
@@ -404,6 +432,7 @@ createLordMonarch().then((M) => {
         M._lm_command(40111);                          // windows back as they were
         M._lm_command(40045);                          // and the clock running
         M._lm_load_stage(1);
+        M._lm_command(40045);           // a stage loads stopped: press Go
     }
 
     // The original's own save: write it, change the world, read it back.

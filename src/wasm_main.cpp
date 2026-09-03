@@ -78,7 +78,11 @@ unsigned g_archiveSize;
 int g_stage;
 int g_zoom = 1;
 int g_viewX, g_viewY;
-int g_running = 1;
+// DAT_00434524, the other way up: it is 1 for stopped there and this is 1 for
+// running.  A stage begins stopped either way - the original sets the flag as
+// it lays a stage out (18727) and Start is the only thing that clears it - so
+// the war does not move until the player presses Go.
+int g_running = 0;
 int g_lastAction;
 unsigned g_lastCol, g_lastRow;
 char g_message[256];
@@ -157,6 +161,8 @@ int loadStage(int stage) {
     g_viewY = (span - g_viewH) / 2;
     clampView();
     g_lastAction = 0;
+    // Stopped, the way 18727 leaves it.  Nothing moves until Start.
+    g_running = 0;
     return 1;
 }
 
@@ -165,6 +171,9 @@ int loadStage(int stage) {
 // Wired once the archive is open; defined with the dialog
 // callbacks further down.
 static void dialogsReady(void);
+
+// Defined with the other picture calls further down.
+extern "C" int lm_picture_show(const char *stem);
 
 // The music exports, which the sound dialog reaches back into.
 extern "C" EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop);
@@ -244,18 +253,13 @@ static void drawDragRect(void) {
         }
 }
 
-// The picture, in its own colours rather than the board's - which is why it
-// goes on after the palette has been resolved.  Centred, with the frame behind
-// it darkened so it reads as a window over the game.
+// The picture, in its own colours rather than the board's, on nothing but
+// black.  It is a window of its own in the original and the game's window is
+// not up behind it - so nothing else is drawn while one of these is showing,
+// and the board is not built at all.
 static void drawPicture(void) {
     const int W = g_viewW, H = g_viewH + UI_CHROME_H;
-    for (int i = 0; i < W * H; i++) {
-        const unsigned was = g_pixels[i];
-        g_pixels[i] = 0xff000000u |
-            (((was & 0xffu) >> 2)) |
-            ((((was >> 8) & 0xffu) >> 2) << 8) |
-            ((((was >> 16) & 0xffu) >> 2) << 16);
-    }
+    for (int i = 0; i < W * H; i++) g_pixels[i] = 0xff000000u;
     const int dx = (W - (int)g_picture.width) / 2;
     const int dy = (H - (int)g_picture.height) / 2;
     for (unsigned y = 0; y < g_picture.height; y++) {
@@ -296,6 +300,10 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
     layoutSurfaces();
+    // The opening picture, over a stage that is laid out and waiting for Go.
+    // It belongs here rather than on the page: everything the player sees is
+    // drawn in the one canvas by the port.
+    lm_picture_show("LOGO");
     dialogsReady();
     return stageCount();
 }
@@ -385,13 +393,22 @@ EMSCRIPTEN_KEEPALIVE int lm_stage_count(void) { return stageCount(); }
 EMSCRIPTEN_KEEPALIVE int lm_stage(void) { return g_stage; }
 
 EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
-    if (!g_running) return;
+    // A picture is a window over the game in the original and the game is not
+    // running behind it.  The opening logo used to sit over a war already
+    // under way.
+    if (!g_running || g_pictureUp) return;
     for (int i = 0; i < times; i++) simStep(&g_sim);
 }
 
 // Draws the world and resolves the palette, handing back RGBA the canvas can
 // take straight into an ImageData.
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
+    // A picture stands alone: the game's own window is not up behind it, so
+    // there is nothing to draw under it and nothing to draw it over.
+    if (g_pictureUp && g_picture.pixels) {
+        drawPicture();
+        return g_pixels;
+    }
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     if (g_statusH) {
@@ -463,7 +480,6 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         g_pixels[i] = 0xff000000u | (unsigned)rgb[0] |
                       ((unsigned)rgb[1] << 8) | ((unsigned)rgb[2] << 16);
     }
-    if (g_pictureUp && g_picture.pixels) drawPicture();
     return g_pixels;
 }
 
