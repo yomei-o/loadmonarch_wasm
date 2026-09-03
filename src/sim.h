@@ -4,6 +4,21 @@
 
 #include "state.h"
 
+// What 0041f0d0 announces while it takes a country apart, kept for the host to
+// show: it opens dialog 122 for the country itself and then, once the second
+// of the four has gone, for every country still standing that had an ally.
+// They are modal in the original - DialogBoxParamA blocks - so they queue.
+#define SIM_EVENTS_MAX 8
+typedef enum {
+    SIM_EVENT_FALLEN = 0,           // dialog 122's mode 0
+    SIM_EVENT_BREAK_ALLIANCE = 1    // its mode 1
+} SimEventKind;
+
+typedef struct {
+    unsigned char kind;
+    unsigned char faction;
+} SimEvent;
+
 typedef struct {
     GameState *state;
     unsigned cursor;            // DAT_00437690 / DAT_004369fc
@@ -47,6 +62,10 @@ typedef struct {
     // DAT_004321c4: whoever is wearing the leader balloon because the player
     // asked to be shown him, so the next asking can take it off again.
     int shownLeader;
+
+    // 0041f0d0's announcements, waiting for the host to show them.
+    SimEvent event[SIM_EVENTS_MAX];
+    int events;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);
@@ -135,6 +154,9 @@ int simMusicWanted(const Sim *sim);
 // its castle wiped, its purse handed to whoever +0x1f names - and the stage is
 // over when the player is out, or when three of the four are.
 void simConquerFaction(Sim *sim, unsigned faction);
+
+// Takes the oldest one and answers non-zero, or nothing and answers zero.
+int simTakeEvent(Sim *sim, SimEvent *out);
 void simCheckConquest(Sim *sim);
 int simStageOutcome(Sim *sim);      // 0 playing, 1 the player won, 2 lost
 

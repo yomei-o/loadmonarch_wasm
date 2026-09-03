@@ -416,6 +416,13 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
+    // Dialog 122, the notice about a country: modal, and a click closes it
+    // before its own three seconds are up.
+    if (M._lm_notice_up()) {
+      M._lm_notice_click();
+      e.preventDefault();
+      return;
+    }
     // A picture is over everything, and a click anywhere puts it away.
     if (M._lm_picture_up()) {
       M._lm_picture_dismiss();

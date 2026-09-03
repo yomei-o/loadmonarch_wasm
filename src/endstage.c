@@ -6,38 +6,17 @@
 #include <stdio.h>
 #include <string.h>
 
-// 0040a870's colour table, by the index its callers pass.  It builds twelve
-// COLORREFs on the stack and every call names two of them - the ink, and the
-// shadow drawn one pixel down and right.  Only six are ever asked for:
-//
-//   2 white   3 black    the numbers in the framed panel
-//   4 red     5 grey     the penalty, and mode 3's "you lose"
-//   6 grey    7 white    the headings, which go in the balloon
-static unsigned char inkOf(int index) {
-    switch (index) {
-    case 2: return UI_LIGHT;            // 255,255,255
-    case 3: return UI_DARK;             // 0,0,0
-    case 4: return UI_END_RED;          // 245,0,0
-    case 5: return UI_END_GREY;         // 80,80,80
-    case 6: return UI_END_GREY;
-    default: return UI_LIGHT;           // 7
-    }
-}
-
-// One 0040a870 call: the shadow first, at +1,+1, then the ink over it.
+// One 0040a870 call.  The colours are its own indices; see ui.h.
 static void say(Surface *out, int x, int y, int ink, int shadow,
                 const char *text) {
-    fontDrawText(out, x + 1, y + 1, inkOf(shadow), text);
-    fontDrawText(out, x, y, inkOf(ink), text);
+    uiTextOut(out, x, y, ink, shadow, text);
 }
 
-// The same, centred, which is what 0040a870's seventh argument asks for:
-// 00411050 passes 1 for its map line and sets the width DAT_004321e0 points at
-// to 0x100, so the string lands at (256 - measured) / 2 in the window.
+// The same, centred in the window: 00411050 passes 1 for its map line and sets
+// the width DAT_004321e0 points at to 0x100.
 static void sayMid(Surface *out, int left, int y, int ink, int shadow,
                    const char *text) {
-    const int w = fontTextWidth(text);
-    say(out, left + (w < END_W ? (END_W - w) / 2 : 0), y, ink, shadow, text);
+    uiTextOutMid(out, left, END_W, y, ink, shadow, text);
 }
 
 void campaignClear(Campaign *campaign) {

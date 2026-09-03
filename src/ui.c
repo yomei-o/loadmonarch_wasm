@@ -8,6 +8,30 @@
 
 /* ------------------------------------------------------- Windows 95 edges */
 
+// 0040a870's own colours.  See ui.h.
+unsigned char uiTextInk(int index) {
+    switch (index) {
+    case 1: case 3: case 10: return UI_DARK;        // 0,0,0
+    case 4: return UI_END_RED;                      // 245,0,0
+    case 5: case 6: return UI_END_GREY;             // 80,80,80
+    case 9: return UI_PICK;                         // 0,0,128 - near enough
+    default: return UI_LIGHT;                       // 255,255,255
+    }
+}
+
+void uiTextOut(Surface *out, int x, int y, int ink, int shadow,
+               const char *text) {
+    fontDrawText(out, x + 1, y + 1, uiTextInk(shadow), text);
+    fontDrawText(out, x, y, uiTextInk(ink), text);
+}
+
+void uiTextOutMid(Surface *out, int left, int width, int y, int ink,
+                  int shadow, const char *text) {
+    const int w = fontTextWidth(text);
+    uiTextOut(out, left + (w < width ? (width - w) / 2 : 0), y, ink, shadow,
+              text);
+}
+
 static void fill(Surface *out, int x, int y, int w, int h, unsigned char c) {
     for (int j = 0; j < h; j++) {
         const int py = y + j;

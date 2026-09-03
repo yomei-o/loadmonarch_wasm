@@ -32,6 +32,26 @@
 #define UI_END_GREY  0xf7u      // 80,80,80
 #define UI_END_RED   0xf8u      // 245,0,0
 
+// 0040a870, the string drawer the game's own painted windows use.  It builds
+// twelve COLORREFs on the stack, and every call names two of them: the ink,
+// and a shadow drawn one pixel down and right.  The index is the original's
+// own, so a call reads the way the executable has it.
+//
+//    0 white   1 black    the notices
+//    2 white   3 black    the end-of-stage numbers
+//    4 red     5 grey     its penalty line
+//    6 grey    7 white    its headings
+//    8 white   9 blue     unused by anything that calls it
+//   10 black  11 white
+unsigned char uiTextInk(int index);
+void uiTextOut(Surface *out, int x, int y, int ink, int shadow,
+               const char *text);
+// The same centred in a window `width` wide, which is what 0040a870 does when
+// its seventh argument is set: it measures the string and puts it at
+// (width - measured) / 2.
+void uiTextOutMid(Surface *out, int left, int width, int y, int ink,
+                  int shadow, const char *text);
+
 #define UI_ITEM_H 18            // one row of a menu
 #define UI_ORDERS_MAX 16
 

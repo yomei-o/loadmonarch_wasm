@@ -18,6 +18,7 @@ extern "C" {
 #include "sim.h"
 #include "dlgrun.h"
 #include "endstage.h"
+#include "notice.h"
 #include "panels.h"
 #include "ui.h"
 #include "state.h"
@@ -61,6 +62,7 @@ DlgHost g_dlgHost;
 // a stage - it is what says which maps are open - so it sits here rather than
 // in the GameState a stage load replaces.
 EndStage g_end;
+Notice g_notice;                // dialog 122, whichever of the two it is
 Campaign g_campaign;
 int g_endSaid;                  // the outcome this window was opened for
 int g_endRankUp;                // did the last click take the player up a class
@@ -180,6 +182,8 @@ int loadStage(int stage) {
     g_running = 0;
     // Whatever the last stage ended with, it is not on the screen any more.
     memset(&g_end, 0, sizeof g_end);
+    memset(&g_notice, 0, sizeof g_notice);
+    g_sim.events = 0;
     g_endSaid = 0;
     return 1;
 }
@@ -439,10 +443,46 @@ static void endStageCheck(void) {
                  g_stages.count ? g_stages.name[g_stage] : "", against);
 }
 
+// 0041f0d0's notices, one at a time: they are modal in the original, so the
+// next one waits for the one before it to go.  FUN_00424520 puts the view on
+// the castle that has just come down before it opens the window.
+static void noticeService(void) {
+    if (g_notice.up) {
+        if (!noticeStep(&g_notice)) return;
+    }
+    SimEvent event;
+    if (!simTakeEvent(&g_sim, &event)) return;
+    const unsigned f = event.faction;
+    const char *name = f < FACTION_COUNT
+        ? worldCountryName(&g_game.world, f) : "";
+    if (event.kind == SIM_EVENT_FALLEN && f < PLAYABLE_FACTIONS) {
+        // FUN_00423f90 centres the view on the country's own castle, which is
+        // the pair at +8 in its record.
+        const Faction *side = &g_game.factions[f];
+        const TileBank *bank = worldBank(&g_game.world, g_zoom);
+        const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+        g_viewX = (int)side->at08[0] * ts - g_viewW / 2;
+        g_viewY = (int)side->at08[1] * ts - g_viewH / 2;
+        clampView();
+    }
+    noticeOpen(&g_notice, event.kind, f, name);
+}
+
 EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // A picture is a window over the game in the original and the game is not
     // running behind it.  The opening logo used to sit over a war already
     // under way.
+    if (g_notice.up || g_sim.events > 0) {
+        // Dialog 122 is modal too, and its own timer is what runs while it is
+        // up: the world waits.
+        for (int i = 0; i < times; i++) noticeService();
+        // 0041f0d0 opens its notice in the middle of the sweep and 0041f4c0
+        // comes after it in the same tick, so the end of a stage waits behind
+        // the queue instead of opening over it - which is what the player
+        // sees: the last country falls, and then the window.
+        if (!g_notice.up && g_sim.events <= 0) endStageCheck();
+        return;
+    }
     if (g_end.up) {
         // 00410020 is the window's WM_TIMER, and it runs while nothing else
         // does - the animation and its prompt keep going with the world
@@ -453,6 +493,7 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     if (!g_running || g_pictureUp) return;
     for (int i = 0; i < times; i++) {
         simStep(&g_sim);
+        if (g_sim.events > 0) break;    // the notices go first
         endStageCheck();
         if (g_end.up) break;
     }
@@ -526,6 +567,11 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     if (g_showTool) uiToolDraw(&g_screen, &g_tool, g_running, g_zoom);
     if (g_showBar) uiBarDraw(&g_screen, &g_game, g_running, &g_bar);
     dlgRunDraw(&g_screen, &g_dlg, &g_game);         // and whatever dialog is up
+    // Dialog 122, which 00411bb0 centres the same way.
+    if (g_notice.up)
+        noticeDraw(&g_screen, &g_notice, &g_game.world,
+                   (g_screen.width - NOTICE_W) / 2,
+                   (g_screen.height - NOTICE_H) / 2);
     // Dialog 105, which 0040fca0 centres.  Modal, so it goes over the lot.
     if (g_end.up)
         endStageDraw(&g_screen, &g_end, &g_game.world,
@@ -1229,6 +1275,18 @@ EMSCRIPTEN_KEEPALIVE int lm_human(void) { return (int)g_sim.humanFaction; }
 // 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
 // outlasted the rest, 2 when the player is out.
 EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }
+
+// Dialog 122: is it up, which of the two, and the click that closes it early.
+EMSCRIPTEN_KEEPALIVE int lm_notice_up(void) { return g_notice.up; }
+EMSCRIPTEN_KEEPALIVE int lm_notice_kind(void) {
+    return g_notice.up ? g_notice.kind : -1;
+}
+EMSCRIPTEN_KEEPALIVE int lm_notice_faction(void) {
+    return g_notice.up ? (int)g_notice.faction : -1;
+}
+EMSCRIPTEN_KEEPALIVE int lm_notice_click(void) {
+    return noticeDismiss(&g_notice);
+}
 
 /* ------------------------------------------------- dialog 105 and the record */
 

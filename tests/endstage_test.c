@@ -1,5 +1,6 @@
-// Dialog 105 and the campaign behind it - 0041f4c0's five modes, 0041b140's
-// record, and what the window puts on the screen.
+// The game's own painted windows: dialog 105 at the end of a stage - with
+// 0041f4c0's five modes and 0041b140's record behind it - and dialog 122, the
+// notice 0041f0d0 throws up when a country goes.
 //
 //   tests/endstage_test.exe [zip]
 //
@@ -12,6 +13,8 @@
 #include <string.h>
 
 #include "../src/endstage.h"
+#include "../src/notice.h"
+#include "../src/sim.h"
 #include "../src/ui.h"
 #include "../src/host.h"
 #include "../src/render.h"
@@ -251,6 +254,102 @@ int main(int argc, char **argv) {
         const int white = band(&surface, 20, 20 + 0x6e, UI_LIGHT);
         checkf(white > 30, "Game Over has %d white pixels, over %d",
                white, 30);
+    }
+
+    /* ------------------------------------------------------ dialog 122 */
+
+    // 0041f0d0 raises one notice for the country it has just taken apart, and
+    // then - only once the second of the four has gone - one for every
+    // country still standing that had an ally.
+    {
+        static GameState game;
+        static Sim sim;
+        memset(&game, 0, sizeof game);
+        game.world = world;
+        for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+            game.factions[f].at08[0] = (unsigned char)(4 + f * 8);
+            game.factions[f].at08[1] = (unsigned char)(4 + f * 8);
+            game.factions[f].at0c = 0xff;       // no leader entity to kill
+            game.factions[f].at1f = 0xff;       // and nobody inherits
+            game.factions[f].at1e = 0x80;       // no ally
+        }
+        // Two countries in an alliance, which is what the notice is about.
+        game.factions[1].at1e = 2;
+        game.factions[2].at1e = 1;
+        simInit(&sim, &game);
+        sim.events = 0;
+
+        SimEvent event;
+        simConquerFaction(&sim, 3);
+        check(simTakeEvent(&sim, &event), "the first country to go is announced");
+        checkf(event.kind == SIM_EVENT_FALLEN, "as kind %d, not %d", event.kind,
+               SIM_EVENT_FALLEN);
+        checkf(event.faction == 3, "and it was country %d, not %d",
+               event.faction, 3);
+        check(!simTakeEvent(&sim, &event),
+              "and nothing else - one country gone breaks no alliance");
+        checkf(game.factions[1].at1e == 2, "the alliance stands: %d, not %d",
+               game.factions[1].at1e, 2);
+
+        simConquerFaction(&sim, 0);
+        check(simTakeEvent(&sim, &event), "the second is announced too");
+        checkf(event.faction == 0, "country %d, not %d", event.faction, 0);
+        // And now both allies are told, in country order.
+        check(simTakeEvent(&sim, &event), "and then the alliance goes");
+        checkf(event.kind == SIM_EVENT_BREAK_ALLIANCE, "kind %d, not %d",
+               event.kind, SIM_EVENT_BREAK_ALLIANCE);
+        checkf(event.faction == 1, "country %d first, not %d", event.faction, 1);
+        check(simTakeEvent(&sim, &event), "the other side as well");
+        checkf(event.faction == 2, "country %d, not %d", event.faction, 2);
+        check(!simTakeEvent(&sim, &event), "and that is all of them");
+        checkf(game.factions[1].at1e == 0x80, "the ally field is %02x, not %02x",
+               game.factions[1].at1e, 0x80);
+        checkf(game.factions[2].at1e == 0x80, "on both sides: %02x, not %02x",
+               game.factions[2].at1e, 0x80);
+    }
+
+    // What it draws: the sheet's own frame, and the words only once the castle
+    // has finished falling.
+    {
+        static Notice notice;
+        noticeOpen(&notice, NOTICE_FALLEN, 3, "Blackland");
+        memset(surface.pixels, 0, (size_t)surface.width * surface.height);
+        noticeDraw(&surface, &notice, &world, 10, 10);
+        const unsigned char want =
+            world.ui.pixels[(size_t)(NOTICE_SHEET_TOP + 2) * UI_SHEET_W + 4];
+        checkf(surface.pixels[(size_t)12 * surface.width + 14] == want,
+               "the frame pixel is %02x, not the sheet's %02x",
+               surface.pixels[(size_t)12 * surface.width + 14], want);
+        checkf(band(&surface, 10, 10 + 0x18, UI_LIGHT) == 0,
+               "the words are up too early: %d pixels, wanted %d",
+               band(&surface, 10, 10 + 0x18, UI_LIGHT), 0);
+
+        // 00411d70 writes them at tick six.
+        for (int i = 0; i < NOTICE_WORDS_AT; i++) check(!noticeStep(&notice),
+                                                       "it is still up");
+        memset(surface.pixels, 0, (size_t)surface.width * surface.height);
+        noticeDraw(&surface, &notice, &world, 10, 10);
+        checkf(band(&surface, 10, 10 + 0x18, UI_LIGHT) > 60,
+               "the words have %d white pixels, wanted over %d",
+               band(&surface, 10, 10 + 0x18, UI_LIGHT), 60);
+
+        // And it closes itself past thirty.
+        int closed = 0;
+        for (int i = 0; i < 40 && !closed; i++) closed = noticeStep(&notice);
+        check(closed, "it closes itself");
+        check(!notice.up, "and is gone");
+        checkf(notice.tick == NOTICE_LIFE + 1, "after %d ticks, not %d",
+               notice.tick, NOTICE_LIFE + 1);
+
+        // A click closes it early.
+        noticeOpen(&notice, NOTICE_BREAK_ALLIANCE, 1, "Redland");
+        memset(surface.pixels, 0, (size_t)surface.width * surface.height);
+        noticeDraw(&surface, &notice, &world, 10, 10);
+        checkf(band(&surface, 10, 10 + 0x18, UI_LIGHT) > 60,
+               "\"Break alliance\" has %d pixels, over %d",
+               band(&surface, 10, 10 + 0x18, UI_LIGHT), 60);
+        check(noticeDismiss(&notice), "a click closes it");
+        check(!noticeDismiss(&notice), "and a second does nothing");
     }
 
     if (failures) {

@@ -545,6 +545,24 @@ int simMusicWanted(const Sim *sim) {
 // 0041f0d0.  Finishes a country off.  Its leader dies if it still has one, the
 // castle and the eight cells round it are wiped back to bare ground, and what
 // is left in its purse goes to whoever +0x1f names - so taking a country pays.
+// 0041f0d0's queue.  Anything past the eighth in one tick is dropped rather
+// than overwriting the ones already waiting; four countries cannot raise more
+// than four of each in a game, so it never comes to that.
+static void pushEvent(Sim *sim, int kind, unsigned faction) {
+    if (sim->events >= SIM_EVENTS_MAX) return;
+    sim->event[sim->events].kind = (unsigned char)kind;
+    sim->event[sim->events].faction = (unsigned char)faction;
+    sim->events++;
+}
+
+int simTakeEvent(Sim *sim, SimEvent *out) {
+    if (sim->events <= 0) return 0;
+    *out = sim->event[0];
+    for (int i = 1; i < sim->events; i++) sim->event[i - 1] = sim->event[i];
+    sim->events--;
+    return 1;
+}
+
 void simConquerFaction(Sim *sim, unsigned faction) {
     GameState *state = sim->state;
     if (faction >= PLAYABLE_FACTIONS) return;
@@ -574,7 +592,27 @@ void simConquerFaction(Sim *sim, unsigned faction) {
     gone->funds = 0;
     gone->taxRate = 0;
     gone->flags |= 0x40;
-    stateMarkBlocked(state);
+    stateMarkBlocked(state);            // FUN_00405330
+
+    // FUN_00424520: the view goes to the castle that has just come down and
+    // dialog 122 says whose it was.
+    pushEvent(sim, SIM_EVENT_FALLEN, faction);
+
+    // And then the count.  0041f0d0 walks the four and only breaks the
+    // alliances when exactly two have the flag: with two countries left there
+    // is nobody to be allied against, so every survivor that had an ally is
+    // told, and its ally field goes to 0x80 - the "none" the reset uses.
+    int out = 0;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++)
+        if (state->factions[f].flags & 0x40) out++;
+    if (out != 2) return;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        Faction *side = &state->factions[f];
+        if (side->flags & 0x40) continue;
+        if (side->at1e >= PLAYABLE_FACTIONS) continue;
+        pushEvent(sim, SIM_EVENT_BREAK_ALLIANCE, f);
+        side->at1e = 0x80;
+    }
 }
 
 // 0041f090.  Once a tick: any country not yet out that has lost its leader

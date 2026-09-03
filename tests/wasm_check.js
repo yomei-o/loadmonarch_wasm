@@ -545,10 +545,22 @@ createLordMonarch().then((M) => {
         M._lm_picture_dismiss();
         M._lm_pause(0);
         let steps = 0;
+        let notices = 0;
         for (; steps < 6000 && !M._lm_end_up(); steps++) {
             M._lm_cheat_funds();
             M._lm_step(10);
+            // 0041f0d0's notice about each country as it goes.  It is
+            // modal, so clicking it is what lets the sweep carry on.
+            if (M._lm_notice_up()) {
+                notices++;
+                expect('the notice is about a country that has fallen',
+                       M._lm_notice_kind() === 0 ||
+                       M._lm_notice_kind() === 1, true);
+                M._lm_notice_click();
+            }
         }
+        expect('the three countries that fell each said so',
+               notices >= 3, true);
         expect('a stage can be won', M._lm_end_up(), 1);
         expect('and the world stopped when it was', M._lm_running(), 0);
         // Mode 0 is 0041f4c0's first win in the campaign.
