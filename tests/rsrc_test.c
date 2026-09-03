@@ -42,13 +42,20 @@ int main(int argc, char **argv) {
         printf("FAIL  %s is not a zip this port can read\n", archive);
         return 1;
     }
+    // Either release: the English one carries DS7E_WIN.EXE and the Japanese
+    // one DS7J_WIN.EXE, and the host reads inside the archive's own directory
+    // either way.
     static unsigned char image[400 * 1024];
     unsigned got = 0;
-    if (!hostRead(&host, "DS7E_WIN.EXE", image, sizeof image, &got)) {
-        printf("FAIL  no DS7E_WIN.EXE in %s\n", archive);
-        return 1;
+    const char *exe = "DS7E_WIN.EXE";
+    if (!hostRead(&host, exe, image, sizeof image, &got)) {
+        exe = "DS7J_WIN.EXE";
+        if (!hostRead(&host, exe, image, sizeof image, &got)) {
+            printf("FAIL  no executable in %s\n", archive);
+            return 1;
+        }
     }
-    printf("  DS7E_WIN.EXE: %u bytes\n", got);
+    printf("  %s: %u bytes\n", exe, got);
 
     static Pe pe;
     check(peOpen(&pe, image, got), "it is a PE32");

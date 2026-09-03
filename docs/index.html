@@ -104,7 +104,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903155133"></script>
+<script src="loadmonarch.js?v=20260903160201"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -121,7 +121,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903155133';
+  var BUILD = '20260903160201';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -692,11 +692,19 @@ createLordMonarch().then(function (M) {
   function tickInterval() { return (30 - M._lm_speed()) * 16; }
 
   var lastHost = 0;
+  var nextWindowTick = 0;
   function frame(now) {
     if (loaded) {
       if (now >= nextTick) {
         M._lm_step(1);
         nextTick = now + tickInterval();
+      }
+      // The game's own painted windows - 105, 114 and 122 - run on their own
+      // hundred-millisecond timers rather than on the game's clock, which is
+      // what 00411bb0 and 0040fca0 ask SetTimer for.
+      if (now >= nextWindowTick) {
+        M._lm_timer();
+        nextWindowTick = now + 100;
       }
       present();
       // The few things the page has to keep an eye on, four times a second.

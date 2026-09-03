@@ -497,28 +497,34 @@ static void openAwards(unsigned rank) {
     pictureLoad(&g_awardPic, &g_host, awardsPictureStem(month));
 }
 
-EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
-    // A picture is a window over the game in the original and the game is not
-    // running behind it.  The opening logo used to sit over a war already
-    // under way.
+// One tick of whichever of the game's own painted windows is up.  They are
+// modal and they run on timers of their own - 00411bb0 asks SetTimer for a
+// hundred milliseconds and 0040fca0 does the same - so they are not the
+// game's clock and do not speed up with it.  The host calls this at that
+// rate; it answers non-zero while something is up.
+EMSCRIPTEN_KEEPALIVE int lm_timer(void) {
     if (g_notice.up || g_sim.events > 0) {
-        // Dialog 122 is modal too, and its own timer is what runs while it is
-        // up: the world waits.
-        for (int i = 0; i < times; i++) noticeService();
+        noticeService();
         // 0041f0d0 opens its notice in the middle of the sweep and 0041f4c0
         // comes after it in the same tick, so the end of a stage waits behind
         // the queue instead of opening over it - which is what the player
         // sees: the last country falls, and then the window.
         if (!g_notice.up && g_sim.events <= 0) endStageCheck();
-        return;
+        return 1;
     }
     if (g_end.up) {
-        // 00410020 is the window's WM_TIMER, and it runs while nothing else
-        // does - the animation and its prompt keep going with the world
-        // stopped.
-        for (int i = 0; i < times; i++) endStageStep(&g_end);
-        return;
+        endStageStep(&g_end);           // 00410020, the window's WM_TIMER
+        return 1;
     }
+    return g_awards.up ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
+    // A picture is a window over the game in the original and the game is not
+    // running behind it.  The opening logo used to sit over a war already
+    // under way.  Nor does the world move behind one of the game's own modal
+    // windows; those run on lm_timer.
+    if (g_notice.up || g_sim.events > 0 || g_end.up || g_awards.up) return;
     if (!g_running || g_pictureUp) return;
     for (int i = 0; i < times; i++) {
         simStep(&g_sim);

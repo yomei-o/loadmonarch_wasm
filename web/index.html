@@ -692,11 +692,19 @@ createLordMonarch().then(function (M) {
   function tickInterval() { return (30 - M._lm_speed()) * 16; }
 
   var lastHost = 0;
+  var nextWindowTick = 0;
   function frame(now) {
     if (loaded) {
       if (now >= nextTick) {
         M._lm_step(1);
         nextTick = now + tickInterval();
+      }
+      // The game's own painted windows - 105, 114 and 122 - run on their own
+      // hundred-millisecond timers rather than on the game's clock, which is
+      // what 00411bb0 and 0040fca0 ask SetTimer for.
+      if (now >= nextWindowTick) {
+        M._lm_timer();
+        nextWindowTick = now + 100;
       }
       present();
       // The few things the page has to keep an eye on, four times a second.

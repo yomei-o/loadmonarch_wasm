@@ -549,6 +549,7 @@ createLordMonarch().then((M) => {
         for (; steps < 6000 && !M._lm_end_up(); steps++) {
             M._lm_cheat_funds();
             M._lm_step(10);
+            M._lm_timer();              // the windows' own hundred ms
             // 0041f0d0's notice about each country as it goes.  It is
             // modal, so clicking it is what lets the sweep carry on.
             if (M._lm_notice_up()) {
@@ -566,9 +567,12 @@ createLordMonarch().then((M) => {
         // Mode 0 is 0041f4c0's first win in the campaign.
         expect('the window opens in mode 0', M._lm_end_mode(), 0);
         const before = M._lm_end_tick();
-        M._lm_step(50);
+        for (let i = 0; i < 5; i++) M._lm_timer();
         expect('its own timer runs while the world does not',
                M._lm_end_tick() > before, true);
+        const stood = M._lm_sweeps();
+        M._lm_step(50);
+        expect('and the world does not move behind it', M._lm_sweeps(), stood);
         expect('the campaign has not filed it twice',
                M._lm_campaign_reached(), 1);
         const record = M._lm_campaign_record(0);
@@ -601,6 +605,8 @@ createLordMonarch().then((M) => {
         for (let i = 0; i < 6000 && !M._lm_end_up(); i++) {
             M._lm_cheat_funds();
             M._lm_step(10);
+            M._lm_timer();
+            if (M._lm_notice_up()) M._lm_notice_click();
         }
         expect('winning it again is mode 3', M._lm_end_mode(), 3);
         expect('the class is on the board too', M._lm_campaign_rank() > 0,
