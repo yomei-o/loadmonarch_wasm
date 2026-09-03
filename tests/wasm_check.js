@@ -351,20 +351,28 @@ createLordMonarch().then((M) => {
     // stops part way, which is the game rather than a fault.  orders_test
     // carries one all the way through on a board where neither is in question.
     {
-        let spot = null;
-        for (let y = 8; y < 460 && !spot; y += 8)
-            for (let x = 8; x < 620 && !spot; x += 8) {
+        const spots = [];
+        for (let y = 8; y < 460; y += 8)
+            for (let x = 8; x < 620; x += 8) {
                 M._lm_set_cursor(x, y);
                 const t = M._lm_cursor_terrain();
                 const c = M._lm_cursor_col(), r = M._lm_cursor_row();
                 // 0040b680 bounds its target to 1..46, so the outer ring is
                 // not a square anybody can be told to clear.
                 if (t >= 0x30 && t < 0x60 && c > 0 && c < 47 && r > 0 && r < 47)
-                    spot = [x, y];
+                    spots.push([x, y]);
             }
-        expect('there is scenery on screen', spot !== null, true);
+        expect('there is scenery on screen', spots.length, (n) => n > 0);
+        // Not every square of scenery on screen is one an army can reach -
+        // across water it is not - so the test asks for each in turn and
+        // wants one of them taken.  Which is also what a player does.
         const army = M._lm_select_all(1);
-        const sent = M._lm_order_at(7, 0, spot[0], spot[1]);
+        let sent = 0, spot = spots[0];
+        for (const at of spots) {
+            sent = M._lm_order_at(7, 0, at[0], at[1]);
+            if (sent > 0) { spot = at; break; }
+            M._lm_select_all(1);
+        }
         expect('an army takes the clearing order', sent, (n) => n > 0);
         M._lm_set_cursor(spot[0], spot[1]);
         console.log(`  ${sent} of ${army} sent to cut ` +

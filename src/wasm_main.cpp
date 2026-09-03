@@ -156,11 +156,23 @@ int loadStage(int stage) {
     stateStartStage(&g_game);
     simInit(&g_sim, &g_game);
     simSeedLeaders(&g_sim);
+    // The view opens on the player's own castle, not on the middle of the
+    // board.  A stage centred on the map puts a country in the corner off
+    // screen, so the player looks at somebody else's ground and concludes
+    // their own army does not exist.
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
-    const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
-    g_viewX = (span - g_viewW) / 2;
-    g_viewY = (span - g_viewH) / 2;
+    const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+    const int span = WORLD_GRID * ts;
+    int col = WORLD_GRID / 2, row = WORLD_GRID / 2;
+    if (!simShowLeader(&g_sim, g_sim.humanFaction, &col, &row)) {
+        col = WORLD_GRID / 2;
+        row = WORLD_GRID / 2;
+    }
+    g_viewX = col * ts - g_viewW / 2;
+    g_viewY = row * ts - (g_viewH - g_statusH) / 2;
+    (void)span;
     clampView();
+    stateMoveCursor(&g_game, (unsigned)col, (unsigned)row);
     g_lastAction = 0;
     // Stopped, the way 18727 leaves it.  Nothing moves until Start.
     g_running = 0;
