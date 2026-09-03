@@ -79,11 +79,34 @@ static void blitGauge(Surface *out, const World *world, int n, int dx,
                   dx + (i % 10) * 8, dy);
 }
 
+// 00426ec0's count for the unit's own gauge, which is its strength by the
+// decade: under a thousand fills the blue ten, under ten thousand the green
+// ten and anything more the yellow - the same three bands 0041b520 chooses a
+// unit's sprite size by.
+static int strengthPieces(unsigned strength) {
+    if (strength < 1000u) return (int)(strength * 10u / 1000u);
+    if (strength < 10000u) return (int)(strength * 10u / 10000u) + 10;
+    const int n = (int)(strength * 10u / 100000u) + 20;
+    return n > 30 ? 30 : n;
+}
+
+// 00426da9: what the third line says about a unit.  The leader says so, the
+// nibble 0x0e is the one that has broken off, and everything else is the name
+// of the order it is under.
+static const char *unitOrderName(const World *w, unsigned char at0d) {
+    if (at0d & 0x20) return worldOrderName(w, 13);      // I'm Leader
+    const unsigned n = at0d & 0x0fu;
+    if (n == 0x0e) return worldOrderName(w, 15);        // Break
+    return worldOrderName(w, n);
+}
+
 void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
-                     int terrain, unsigned value) {
+                     const WorldCell *under, unsigned pending, int unit) {
     const World *w = &game->world;
     blitPanel(out, w, 0, UNIT_TOP, PANEL_W, PANEL_H, x, y);
-    if (terrain < 0) return;
+    if (!under) return;
+    const int terrain = (int)under->terrain;
+    const unsigned value = under->value;
 
     // The cell's own tile at the large size, where 00426900 puts it.
     const TileBank *bank = worldBank(w, 2);
@@ -103,7 +126,26 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
         }
     }
 
-    renderNumber(w, UI_FONT_LARGE_WHITE, x + 152, y + 120, value, out);
+    // 00426900 clears a 96 by 16 slot at (0x40, 0x78) and writes the cell's
+    // worth into it with TextOutA - "NUM  %6d" for a cell of terrain 8 to 11
+    // and "DEF  %6d" for every other, at most twelve characters
+    // (00426b29's min against lstrlenA), white on nothing (SetTextColor
+    // 0xffffff and SetBkMode TRANSPARENT at 004258a8).  It is the window's own
+    // GUI text and not the game's big digits, which is what the port drew
+    // here: the digits ended at x = 152, where the string does, and the label
+    // in front of them was missing.
+    const unsigned char ink = fontInk(w, UI_FONT_LARGE_WHITE);
+    char line[32];
+    snprintf(line, sizeof line, "%s%6u",
+             (terrain >= 8 && terrain < 12) ? "NUM  " : "DEF  ", value);
+    if (strlen(line) > 12) line[12] = 0;
+    fontDrawText(out, x + 64, y + 120, ink, line);
+
+    // And at (0x40, 0x90) the name of the order a new unit will take, which
+    // 00426a69 reads as DAT_004365e0 & 0xf out of the name table.
+    const char *order = worldOrderName(w, pending & 0xfu);
+    if (order && *order) fontDrawText(out, x + 64, y + 144, ink, order);
+
     // 004269c0: a cell of terrain 8 to 11 is measured against 0x90 and every
     // other against 0xff, thirty pieces at the full value, and 00426b59 caps
     // the count at 0x1e - not at ten.  The eleventh piece goes back to the
@@ -112,6 +154,32 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
     int n = (int)(value * 30u / (over ? over : 1u));
     if (n > 30) n = 30;
     blitGauge(out, w, n, x + 72, y + 96);
+
+    // And the upper half: the unit the window is showing, if it still has one.
+    // 00426c71 drops it as soon as the entity is inactive.
+    const Entity *e = unit >= 0 && unit < 0x40 && unit < ENTITY_COUNT
+        ? &game->entities[unit] : NULL;
+    if (e && (e->flags & 0x80u)) e = NULL;
+    if (!e) {
+        // 00427128: the cell's routing cost, with 0x1f0 for no way there.
+        char dis[24];
+        if (under->cost == 0x1f0u) snprintf(dis, sizeof dis, "DIS. -----");
+        else snprintf(dis, sizeof dis, "DIS. %u", under->cost);
+        if (strlen(dis) > 12) dis[12] = 0;
+        fontDrawText(out, x + 64, y + 64, ink, dis);
+        return;
+    }
+
+    const TileBank *sprites = worldSprites(w, 2);
+    if (sprites)
+        renderSprite(out, sprites, renderSpriteNumber(e, game->frame),
+                     x + 16, y + 48, 0);
+    blitGauge(out, w, strengthPieces(e->at08), x + 72, y + 16);
+    snprintf(line, sizeof line, "STR  %6u", e->at08);
+    if (strlen(line) > 12) line[12] = 0;
+    fontDrawText(out, x + 64, y + 40, ink, line);
+    const char *its = unitOrderName(w, e->at0d);
+    if (its && *its) fontDrawText(out, x + 64, y + 64, ink, its);
 }
 
 /* ------------------------------- 0041a1b0, 0041a3d0 and 00419ab0's strips */

@@ -86,14 +86,16 @@ int main(int argc, char **argv) {
 
     // panels draws the three windows the game opens beside the board.
     for (int a = 6; a < argc; a++) {
-        if (strcmp(argv[a], "panels") != 0) continue;
-        game.cursorCol = 20;
-        game.cursorRow = 20;
+        int pcol = 20, prow = 20;
+        if (strcmp(argv[a], "panels") != 0 &&
+            sscanf(argv[a], "panels:%d,%d", &pcol, &prow) != 2) continue;
+        game.cursorCol = (unsigned char)pcol;
+        game.cursorRow = (unsigned char)prow;
         const WorldCell *under =
             &game.world.cells[WORLD_INDEX(game.cursorCol, game.cursorRow)];
         int at = 48;                    // under the two bars
-        panelUnitWindow(&surface, &game, W - PANEL_SIDE - 4, at,
-                        (int)under->terrain, under->value);
+        panelUnitWindow(&surface, &game, W - PANEL_SIDE - 4, at, under,
+                        sim.pendingOrder, under->occupant);
         at += PANEL_SIDE + 4;
         panelProgressWindow(&surface, &game, 0, sim.days, sim.countdown, 25, 0,
                             sim.shortOfFunds,

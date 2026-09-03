@@ -63,6 +63,7 @@ int g_showTool = 1;             // Hide Tool Bar
 // opens by command 60006 to 60009.
 #define COUNTRY_WINDOW 3
 int g_progressY = -1;           // where the Progress Window was last drawn
+int g_unitShown = 0x40;         // the Unit Window's own +0x394
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
 // 0041f4c0's own window and the record behind it.  The campaign has to outlive
@@ -675,9 +676,11 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
             const WorldCell *under = onBoard
                 ? &g_game.world.cells[WORLD_INDEX(g_game.cursorCol,
                                                   g_game.cursorRow)] : NULL;
-            panelUnitWindow(&g_side, &g_game, 4, at,
-                            under ? (int)under->terrain : -1,
-                            under ? under->value : 0u);
+            // The window's own +0x394: it keeps the unit it was last
+            // given and only takes a new one when the cell has one.
+            if (under && under->occupant < 0x40) g_unitShown = under->occupant;
+            panelUnitWindow(&g_side, &g_game, 4, at, under,
+                            g_sim.pendingOrder, g_unitShown);
         }
         at = windowTop(0);
         if (at >= 0) {

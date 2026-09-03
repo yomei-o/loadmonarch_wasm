@@ -9,10 +9,23 @@
 
 #define PANEL_SIDE 176          // both sheet panels are square and this wide
 
-// 00426900: the cell under the cursor - its tile, its worth, and the gauge.
-// `terrain` below zero means the cursor is off the board.
+// 00426900.  The window has two halves and the routine draws both.
+//
+// The lower half is the cell under the cursor: its tile at (16,112), its
+// gauge at (72,96), "NUM  %6d" or "DEF  %6d" at (64,120) and the name of the
+// order a new unit will take - DAT_004365e0, `pending` - at (64,144).
+//
+// The upper half is the unit standing on that cell: its sprite at (16,48), a
+// gauge of its strength at (72,16), "STR  %6d" at (64,40) and its own order
+// at (64,64).  Where there is no unit, that last line reads "DIS. %d" - the
+// cell's routing cost - or "DIS. -----" where there is no way there.
+//
+// `under` null means the cursor is off the board.  `unit` is the entity the
+// window is showing, which is the window's own +0x394 and not the cell's
+// occupant: 00426c4b replaces it only when the cell has one, so an empty cell
+// leaves the last unit on show.  The caller keeps it, as the window does.
 void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
-                     int terrain, unsigned value);
+                     const WorldCell *under, unsigned pending, int unit);
 
 // The purse, the tax rate, the days gone and the days left, and the three
 // markers 00419ab0 lays on the window's strips: what the tax would be left to

@@ -43,7 +43,11 @@ CL="$MSVC/bin/Hostx64/x64/cl.exe"
 w() { cygpath -m "$1" 2>/dev/null || echo "$1"; }
 
 out=
-objdir="$here/../tmp/obj"
+# OBJDIR moves the objects elsewhere, which is what a build needs when it
+# compiles the same file twice with different flags: cl names an object
+# after its source's basename and nothing else, so the second would
+# quietly overwrite the first.
+objdir="${OBJDIR:-$here/../tmp/obj}"
 mkdir -p "$objdir"
 rsp="$objdir/cl.rsp"
 wobj="$(w "$objdir")"
@@ -97,12 +101,17 @@ dups=$(for f in $srcs; do basename "$f"; done | sort | uniq -d)
     exit 1
 }
 
-echo "-Fe:\"$(w "$out")\"" >> "$rsp"
-# Everything after -link has to sit on one line; see the note above.
-link="-link"
-for l in $libs; do link="$link $l"; done
-[ -z "$subsystem" ] || link="$link -subsystem:windows -entry:WinMainCRTStartup"
-echo "$link" >> "$rsp"
+# With no -o this is a compile-only run (-c): cl writes the objects into
+# tmp/obj and there is nothing to name or link.  Naming an empty -Fe: makes it
+# fail with a message about the output file that says nothing about the cause.
+if [ -n "$out" ]; then
+    echo "-Fe:\"$(w "$out")\"" >> "$rsp"
+    # Everything after -link has to sit on one line; see the note above.
+    link="-link"
+    for l in $libs; do link="$link $l"; done
+    [ -z "$subsystem" ] || link="$link -subsystem:windows -entry:WinMainCRTStartup"
+    echo "$link" >> "$rsp"
+fi
 
 export MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1 VSLANG=1033
 exec "$CL" "@$(w "$rsp")"
