@@ -68,6 +68,37 @@ int uiOrderClick(OrderMenu *menu, const GameState *game, int x, int y,
                  unsigned *order, int *strength);
 
 
+/* --------------------------------------------- 0040b0a0's country popup */
+
+// The tool bar's 40120 does not toggle anything: 0040b0a0 puts up a popup and
+// posts whatever is picked as a command.  0040b1d0 fills it - one item per
+// country, named as the scenery set names it, command 0xea66 + n, ticked when
+// that country's Status Window is already up and greyed while the country
+// carries flag 0x40.
+typedef struct {
+    int open;
+    int x, y, width;
+    int hot;                    // the row under the pointer, or -1
+    unsigned char ticked[PLAYABLE_FACTIONS];
+    unsigned char greyed[PLAYABLE_FACTIONS];
+} CountryMenu;
+
+void uiCountryMenuInit(CountryMenu *menu);
+
+// Opens it where the pointer is, clamped to the surface.  `shown` is the four
+// window flags, which decide the ticks.
+void uiCountryMenuOpen(CountryMenu *menu, const GameState *game,
+                       const int *shown, int surfaceW, int surfaceH);
+
+void uiCountryMenuDraw(Surface *out, const GameState *game,
+                       const CountryMenu *menu);
+void uiCountryMenuHover(CountryMenu *menu, int x, int y);
+
+// A click: the command 0xea66 + n when one was picked, 0 while the pointer is
+// still in the menu, and -1 when it was dismissed.
+int uiCountryMenuClick(CountryMenu *menu, int x, int y);
+
+
 /* ------------------------------------------------------------ the menu bar */
 
 // MENU 101 out of the executable's .rsrc, item for item and command for

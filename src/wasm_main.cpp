@@ -29,12 +29,6 @@ extern "C" {
 // pixel gutter on each side.  The board gets the rest.
 #define PANEL_COL (PANEL_SIDE + 8)
 
-// And the four countries' running totals get a band of their own above the
-// board.  They used to be written straight over the map, which is not where
-// the original has them: there they are four windows of their own (0xea66 to
-// 0xea69) and windows do not lie on top of one another.
-#define UI_STATUS_H 40
-
 #define VIEW_MAX_W 800
 #define VIEW_MAX_H 800
 // The campaign comes out of MAP/NAME.TXT - its order, which is not the order
@@ -54,7 +48,11 @@ OrderMenu g_menu;
 ToolBar g_tool;
 int g_showBar = 1;              // Hide Title Bar, which is really the menu bar
 int g_showTool = 1;             // Hide Tool Bar
-int g_showStatus = 1;           // Status Window, the numbers over the board
+// The seven windows the game can show: 0 Progress, 1 Unit, 2 Graph - the three
+// the Display menu lists - and 3 to 6 the four Status Windows, one per country,
+// which 0041d050 titles "Status Window <name>" and the tool bar's 40120 popup
+// opens by command 60006 to 60009.
+#define COUNTRY_WINDOW 3
 int g_progressY = -1;           // where the Progress Window was last drawn
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
@@ -65,7 +63,7 @@ DlgHost g_dlgHost;
 // writing through these.
 #define SAVE_SLOTS 8
 char g_slotName[SAVE_SLOTS][40];
-int g_windowShown[3] = {1, 1, 1};
+int g_windowShown[7] = {1, 1, 1, 0, 0, 0, 0};
 int g_speed = 25;                   // DAT_00437698, 0 slow to 30 fast, which is
                                     // the range 0041a1b0 clamps a drag into
 int g_slotWanted = -1;              // the slot the page is being asked for
@@ -98,14 +96,10 @@ unsigned g_pixels[VIEW_MAX_W * VIEW_MAX_H];
 // what the column leaves.
 unsigned char g_boardIdx[VIEW_MAX_W * VIEW_MAX_H];
 unsigned char g_sideIdx[PANEL_COL * VIEW_MAX_H];
-unsigned char g_bandIdx[VIEW_MAX_W * UI_STATUS_H];
 Surface g_surface;              // the board alone
 Surface g_side;                 // the column of windows down its right
-Surface g_band;                 // the totals, in a band above the board
 Surface g_screen;               // all of it, bars and windows included
 int g_boardW;                   // how much of the width the board gets
-int g_boardH;                   // and of the height, once the band has its
-int g_statusH;                  // how tall the band of totals is
 unsigned g_frame;               // DAT_00435b1c, what the animations count on
 
 // DATA/*.256, the title and the interludes and the ending.  The original opens
@@ -117,14 +111,14 @@ int g_pictureUp;
 // The rectangle a left-drag gathers an army with, in screen pixels.
 int g_dragOn, g_dragX0, g_dragY0, g_dragX1, g_dragY1;
 MenuBar g_bar;
+CountryMenu g_countries;        // 0040b0a0's popup off the tool bar
 int g_viewW = 640, g_viewH = 480;
 
 void clampView() {
     const int viewW = g_boardW > 0 ? g_boardW : g_viewW;
     const TileBank *bank = worldBank(&g_game.world, g_zoom);
     const int span = WORLD_GRID * (bank->tileSize > 0 ? bank->tileSize : 16);
-    const int maxX = span - viewW;
-    const int maxY = span - (g_boardH > 0 ? g_boardH : g_viewH);
+    const int maxX = span - viewW, maxY = span - g_viewH;
     if (g_viewX > maxX) g_viewX = maxX;
     if (g_viewY > maxY) g_viewY = maxY;
     if (g_viewX < 0) g_viewX = 0;
@@ -169,7 +163,7 @@ int loadStage(int stage) {
         row = WORLD_GRID / 2;
     }
     g_viewX = col * ts - g_viewW / 2;
-    g_viewY = row * ts - (g_viewH - g_statusH) / 2;
+    g_viewY = row * ts - g_viewH / 2;
     (void)span;
     clampView();
     stateMoveCursor(&g_game, (unsigned)col, (unsigned)row);
@@ -196,9 +190,14 @@ extern "C" EMSCRIPTEN_KEEPALIVE void lm_music_stop(void);
 // them at all.  Display / Unit, Progress and Graph Window turn them on and
 // off, and so do the first three buttons of the tool bar.
 static int windowsUp(void) {
-    return (g_windowShown[0] ? 1 : 0) + (g_windowShown[1] ? 1 : 0) +
-           (g_windowShown[2] ? 1 : 0);
+    int n = 0;
+    for (int i = 0; i < 7; i++) if (g_windowShown[i]) n++;
+    return n;
 }
+
+// The order they stack in: Unit, Progress, Graph, then the four countries -
+// the Display menu's own order followed by the popup's.
+static const int kWindowOrder[7] = { 1, 0, 2, 3, 4, 5, 6 };
 
 // The board, the column, and the whole client area.  The board is a buffer of
 // its own rather than a slice of the screen, because it is narrower than the
@@ -206,27 +205,22 @@ static int windowsUp(void) {
 static void layoutSurfaces(void) {
     g_boardW = g_viewW - (windowsUp() ? PANEL_COL : 0);
     if (g_boardW < 160) g_boardW = g_viewW;         // too narrow to give any up
-    g_statusH = g_showStatus ? UI_STATUS_H : 0;
-    g_boardH = g_viewH - g_statusH;
-    if (g_boardH < 120) { g_statusH = 0; g_boardH = g_viewH; }
     surfaceInit(&g_screen, g_viewW, g_viewH + UI_CHROME_H, g_indices);
-    surfaceInit(&g_surface, g_boardW, g_boardH, g_boardIdx);
+    surfaceInit(&g_surface, g_boardW, g_viewH, g_boardIdx);
     surfaceInit(&g_side, PANEL_COL, g_viewH, g_sideIdx);
-    surfaceInit(&g_band, g_boardW, UI_STATUS_H, g_bandIdx);
 }
 
-// Where the board's own first row is on screen: under the bars, and under the
-// band of totals when that is up.  Every click that means a square on the map
-// is measured from here.
-static int boardTop(void) { return UI_CHROME_H + g_statusH; }
+// Where the board's own first row is on screen: under the two bars, and
+// nothing else.  Every click that means a square on the map is measured from
+// here.
+static int boardTop(void) { return UI_CHROME_H; }
 
 // Where each of the three sits in the column, top to bottom in the order the
 // Display menu lists them.  Answers the y, or -1 when that one is not up.
 static int windowTop(int which) {
     int at = 4;
-    for (int i = 0; i < 3; i++) {
-        static const int order[3] = { 1, 0, 2 };    // Unit, Progress, Graph
-        const int w = order[i];
+    for (int i = 0; i < 7; i++) {
+        const int w = kWindowOrder[i];
         if (!g_windowShown[w]) continue;
         if (w == which) return at;
         at += PANEL_SIDE + 4;
@@ -309,6 +303,7 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     // told to start closed - until it was, the System menu was hanging down
     // over the board the moment the game appeared.
     uiBarInit(&g_bar);
+    uiCountryMenuInit(&g_countries);
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     if (!loadStage(0)) return 0;
@@ -431,13 +426,6 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     }
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
-    if (g_statusH) {
-        // Black, not the face grey the rest of the chrome is: renderStatus
-        // writes in the game's own white and red number fonts, and white on
-        // grey is not readable.
-        memset(g_bandIdx, UI_DARK, (size_t)g_boardW * UI_STATUS_H);
-        renderStatus(&g_game, &g_band);
-    }
 
     // The three windows, in a column of their own beside the board rather than
     // on top of it - which is how the original has them, four separate
@@ -467,16 +455,17 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         if (at >= 0)
             panelGraphWindow(&g_side, &g_game, 4, at, PANEL_SIDE,
                              graphHeight(at));
+        for (int f = 0; f < 4; f++) {
+            at = windowTop(COUNTRY_WINDOW + f);
+            if (at >= 0)
+                panelCountryWindow(&g_side, &g_game, (unsigned)f, 4, at);
+        }
     }
 
     // And the two put together, board first and the column after it.
     for (int y = 0; y < g_viewH; y++) {
         unsigned char *row = g_indices + (size_t)(UI_CHROME_H + y) * g_viewW;
-        if (y < g_statusH)
-            memcpy(row, g_bandIdx + (size_t)y * g_boardW, (size_t)g_boardW);
-        else
-            memcpy(row, g_boardIdx + (size_t)(y - g_statusH) * g_boardW,
-                   (size_t)g_boardW);
+        memcpy(row, g_boardIdx + (size_t)y * g_boardW, (size_t)g_boardW);
         if (g_boardW < g_viewW)
             memcpy(row + g_boardW, g_sideIdx + (size_t)y * PANEL_COL,
                    (size_t)(g_viewW - g_boardW));
@@ -486,6 +475,7 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     // this one itself on top of the canvas; it belongs here with the rest.
     if (g_dragOn) drawDragRect();
     uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
+    uiCountryMenuDraw(&g_screen, &g_game, &g_countries);   // 0040b1d0's
     // Hidden bars still take their room - the board is where it was, and the
     // strip is drawn in the face grey - because a map that jumps about when a
     // bar is hidden is worse than one that does not.
@@ -853,7 +843,7 @@ static int hostStageName(void *, int stage, char *out, int size) {
 static int hostLoadStage(void *, int stage) { return lm_load_stage(stage); }
 
 static int hostGetWindow(void *, int which) {
-    return which >= 0 && which < 3 ? g_windowShown[which] : 0;
+    return which >= 0 && which < 7 ? g_windowShown[which] : 0;
 }
 static void hostSetWindow(void *, int which, int on) {
     if (which >= 0 && which < 3) g_windowShown[which] = on ? 1 : 0;
@@ -929,6 +919,12 @@ EMSCRIPTEN_KEEPALIVE int lm_window_shown(int which) {
 EMSCRIPTEN_KEEPALIVE int lm_bar_click(int x, int y) {
     int inside = 0;
     unsigned command = 0;
+    // 0040b0a0's popup is modal the way TrackPopupMenu is: while it is up the
+    // click is its own, and whatever it answers is posted as a command.
+    if (g_countries.open) {
+        const int picked = uiCountryMenuClick(&g_countries, x, y);
+        return picked > 0 ? picked : 0;
+    }
     if (g_showBar) command = uiBarClick(&g_bar, x, y, &inside);
     if (!inside && !command && g_showTool) {
         command = uiToolClick(&g_tool, x, y, &inside);
@@ -939,12 +935,18 @@ EMSCRIPTEN_KEEPALIVE int lm_bar_click(int x, int y) {
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_bar_hover(int x, int y) {
+    if (g_countries.open) {
+        uiCountryMenuHover(&g_countries, x, y);
+        return 1;
+    }
     const int onBar = g_showBar && uiBarHover(&g_bar, x, y);
     const int onTool = g_showTool && uiToolHover(&g_tool, x, y);
     return onBar || onTool;
 }
 
-EMSCRIPTEN_KEEPALIVE int lm_bar_open(void) { return uiBarOpen(&g_bar); }
+EMSCRIPTEN_KEEPALIVE int lm_bar_open(void) {
+    return uiBarOpen(&g_bar) || g_countries.open;
+}
 
 // Carries out the ones that are the game's own business.  Non-zero when it
 // did; the rest - loading, saving, the help - belong to the host, which reads
@@ -1008,15 +1010,25 @@ EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
     case 60005:                                     // Hide Tool Bar
         g_showTool = !g_showTool;
         return 1;
-    case 40120:                                     // Status Window
-        g_showStatus = !g_showStatus;
+    // 0040b0a0: the tool bar's own button puts up a popup of the four
+    // countries - 0040b1d0 builds it, each item 60006 + n, ticked when that
+    // country's window is already up and greyed while the country is being
+    // relabelled - and whatever is picked comes back as a command.
+    case 40120:
+        uiCountryMenuOpen(&g_countries, &g_game, g_windowShown + COUNTRY_WINDOW,
+                          g_viewW, g_viewH);
+        return 1;
+    case 60006: case 60007: case 60008: case 60009: {
+        const int which = COUNTRY_WINDOW + (command - 60006);
+        g_windowShown[which] = !g_windowShown[which];
         layoutSurfaces();
         clampView();
         return 1;
+    }
     case 40111:                                     // Set Windows to default
         g_showBar = 1;
         g_showTool = 1;
-        g_showStatus = 1;
+        for (int i = 0; i < 4; i++) g_windowShown[COUNTRY_WINDOW + i] = 0;
         g_windowShown[0] = g_windowShown[1] = g_windowShown[2] = 1;
         layoutSurfaces();
         clampView();

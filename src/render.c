@@ -221,41 +221,6 @@ int renderNumber(const World *world, UiFont font, int x, int y,
     return x - at - gw;
 }
 
-void renderStatus(const GameState *game, Surface *out) {
-    const UiSheet *ui = &game->world.ui;
-    if (!ui->pixels) return;
-
-    // Four columns, one per faction, each with its purse above its tax rate.
-    // A faction that is out is drawn in the red set, which is what that second
-    // font is for.
-    const int columnWidth = out->width / PLAYABLE_FACTIONS;
-    for (int f = 0; f < PLAYABLE_FACTIONS; f++) {
-        const int right = columnWidth * (f + 1) - 6;
-        const int out_ = (game->factions[f].flags & 0x10) != 0;
-        // Its name, which the scenery set supplies and the original writes
-        // with GDI - so until this port carried a font of its own, the panel
-        // was four columns of unlabelled numbers.
-        const char *name = worldCountryName(&game->world, (unsigned)f);
-        if (name && *name) {
-            const unsigned char ink =
-                fontInk(&game->world,
-                        out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE);
-            fontDrawText(out, columnWidth * f + 4, 2, ink, name);
-        }
-        renderNumber(&game->world,
-                     out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
-                     right, 2, game->factions[f].funds, out);
-        // The faction's total, which is the pair of sums 0041b370 keeps, and
-        // its tax rate - both in the large font, since the small one is four
-        // pixels wide and unreadable at this scale.
-        const int width = renderNumber(
-            &game->world, out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
-            right, 20, game->factions[f].strength, out);
-        renderNumber(&game->world,
-                     out_ ? UI_FONT_LARGE_RED : UI_FONT_LARGE_WHITE,
-                     right - width - 8, 20, game->factions[f].taxRate, out);
-    }
-}
 
 // The palette the drawing surface wants, assembled the way the original's
 // several SetPaletteEntries calls leave it.  Four bands are live at once and a

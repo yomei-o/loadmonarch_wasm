@@ -225,6 +225,99 @@ void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 144, y + 104, daysLeft, out);
 }
 
+/* ----------------------------------------- 0041d460 and 0041d220: a country */
+
+// The window is a two by four grid of thirty-two pixel pictures with a number
+// beside each, and both halves come straight out of the two routines.
+//
+// 0041d460 lays the pictures: tile 0xe0 + country * 8 + i of the large sprite
+// bank - the 0x40000 buffer at DAT_00436440, which is C_%03dl1 to l4 merged -
+// at x = 16 + (i & 1) * 32 and y = 16 + (i / 2) * 40.  The second one is the
+// exception: a country with an ally shows the ally's flag there instead of its
+// own, which is what +0x1e names when it is not 0x80.  Then the country's name
+// at 4, 2.
+//
+// 0041d220 writes the numbers, all at x 100 but the area at 84, in this order
+// down the window - and they line up with the pictures beside them: the king
+// with his own strength, the flag with the ground, the soldiers with the
+// army, the villages with the land, and the last two with the money.
+#define COUNTRY_TILE 0xe0
+#define COUNTRY_TILES 8
+#define COUNTRY_TILE_X 16
+#define COUNTRY_TILE_Y 16
+#define COUNTRY_ROW_H 40
+#define COUNTRY_NUM_X 100
+#define COUNTRY_AREA_X 84
+
+// One thirty-two pixel picture off the large sprite bank, opaquely - a
+// picture is a picture and 0x70 does not appear inside these.
+static void blitTile(Surface *out, const TileBank *bank, unsigned index,
+                     int dx, int dy) {
+    if (!bank->pixels || bank->tileSize <= 0 || index >= bank->tiles) return;
+    const int ts = bank->tileSize;
+    const unsigned char *src = bank->pixels + (size_t)index * ts * ts;
+    for (int y = 0; y < ts; y++) {
+        const int py = dy + y;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int x = 0; x < ts; x++) {
+            const int px = dx + x;
+            if (px < 0 || px >= out->width) continue;
+            const unsigned char v = src[(size_t)y * ts + x];
+            if (v == UI_TRANSPARENT) continue;
+            row[px] = v;
+        }
+    }
+}
+
+void panelCountryWindow(Surface *out, const GameState *game, unsigned faction,
+                        int x, int y) {
+    if (faction >= PLAYABLE_FACTIONS) return;
+    const World *w = &game->world;
+    const TileBank *bank = worldSprites(w, 2);      // the thirty-two pixel set
+    const Faction *c = &game->factions[faction];
+
+    for (unsigned i = 0; i < COUNTRY_TILES; i++) {
+        unsigned tile = COUNTRY_TILE + faction * COUNTRY_TILES + i;
+        // The flag: an ally's when there is one.  +0x1e is 0x80 when there is
+        // not, which is what 004273f0 leaves it at.
+        if (i == 1 && c->at1e != 0x80 && c->at1e < PLAYABLE_FACTIONS)
+            tile = COUNTRY_TILE + 1u + c->at1e * COUNTRY_TILES;
+        blitTile(out, bank, tile,
+                 x + COUNTRY_TILE_X + (int)(i & 1u) * 32,
+                 y + COUNTRY_TILE_Y + (int)(i / 2u) * COUNTRY_ROW_H);
+    }
+
+    const unsigned char ink = fontInk(w, UI_FONT_LARGE_WHITE);
+    const char *name = worldCountryName(w, faction);
+    if (name && *name) fontDrawText(out, x + 4, y + 2, ink, name);
+
+    // 0041d220's eight, in its order.  The king's is nought when the country
+    // has lost him, which is what the routine's own bounds test says.
+    const unsigned king = c->at0c < ENTITY_COUNT
+        ? game->entities[c->at0c].at08 : 0u;
+    char line[24];
+    static const int kRowY[8] = { 16, 32, 56, 72, 96, 112, 136, 152 };
+    for (unsigned i = 0; i < 8; i++) {
+        int at = x + COUNTRY_NUM_X;
+        switch (i) {
+        case 0: snprintf(line, sizeof line, "%u", king); break;
+        case 1:
+            at = x + COUNTRY_AREA_X;
+            snprintf(line, sizeof line, "%d.%02d", (int)c->area,
+                     (int)((c->area - (int)c->area) * 100.0f));
+            break;
+        case 2: snprintf(line, sizeof line, "%u", c->at28); break;
+        case 3: snprintf(line, sizeof line, "%u", c->entities); break;
+        case 4: snprintf(line, sizeof line, "%u", c->at30); break;
+        case 5: snprintf(line, sizeof line, "%u", c->at2c); break;
+        case 6: snprintf(line, sizeof line, "%u", c->funds); break;
+        default: snprintf(line, sizeof line, "%u", c->taxRate); break;
+        }
+        fontDrawText(out, at, y + kRowY[i], ink, line);
+    }
+}
+
 // 00404e40's own lines, in its own words and its own order: two columns of
 // eight, a country to every pair of rows, and a total under them.
 void panelGraphWindow(Surface *out, const GameState *game, int x, int y,

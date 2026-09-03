@@ -61,8 +61,5 @@ unsigned renderCountryColour(const GameState *game, int zoom, unsigned faction);
 void renderPalette(const GameState *game, int zoom,
                    unsigned char table[256][3]);
 
-// A strip along the top of the view: each faction's purse and tax rate in the
-// game's own numerals.
-void renderStatus(const GameState *game, Surface *out);
 
 #endif

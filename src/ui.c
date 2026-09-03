@@ -238,6 +238,85 @@ int uiOrderClick(OrderMenu *menu, const GameState *game, int x, int y,
 
 /* ------------------------------------------------------------ the menu bar */
 
+/* --------------------------------------------- 0040b0a0's country popup */
+
+// 0040b1d0's own list: the four countries by name, one item each.  Nothing
+// here is chosen by this port - the ticks are the windows that are up and the
+// greying is flag 0x40, exactly as the routine sets them.
+void uiCountryMenuInit(CountryMenu *menu) {
+    memset(menu, 0, sizeof *menu);
+    menu->hot = -1;
+}
+
+void uiCountryMenuOpen(CountryMenu *menu, const GameState *game,
+                       const int *shown, int surfaceW, int surfaceH) {
+    uiCountryMenuInit(menu);
+    int width = 96;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        const char *name = worldCountryName(&game->world, f);
+        const int w = 40 + (name ? fontTextWidth(name) : 0);
+        if (w > width) width = w;
+        menu->ticked[f] = shown && shown[f] ? 1u : 0u;
+        menu->greyed[f] = (game->factions[f].flags & 0x40) ? 1u : 0u;
+    }
+    menu->width = width;
+    // 0040b0a0 puts it at the cursor; the tool bar button is what was clicked,
+    // so it goes just under the bars on the left, clamped to the surface.
+    menu->x = 8;
+    menu->y = UI_CHROME_H;
+    if (menu->x + menu->width > surfaceW) menu->x = surfaceW - menu->width;
+    const int h = PLAYABLE_FACTIONS * UI_ITEM_H + 6;
+    if (menu->y + h > surfaceH) menu->y = surfaceH - h;
+    if (menu->x < 0) menu->x = 0;
+    if (menu->y < 0) menu->y = 0;
+    menu->open = 1;
+}
+
+void uiCountryMenuDraw(Surface *out, const GameState *game,
+                       const CountryMenu *menu) {
+    if (!menu->open) return;
+    const int h = PLAYABLE_FACTIONS * UI_ITEM_H + 6;
+    fill(out, menu->x, menu->y, menu->width, h, (unsigned char)UI_FACE);
+    raised(out, menu->x, menu->y, menu->width, h);
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        const int y = menu->y + 3 + (int)f * UI_ITEM_H;
+        const int hot = menu->hot == (int)f && !menu->greyed[f];
+        if (hot)
+            fill(out, menu->x + 2, y, menu->width - 4, UI_ITEM_H,
+                 (unsigned char)UI_PICK);
+        unsigned char ink = menu->greyed[f] ? (unsigned char)UI_GREY_TEXT
+                          : hot ? (unsigned char)UI_PICK_TEXT
+                                : (unsigned char)UI_DARK;
+        if (menu->ticked[f])
+            fontDrawText(out, menu->x + 6, y + 1, ink, "*");
+        const char *name = worldCountryName(&game->world, f);
+        fontDrawText(out, menu->x + 22, y + 1, ink, name ? name : "");
+    }
+}
+
+static int countryMenuRow(const CountryMenu *menu, int x, int y) {
+    const int h = PLAYABLE_FACTIONS * UI_ITEM_H + 6;
+    if (x < menu->x || x >= menu->x + menu->width) return -1;
+    if (y < menu->y || y >= menu->y + h) return -1;
+    const int row = (y - menu->y - 3) / UI_ITEM_H;
+    if (row < 0 || row >= (int)PLAYABLE_FACTIONS) return -1;
+    return row;
+}
+
+void uiCountryMenuHover(CountryMenu *menu, int x, int y) {
+    if (!menu->open) return;
+    menu->hot = countryMenuRow(menu, x, y);
+}
+
+int uiCountryMenuClick(CountryMenu *menu, int x, int y) {
+    if (!menu->open) return -1;
+    const int row = countryMenuRow(menu, x, y);
+    if (row < 0) { menu->open = 0; return -1; }
+    if (menu->greyed[row]) return 0;
+    menu->open = 0;
+    return 0xea66 + row;
+}
+
 // MENU 101 and the string table beside it, out of the executable's .rsrc.  The
 // submenus the original nests - Load Map, Leader Position, Resize Map - are
 // spelled out in their parent here, because a menu bar with one level of

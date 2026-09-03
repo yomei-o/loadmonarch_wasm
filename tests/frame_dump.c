@@ -62,7 +62,6 @@ int main(int argc, char **argv) {
     const int viewY = (span - H) / 2 > 0 ? (span - H) / 2 : 0;
     renderWorld(&game.world, zoom, viewX, viewY, 1, &surface);
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
-    renderStatus(&game, &surface);
 
     // dlg:<n> puts one of the game's own dialogs over the picture, so the
     // chrome can be looked at without opening a window.

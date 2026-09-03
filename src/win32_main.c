@@ -180,7 +180,6 @@ static void paint(App *app, HDC dc) {
                 app->transpose, &app->surface);
     // 0041b370 runs on a stage load and when the original's info window
     // refreshes - so here, before the strip is drawn.
-    renderStatus(&app->game, &app->surface);
     BitBlt(dc, 0, 0, VIEW_W, VIEW_H, app->memoryDc, 0, 0, SRCCOPY);
     if (app->showHud) paintHud(app, dc);
 }

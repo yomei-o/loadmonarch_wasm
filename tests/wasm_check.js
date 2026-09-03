@@ -491,6 +491,28 @@ createLordMonarch().then((M) => {
         console.log(`  ${wanted.size} module names used by the page, all there`);
     }
 
+    // 0040b0a0 and 0040b1d0: the tool bar's 40120 is a popup of the four
+    // countries, and picking one toggles that country's Status Window.  It
+    // used to be a flag that wrote four columns of numbers across the top of
+    // the board, which is nowhere in the game.
+    {
+        expect('no country window is up to start with',
+               [3, 4, 5, 6].map((w) => M._lm_window_shown(w)).join(), '0,0,0,0');
+        expect('40120 is a command the game carries out', M._lm_command(40120),
+               1);
+        expect('and it puts a menu up', M._lm_bar_open(), 1);
+        // The popup sits under the bars on the left; the first row is the
+        // first country.
+        const picked = M._lm_bar_click(20, M._lm_bar_height() + 10);
+        expect('picking the first country asks for its window', picked, 60006);
+        expect('which the game carries out', M._lm_command(picked), 1);
+        expect('and the window is up', M._lm_window_shown(3), 1);
+        expect('only that one', M._lm_window_shown(4), 0);
+        M._lm_command(60006);
+        expect('and picking it again puts it away', M._lm_window_shown(3), 0);
+        console.log('  the four Status Windows open off the tool bar popup');
+    }
+
     // The Progress Window's two strips, 0041a1b0.  The window has to be up
     // for a drag to land on it, and the readings are taken in screen pixels
     // the way a mouse gives them.

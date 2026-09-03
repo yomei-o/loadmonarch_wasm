@@ -35,6 +35,14 @@ typedef enum {
 
 PanelSlider panelProgressSlider(int px, int py, int *value);
 
+// 0041d460 and 0041d220: one country's Status Window, which 0041d050 titles
+// "Status Window <name>".  There is one per country, commands 60006 to 60009,
+// and the tool bar's 40120 is the popup that opens them.  176 by 176 like the
+// rest, and transparent where it is not drawn on - the original fills its
+// bitmap with 0x70 and lets the board through.
+void panelCountryWindow(Surface *out, const GameState *game, unsigned faction,
+                        int x, int y);
+
 // 0041dc60's own sum, which is what the blue marker on the tax strip shows:
 // the rate the tax would settle at if nobody touched it.
 int panelAutoTaxRate(const GameState *game, unsigned faction);
