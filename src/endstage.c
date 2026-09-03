@@ -64,6 +64,18 @@ int campaignRecord(Campaign *campaign, int stage, const StageScore *score,
     return 1;
 }
 
+unsigned campaignRank(const Campaign *campaign) {
+    // 0041f6c0 walks 0 to DAT_00436a00 inclusive, so the stage it has just
+    // opened counts even though it has no record yet - which is nought, and
+    // changes nothing.
+    unsigned best = 0;
+    for (int i = 0; i <= campaign->reached && i < STAGE_MAX; i++)
+        if (campaign->remaining[i] > best) best = campaign->remaining[i];
+    if (best >= 100000u) return 0x13;
+    if (best < 10000u) return best / 1000u;
+    return best / 10000u + 9u;
+}
+
 int endStageMode(int outcome, const StageScore *score, const Campaign *campaign,
                  int stage, int quest) {
     // The order is 0041f4c0's own, and it is not the order a reader would

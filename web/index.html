@@ -393,15 +393,24 @@ createLordMonarch().then(function (M) {
     // beat is laid out again, and the last stage cleared runs the ending.
     if (M._lm_end_up()) {
       var went = M._lm_end_click();
+      var rank = M._lm_end_rank_up() ? '　昇格しました（クラス ' +
+                 M._lm_campaign_rank() + '）。' : '';
       if (went === 2) {
         said = false;
         say('もう一度この面を。');
       } else if (went === 3) {
+        // FUN_00409570: dialog 114, then 121 - the ending picture - and the
+        // message.  Only the picture is drawn here so far.
         showPicture('END');
-        say('全面クリアです。');
+        say('全面クリアです。おめでとうございます。');
+      } else if (went === 4) {
+        // FUN_004067c0 has laid the next stage out already.
+        said = false;
+        say('第 ' + (M._lm_stage() + 1) + ' 面「' +
+            M.UTF8ToString(M._lm_stage_title()) + '」へ。' + rank);
       } else {
         said = false;
-        say('次の面へ進めます（システム → Load Quest Map）。');
+        say('この面は済んでいます。次はシステム → Load Quest Map から。' + rank);
       }
       campaignSave();
       e.preventDefault();

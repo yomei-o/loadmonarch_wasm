@@ -63,6 +63,7 @@ DlgHost g_dlgHost;
 EndStage g_end;
 Campaign g_campaign;
 int g_endSaid;                  // the outcome this window was opened for
+int g_endRankUp;                // did the last click take the player up a class
 
 // What the page keeps for the dialogs: eight save slots and the three windows
 // it draws beside the board.  The slots live on the page (localStorage), so
@@ -1256,10 +1257,35 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
         loadStage(stage);
         return 2;
     }
-    // 0041f6c0: beating the last stage is what runs FUN_00409570, which opens
-    // the rank window and then the ending.  The page shows the picture.
-    if (stage + 1 >= stageCount()) return 3;
+    if (mode == END_SINGLE_MAP) return 1;
+
+    // 0041f6c0, which 0041f4c0 runs once the window is answered and the
+    // player is the one still standing.
+    const unsigned rank = campaignRank(&g_campaign);
+    // The last stage: FUN_00409570 opens dialog 114 and then 121, and says
+    // "Congratulations! you have completed ...".  The rank is written whatever
+    // it is rather than only when it has gone up.
+    if (stage + 1 >= stageCount()) {
+        g_campaign.rank = rank;
+        return 3;
+    }
+    g_endRankUp = rank > g_campaign.rank && rank != 0;
+    if (g_endRankUp) g_campaign.rank = rank;
+    // FUN_004067c0: when the stage just cleared is the furthest the campaign
+    // has got - DAT_0043450c - DAT_00436a00 == -1 - the next one is laid out
+    // at once.  This is the "go to the next stage" the window promises; it is
+    // not the player who has to go and find it.
+    if (g_campaign.reached == stage + 1) {
+        if (loadStage(stage + 1)) return 4;
+    }
     return 1;
+}
+
+// Whether that click also took the player up a class - 0041f6c0 opens dialog
+// 114 for it, which this port does not draw yet.
+EMSCRIPTEN_KEEPALIVE int lm_end_rank_up(void) { return g_endRankUp; }
+EMSCRIPTEN_KEEPALIVE int lm_campaign_rank(void) {
+    return (int)g_campaign.rank;
 }
 
 // 00436a00: how far the campaign has got, which is how many maps Load Quest

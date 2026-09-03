@@ -560,13 +560,17 @@ createLordMonarch().then((M) => {
         expect('the campaign has not filed it twice',
                M._lm_campaign_reached(), 1);
         const record = M._lm_campaign_record(0);
+        const won = M._lm_sweeps();
         expect('the record is the days it had left with the bonus',
                record > 0, true);
-        expect('a click dismisses it and leaves the stage', M._lm_end_click(),
-               1);
+        // 0041f6c0 ends in FUN_004067c0 when the stage just cleared is the
+        // furthest one: the next stage is laid out there and then, which is
+        // what 4 says.
+        expect('the click goes on to the next stage', M._lm_end_click(), 4);
+        expect('and that is the stage on the board', M._lm_stage(), 1);
         expect('and it is gone', M._lm_end_up(), 0);
         expect('a second click does nothing', M._lm_end_click(), 0);
-        console.log(`  a stage was won in ${M._lm_sweeps()} sweeps and filed ` +
+        console.log(`  a stage was won in ${won} sweeps and filed ` +
                     `at ${record} days`);
 
         // A loss lays the same stage out again, which is 0041f4c0's tail for
@@ -581,6 +585,8 @@ createLordMonarch().then((M) => {
             M._lm_step(10);
         }
         expect('winning it again is mode 3', M._lm_end_mode(), 3);
+        expect('the class is on the board too', M._lm_campaign_rank() > 0,
+               true);
         expect('and no further map opened', M._lm_campaign_reached(), 1);
         M._lm_end_click();
     }

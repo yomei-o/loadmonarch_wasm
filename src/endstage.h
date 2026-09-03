@@ -12,10 +12,15 @@
 // closes exactly this dialog and its three control-less siblings.  So any
 // click dismisses it, whenever it comes.
 //
-// What happens after the click is 0041f4c0's tail: a loss or a stage whose
-// clock ran out reloads the same stage (FUN_00405de0(DAT_0043450c)), and a win
-// keeps the record 0041b140 has just written, which is what opens the next map
-// in Load Quest Map.
+// What happens after the click is 0041f4c0's tail.  A loss or a stage whose
+// clock ran out reloads the same stage - FUN_00405de0(DAT_0043450c).  A win
+// files the record through 0041b140 and then runs 0041f6c0, which works the
+// player's class out, opens dialog 114 if it has gone up, and - when the stage
+// just cleared is the furthest the campaign has got - calls FUN_004067c0,
+// which loads DAT_00436a00.  That is the "Go to the next stage" the window
+// promises: the game goes there by itself, and Load Quest Map is for picking
+// an earlier one again.  The last stage instead runs FUN_00409570: dialog 114,
+// then 121, then "Congratulations! you have completed ...".
 //
 // Not done, and worth doing: the parade.  Each scene sets up twenty actors at
 // +0x25c (0x118 bytes apiece) through FUN_00411340 and 00410020 walks them
@@ -71,6 +76,13 @@ typedef struct {
 } EndStage;
 
 void campaignClear(Campaign *campaign);
+
+// 0041f6c0's player class: the best remaining-with-bonus of every stage
+// cleared so far, put on a scale of twenty - a thousand days a step to ten
+// thousand, then ten thousand a step, and everything past a hundred thousand
+// is the top.  DAT_00436a04 is where it is kept, and a class that has just
+// gone up is what opens dialog 114.
+unsigned campaignRank(const Campaign *campaign);
 
 // 0041b140.  Files the win: the stage's record, and one more stage opened when
 // this was the first time through it.  Answers non-zero when the record
