@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903230959"></script>
+<script src="loadmonarch.js?v=20260903231727"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903230959';
+  var BUILD = '20260903231727';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -368,7 +368,13 @@ createLordMonarch().then(function (M) {
           M.UTF8ToString(M._lm_stage_title()) + '」へ。');
     } else if (went) {
       said = false;
-      say('この面は済んでいます。次はシステム → Load Quest Map から。');
+      // 0041f752 opens the next stage only when this one is the furthest the
+      // campaign has got.  Coming back to an early stage and winning it again
+      // therefore goes nowhere, which is the original's own doing - so say
+      // where the campaign actually is.
+      var at = M._lm_campaign_reached();
+      say('この面はもう済んでいます（開いているのは第 ' + (at + 1) +
+          ' 面まで）。] で次の面へ、またはシステム → Load Quest Map から。');
     }
     campaignSave();
   }
@@ -671,6 +677,18 @@ createLordMonarch().then(function (M) {
     };
     if (moves[e.key]) {
       M._lm_scroll(moves[e.key][0], moves[e.key][1]);
+      e.preventDefault();
+      return;
+    }
+    // [ and ] step through the stages, which is what PageUp and PageDown do
+    // in the native shell - and what a keyboard without those two needs.
+    if (e.key === '[' || e.key === ']') {
+      var to = M._lm_stage() + (e.key === ']' ? 1 : -1);
+      if (to >= 0 && to < M._lm_stage_count() && M._lm_load_stage(to)) {
+        said = false;
+        say('第 ' + (to + 1) + ' 面「' +
+            M.UTF8ToString(M._lm_stage_title()) + '」。開始でどうぞ');
+      }
       e.preventDefault();
     }
   });

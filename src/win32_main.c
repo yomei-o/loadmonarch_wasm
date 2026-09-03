@@ -231,10 +231,12 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
             break;
         }
         case VK_PRIOR:
+        case VK_OEM_4:                  // '[', for a keyboard with no PageUp
             if (!loadStage(app, app->stage - 1, reason, sizeof reason))
                 MessageBoxA(window, reason, "Lord Monarch", MB_OK);
             break;
         case VK_NEXT:
+        case VK_OEM_6:                  // ']'
             if (!loadStage(app, app->stage + 1, reason, sizeof reason))
                 MessageBoxA(window, reason, "Lord Monarch", MB_OK);
             break;
