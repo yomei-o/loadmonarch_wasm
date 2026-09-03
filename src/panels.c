@@ -483,12 +483,9 @@ static void graphLine(char *line, int size, const GameState *game, int i) {
     }
 }
 
-int panelGraphLines(void) { return GRAPH_LINES; }
+/* ------------------------------------------------------- the Graph Window */
 
-int panelGraphRows(int h) {
-    const int rows = (h - 8) / GRAPH_ROW_H;
-    return rows < 1 ? 1 : rows;
-}
+int panelGraphLines(void) { return GRAPH_LINES; }
 
 // A rectangle of one colour, bounded to the surface.  dlg.c has its own; the
 // two do not share one because a panel is not a dialog.
@@ -505,82 +502,171 @@ static void fillRect(Surface *out, int x, int y, int w, int h,
     }
 }
 
-// The bar down the right: a trough with a thumb in it, in the same raised and
-// sunken style dlg.c gives the game's own widgets.  The window really has a
-// Windows scroll bar - 00404316 makes room for one with GetSystemMetrics and
-// the program calls SetScrollInfo on it - so what is here is the port's own
-// drawing of one, arrows and all, rather than a reading of anything.
-static void scrollBar(Surface *out, int x, int y, int h, int scroll,
-                      int rows) {
-    const int w = GRAPH_BAR_W;
-    for (int j = 0; j < h; j++) {
-        const int py = y + j;
-        if (py < 0 || py >= out->height) continue;
-        unsigned char *row = out->pixels + (size_t)py * out->width;
-        for (int i = 0; i < w; i++) {
-            const int px = x + i;
-            if (px >= 0 && px < out->width)
-                row[px] = (unsigned char)UI_GREY_TEXT;
-        }
+// Where each bar stands and what it is measured against.  00404c30 lays them
+// out: five countries of four, sixteen apart, the first two of each up from
+// y = 0xa8 and the other two from y = 0x34.  0040463b works out the heights.
+typedef struct {
+    int x, base, height;
+    unsigned char colour, style, gone;
+} GraphBar;
+
+// 0040463b's own scales.  A leader and a total are measured against a hundred
+// thousand over ninety-six pixels; the ground held against a hundred per cent
+// over thirty-two; and the purse against ten thousand over thirty-two, capped.
+static int barTarget(const GameState *game, unsigned f, int which, int *gone) {
+    const Faction *c = &game->factions[f];
+    *gone = 0;
+    switch (which) {
+    case 0: {
+        const unsigned leader = c->at0c < ENTITY_COUNT
+            ? game->entities[c->at0c].at08 : 0u;
+        if (!leader) *gone = 1;
+        return (int)(leader * 96u / 100000u);
     }
-    // The two arrow buttons, and a triangle in each.
-    for (int end = 0; end < 2; end++) {
-        const int by = end ? y + h - w : y;
-        fillRect(out, x, by, w, w, (unsigned char)UI_FACE);
-        fillRect(out, x, by, w, 1, (unsigned char)UI_LIGHT);
-        fillRect(out, x, by, 1, w, (unsigned char)UI_LIGHT);
-        fillRect(out, x, by + w - 1, w, 1, (unsigned char)UI_SHADOW);
-        fillRect(out, x + w - 1, by, 1, w, (unsigned char)UI_SHADOW);
-        for (int k = 0; k < 4; k++) {
-            const int ry = end ? by + 5 + k : by + 10 - k;
-            fillRect(out, x + 4 + k, ry, (4 - k) * 2, 1,
-                     (unsigned char)UI_DARK);
-        }
+    case 1:
+        if (!c->strength) *gone = 1;
+        return (int)(c->strength * 96u / 100000u);
+    case 2:
+        if (!(c->area > 0.0f)) *gone = 1;
+        return (int)(c->area * 32.0f) / 100;
+    default: {
+        if (c->funds < 100u) *gone = 1;
+        int n = (int)(c->funds * 32u / 10000u);
+        return n > 32 ? 32 : n;
     }
-    // And the thumb, as far down the trough as the scroll has gone.
-    const int span = h - 2 * w;
-    const int over = GRAPH_LINES - rows;
-    if (span < 8 || over <= 0) return;
-    int thumb = span * rows / GRAPH_LINES;
-    if (thumb < 8) thumb = 8;
-    const int at = y + w + (span - thumb) * scroll / over;
-    fillRect(out, x, at, w, thumb, (unsigned char)UI_FACE);
-    fillRect(out, x, at, w, 1, (unsigned char)UI_LIGHT);
-    fillRect(out, x, at, 1, thumb, (unsigned char)UI_LIGHT);
-    fillRect(out, x, at + thumb - 1, w, 1, (unsigned char)UI_SHADOW);
-    fillRect(out, x + w - 1, at, 1, thumb, (unsigned char)UI_SHADOW);
+    }
 }
 
-void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
-                      int w, int h, int scroll) {
-    // No picture of its own, so it gets the plain window a dialog with no
-    // controls would have.
-    for (int j = 0; j < h; j++) {
-        const int py = y + j;
-        if (py < 0 || py >= out->height) continue;
-        unsigned char *row = out->pixels + (size_t)py * out->width;
-        for (int i = 0; i < w; i++) {
-            const int px = x + i;
-            if (px >= 0 && px < out->width) row[px] = (unsigned char)UI_FACE;
+static void barAt(const GameState *game, int i, GraphBar *out) {
+    const unsigned f = (unsigned)(i / 4);
+    const int which = i % 4;
+    const int xbase = 16 + (int)f * 32;
+    out->x = xbase + (which & 1 ? 16 : 0);
+    out->base = which < 2 ? 0xa8 : 0x34;
+    // 004048d0: the neutral country's bar is 0x76 and the rest are 0x71 up.
+    out->colour = (unsigned char)(f == 4 ? 0x76u : 0x71u + f);
+    // 00404ca8: the first two carry that country's leader and one of its
+    // units; the other two carry a house and a stack of coins.
+    switch (which) {
+    case 0: out->style = (unsigned char)((f << 3) | 0x66u); break;
+    case 1: out->style = (unsigned char)((f << 3) | 0x06u); break;
+    case 2: out->style = 0xf0; break;
+    default: out->style = 0xf1; break;
+    }
+    int gone = 0;
+    out->height = f < PLAYABLE_FACTIONS || which == 1
+        ? barTarget(game, f, which, &gone) : 0;
+    // The neutral country has only the one bar - 00404793 works out its total
+    // and nothing else - so its other three stay down.
+    if (f >= PLAYABLE_FACTIONS && which != 1) gone = 1;
+    out->gone = (unsigned char)gone;
+}
+
+void panelGraphTick(GraphWindow *win, const GameState *game) {
+    for (int i = 0; i < GRAPH_BARS; i++) {
+        GraphBar bar;
+        barAt(game, i, &bar);
+        win->gone[i] = bar.gone;
+        // 004047bd: one pixel a tick, up or down, until it is there.
+        if (win->height[i] < bar.height) win->height[i]++;
+        else if (win->height[i] > bar.height) win->height[i]--;
+        // 004049eb: a country that has gone winds its picture through five
+        // frames and stops; one that stands winds it back.
+        if (bar.gone) {
+            if (win->phase[i] < 4) win->phase[i]++;
+        } else if (win->phase[i]) {
+            win->phase[i]--;
         }
     }
+}
 
-    const int rows = panelGraphRows(h);
-    const int over = GRAPH_LINES - rows;
-    if (scroll < 0) scroll = 0;
-    if (scroll > (over > 0 ? over : 0)) scroll = over > 0 ? over : 0;
-
-    // 00404d37 draws its lines sixteen apart and stops when the window is
-    // full, which is what a scroll bar is for.
-    const int right = x + w - (over > 0 ? GRAPH_BAR_W : 0);
-    char line[80];
-    for (int r = 0; r < rows; r++) {
-        const int i = scroll + r;
-        if (i >= GRAPH_LINES) break;
-        graphLine(line, sizeof line, game, i);
-        if (!line[0]) continue;
-        fontDrawTextClipped(out, x + 4, y + 4 + r * GRAPH_ROW_H, right,
-                            (unsigned char)UI_DARK, line);
+// 00404b09 and 00404bc5: one of the sixteen by sixteen pictures the sheet
+// keeps in two bands - houses at 0x1d000, which is row 464, and stacks of
+// coins at 0x1e000, sixteen rows below it.
+static void blitIcon(Surface *out, const World *world, unsigned base,
+                     int index, int dx, int dy) {
+    const UiSheet *ui = &world->ui;
+    if (!ui->pixels) return;
+    const unsigned off = base + (unsigned)index * 16u;
+    const unsigned sx = off % UI_SHEET_W, sy = off / UI_SHEET_W;
+    if (sy + 16 > UI_SHEET_H) return;
+    for (int j = 0; j < 16; j++) {
+        const int py = dy + j;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        const unsigned char *src =
+            ui->pixels + (size_t)(sy + j) * UI_SHEET_W + sx;
+        for (int i = 0; i < 16; i++) {
+            const int px = dx + i;
+            if (px < 0 || px >= out->width) continue;
+            if (src[i] == UI_TRANSPARENT) continue;
+            row[px] = src[i];
+        }
     }
-    if (over > 0) scrollBar(out, x + w - GRAPH_BAR_W, y, h, scroll, rows);
+}
+
+void panelGraphDraw(Surface *out, const GraphWindow *win,
+                    const GameState *game, int x, int y) {
+    const World *w = &game->world;
+    const TileBank *sprites = worldSprites(w, 1);   // the sixteen-pixel set
+    const unsigned frame = game->frame;
+
+    for (int i = 0; i < GRAPH_BARS; i++) {
+        GraphBar bar;
+        barAt(game, i, &bar);
+        const int height = win->height[i];
+        if (height <= 0 && !win->gone[i]) continue;
+
+        // 004048d0: fourteen wide inside the sixteen, grown up from its foot.
+        if (height > 0)
+            fillRect(out, x + bar.x + 1, y + bar.base - height, 14, height,
+                     bar.colour);
+
+        // And the picture on its head, sixteen above the top of the bar.
+        const int iy = y + bar.base - height - 16;
+        if (bar.style == 0xf0 || bar.style == 0xf1) {
+            // 00404ac3 and 00404ae3: five frames of falling when the country
+            // has gone, and otherwise a picture that grows with the number -
+            // one step over ten and another over twenty.
+            const unsigned band = bar.style == 0xf1 ? 0x1e000u : 0x1d000u;
+            int index = 0;
+            if (win->gone[i]) index = 5 + win->phase[i];
+            else if (height > 0x14) index = 4;
+            else if (height > 0x0a) index = 2;
+            blitIcon(out, w, band, index, x + bar.x, iy);
+        } else if (sprites) {
+            // 004049d3: 0xa0 and 0xa4 are the fighting frames a country that
+            // has gone shows, 0xa8 the neutral one's; otherwise its own.
+            const unsigned f = (unsigned)(i / 4);
+            unsigned number;
+            if (win->gone[i]) {
+                const unsigned base = f == 4 ? 0xa8u
+                    : ((i % 4) == 0 ? 0xa4u : 0xa0u) + (f << 3);
+                number = base + win->phase[i];
+            } else {
+                number = (unsigned)bar.style + (frame & 1u);
+            }
+            renderSprite(out, sprites, number, x + bar.x, iy, 0);
+        }
+    }
+}
+
+int panelGraphTip(const GameState *game, int px, int py, char *out, int size) {
+    if (out && size) out[0] = 0;
+    if (px < 0 || py < 0 || px >= GRAPH_W || py >= GRAPH_H) return 0;
+    // 00404d37 and 00404dac: eight strips of sixteen across the top half and
+    // eight across the bottom, and the neutral country's ninth at x = 0x90.
+    if (px < 16) return 0;              // the margin the bars start after
+    const int slot = (px - 16) / 16;
+    int line = -1;
+    if (py < 0x40) {
+        if (slot < 8) line = slot;
+    } else if (slot < 8) {
+        line = 8 + slot;
+    } else if (slot == 8) {
+        line = 16;
+    }
+    if (line < 0) return 0;
+    graphLine(out, size, game, line);
+    return out[0] != 0;
 }

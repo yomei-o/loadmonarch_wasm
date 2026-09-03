@@ -751,20 +751,25 @@ void uiToolDraw(Surface *out, const ToolBar *tool, int running, int zoom) {
     // is over everything the bar has.
     if (tool->hot >= 0 && tool->hot < kToolbarButtons) {
         const char *tip = uiToolTip(kToolbarCommand[tool->hot]);
-        if (tip && *tip) {
-            const int tw = fontTextWidth(tip);
-            int tx = toolPlace(tool->hot) + 6;
-            const int ty = UI_BAR_H + UI_TOOL_H + 2;
-            if (tx + tw + 6 > out->width) tx = out->width - tw - 7;
-            if (tx < 0) tx = 0;
-            fill(out, tx, ty, tw + 6, 20, (unsigned char)UI_TIP_FACE);
-            fill(out, tx, ty, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
-            fill(out, tx, ty + 19, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
-            fill(out, tx, ty, 1, 20, (unsigned char)UI_TIP_TEXT);
-            fill(out, tx + tw + 5, ty, 1, 20, (unsigned char)UI_TIP_TEXT);
-            fontDrawText(out, tx + 3, ty + 2, (unsigned char)UI_TIP_TEXT, tip);
-        }
+        if (tip && *tip)
+            uiTipBox(out, toolPlace(tool->hot) + 6,
+                     UI_BAR_H + UI_TOOL_H + 2, tip);
     }
+}
+
+void uiTipBox(Surface *out, int x, int y, const char *text) {
+    if (!text || !*text) return;
+    const int tw = fontTextWidth(text);
+    if (x + tw + 6 > out->width) x = out->width - tw - 7;
+    if (x < 0) x = 0;
+    if (y + 20 > out->height) y = out->height - 20;
+    if (y < 0) y = 0;
+    fill(out, x, y, tw + 6, 20, (unsigned char)UI_TIP_FACE);
+    fill(out, x, y, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
+    fill(out, x, y + 19, tw + 6, 1, (unsigned char)UI_TIP_TEXT);
+    fill(out, x, y, 1, 20, (unsigned char)UI_TIP_TEXT);
+    fill(out, x + tw + 5, y, 1, 20, (unsigned char)UI_TIP_TEXT);
+    fontDrawText(out, x + 3, y + 2, (unsigned char)UI_TIP_TEXT, text);
 }
 
 // The tool bar's tooltips, by command.  Filled from the STRINGTABLE of

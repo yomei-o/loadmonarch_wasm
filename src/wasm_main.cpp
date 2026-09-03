@@ -64,7 +64,15 @@ int g_showTool = 1;             // Hide Tool Bar
 #define COUNTRY_WINDOW 3
 int g_progressY = -1;           // where the Progress Window was last drawn
 int g_unitShown = 0x40;         // the Unit Window's own +0x394
-int g_graphScroll = 0;          // how far the Graph Window is scrolled
+GraphWindow g_graph;            // the Graph Window's own bars
+int g_graphHoverX = -1, g_graphHoverY = -1;
+
+// The button being down holds the war still, before anything has been chosen.
+// 00425547 takes the mouse on WM_LBUTTONDOWN and the window's own handler
+// runs there, not on the button coming up - which is what makes choosing a
+// unit possible at all: they walk about, and a unit that is under the pointer
+// when the button goes down has moved by the time it comes up again.
+int g_buttonHeld = 0;
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
 // 0041f4c0's own window and the record behind it.  The campaign has to outlive
@@ -327,31 +335,15 @@ static int graphHeight(int top) {
     return left < GRAPH_MIN_H ? GRAPH_MIN_H : left;
 }
 
-// Where the Graph Window is drawn on screen, or nought when it is not up.
-// Wider than the column: the port's font is eight pixels where the original's
-// is six, so the same lines want the extra room.
-#define GRAPH_WIN_W 264
-
-static int graphRect(int *x, int *y, int *w, int *h) {
+// Where the Graph Window is: in the column with the other two, 176 by 176
+// like them.
+static int graphRect(int *x, int *y) {
     if (!g_windowShown[2]) return 0;
     const int top = windowTop(2);
     if (top < 0) return 0;
-    *w = GRAPH_WIN_W < g_viewW ? GRAPH_WIN_W : g_viewW;
-    *x = g_viewW - *w;
+    *x = g_boardW + 4;
     *y = UI_CHROME_H + top;
-    *h = graphHeight(top);
-    if (*y + *h > g_viewH + UI_CHROME_H) *h = g_viewH + UI_CHROME_H - *y;
-    return *h > 32;
-}
-
-// The wheel over it, which is what the original's scroll bar is for.
-static void graphScrollBy(int lines) {
-    int x, y, w, h;
-    if (!graphRect(&x, &y, &w, &h)) return;
-    const int over = panelGraphLines() - panelGraphRows(h);
-    g_graphScroll += lines;
-    if (g_graphScroll > over) g_graphScroll = over;
-    if (g_graphScroll < 0) g_graphScroll = 0;
+    return 1;
 }
 
 // A dashed white box, which is what a rubber band looks like everywhere.
@@ -599,6 +591,7 @@ static void openAwards(unsigned rank) {
 // game's clock and do not speed up with it.  The host calls this at that
 // rate; it answers non-zero while something is up.
 EMSCRIPTEN_KEEPALIVE int lm_timer(void) {
+    panelGraphTick(&g_graph, &g_game);      // the Graph Window's own bars
     if (g_notice.up || g_sim.events > 0) {
         noticeService();
         // 0041f0d0 opens its notice in the middle of the sweep and 0041f4c0
@@ -622,9 +615,9 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // windows; those run on lm_timer.
     if (g_notice.up || g_sim.events > 0 || g_end.up || g_awards.up) return;
     if (!g_running || g_pictureUp) return;
-    // Anything chosen, or the order menu up, holds the war still - which is
-    // what the original does while the player picks.
-    if (simSelectionHolds(&g_game) || g_menu.open) return;
+    // The button down, anything chosen, or the order menu up: all three hold
+    // the war still, which is what the original does while the player picks.
+    if (g_buttonHeld || simSelectionHolds(&g_game) || g_menu.open) return;
     for (int i = 0; i < times; i++) {
         simStep(&g_sim);
         if (g_sim.events > 0) break;    // the notices go first
@@ -720,8 +713,8 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
                                 g_frame, g_sim.shortOfFunds, 4, at);
             g_progressY = at;
         }
-        // The Graph Window is drawn after the board and the column, over
-        // the two of them: see graphRect.
+        at = windowTop(2);
+        if (at >= 0) panelGraphDraw(&g_side, &g_graph, &g_game, 4, at);
         for (int f = 0; f < 4; f++) {
             at = windowTop(COUNTRY_WINDOW + f);
             if (at >= 0)
@@ -738,19 +731,14 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
                    (size_t)(g_viewW - g_boardW));
     }
 
-    // The Graph Window, over the board's right-hand edge.
-    //
-    // The original's is 176 by 176 like the other two, and its seventeen
-    // lines fit in it because it writes them in a fixed-pitch font of height
-    // ten (004071c3's CreateFontA).  This port has one font, the game's own
-    // eight by sixteen, so the same sentences need about two hundred and
-    // forty pixels - so the window is that wide and hangs over the board,
-    // which is where the original's windows sit anyway.
+    // The Graph Window's own tooltip, for the bar under the pointer.
     {
-        int gx, gy, gw, gh;
-        if (graphRect(&gx, &gy, &gw, &gh))
-            panelGraphWindow(&g_screen, &g_game, gx, gy, gw, gh,
-                             g_graphScroll);
+        int gx = 0, gy = 0;
+        char tip[80];
+        if (graphRect(&gx, &gy) &&
+            panelGraphTip(&g_game, g_graphHoverX - gx, g_graphHoverY - gy,
+                          tip, (int)sizeof tip))
+            uiTipBox(&g_screen, g_graphHoverX - 8, g_graphHoverY + 12, tip);
     }
 
     // The rectangle a left-drag gathers an army with.  The page used to draw
@@ -822,14 +810,27 @@ EMSCRIPTEN_KEEPALIVE void lm_scroll(int dx, int dy) {
     clampView();
 }
 
-// The wheel over the Graph Window scrolls its lines instead of the board;
-// answers non-zero when it took the wheel, so the page knows not to scroll.
-EMSCRIPTEN_KEEPALIVE int lm_graph_wheel(int px, int py, int lines) {
-    int x, y, w, h;
-    if (!graphRect(&x, &y, &w, &h)) return 0;
-    if (px < x || px >= x + w || py < y || py >= y + h) return 0;
-    graphScrollBy(lines);
-    return 1;
+// The mouse button going down and coming up over the board.  Down holds the
+// war; up lets it go again unless something was chosen or the menu came up.
+EMSCRIPTEN_KEEPALIVE void lm_button_held(int down) {
+    g_buttonHeld = down ? 1 : 0;
+}
+
+// Where the pointer is, so the bar under it can put its tooltip up.
+EMSCRIPTEN_KEEPALIVE void lm_graph_hover(int px, int py) {
+    g_graphHoverX = px;
+    g_graphHoverY = py;
+}
+
+// What the bar under the pointer stands for, which is what the original's
+// tooltips say.  Answers an empty string away from the window.
+EMSCRIPTEN_KEEPALIVE const char *lm_graph_tip(int px, int py) {
+    static char tip[80];
+    tip[0] = 0;
+    int x = 0, y = 0;
+    if (!graphRect(&x, &y)) return tip;
+    panelGraphTip(&g_game, px - x, py - y, tip, (int)sizeof tip);
+    return tip;
 }
 
 // Scroll by pixels rather than whole cells, for dragging and the wheel.

@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903222229"></script>
+<script src="loadmonarch.js?v=20260903223752"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903222229';
+  var BUILD = '20260903223752';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -507,6 +507,11 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
+    // 00425547: the original takes the mouse on the button going DOWN and
+    // holds the war there.  Units walk about, so one that is under the
+    // pointer when the button goes down has moved by the time it comes up -
+    // which is why choosing was so hard.
+    M._lm_button_held(1);
     dragFrom = b;
     M._lm_drag_rect(1, b[0], b[1], b[0], b[1]);
     canvas.setPointerCapture(e.pointerId);
@@ -575,6 +580,9 @@ createLordMonarch().then(function (M) {
   }
 
   canvas.addEventListener('pointerup', function (e) {
+    // The button is up, so what holds the war from here is what was chosen or
+    // the menu that came up - not the button.
+    if (loaded) M._lm_button_held(0);
     if (sliding) { sliding = false; e.preventDefault(); return; }
     if (panning) {
       // The right button only drags the map, which is all 00424a10 has it do.
@@ -585,6 +593,7 @@ createLordMonarch().then(function (M) {
     if (dragFrom) finishDrag(e);
   });
   canvas.addEventListener('pointercancel', function () {
+    if (loaded) M._lm_button_held(0);
     dragFrom = null;
     M._lm_drag_rect(0, 0, 0, 0, 0);
   });
@@ -626,6 +635,7 @@ createLordMonarch().then(function (M) {
     if (M._lm_menu_up()) { M._lm_menu_hover(p[0], p[1]); return; }
     if (dragFrom) M._lm_drag_rect(1, dragFrom[0], dragFrom[1], p[0], p[1]);
     M._lm_set_cursor(p[0], p[1]);
+    if (M._lm_graph_hover) M._lm_graph_hover(p[0], p[1]);
     if (!dragFrom && M._lm_selected() > 0) {
       var col = M._lm_cursor_col(), row = M._lm_cursor_row();
       if (col !== aimCol || row !== aimRow) {

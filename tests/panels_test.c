@@ -174,6 +174,64 @@ int main(int argc, char **argv) {
         }
     }
 
+    // The Graph Window's bars.  It is a bar chart, not a list of sentences:
+    // five countries of four bars, sixteen apart, the leader and the total up
+    // from y = 168 and the ground and the purse up from y = 52.  The
+    // sentences are the tooltips the bars carry.
+    {
+        static GraphWindow win;
+        memset(&win, 0, sizeof win);
+        // Something worth drawing: half the board and a full purse.
+        game.factions[0].area = 50.0f;
+        game.factions[0].funds = 10000;
+        game.factions[0].strength = 50000;
+        // A hundred ticks is more than the tallest bar needs at a pixel each.
+        for (int i = 0; i < 200; i++) panelGraphTick(&win, &game);
+
+        // 0040463b's own scales.
+        checkf(win.height[2] == 16, "the ground bar is %d tall, wanted %d",
+               win.height[2], 16);              // 50 per cent of 32
+        checkf(win.height[3] == 32, "the purse bar is %d tall, wanted %d",
+               win.height[3], 32);              // 10000 of 10000, capped
+        checkf(win.height[1] == 48, "the total bar is %d tall, wanted %d",
+               win.height[1], 48);              // 50000 of 100000 over 96
+
+        memset(pixels, 0, sizeof pixels);
+        panelGraphDraw(&surface, &win, &game, 0, 0);
+        // The ground bar: fourteen wide at x = 17, standing on y = 52.
+        const unsigned char colour = 0x71;      // country 0's own
+        int painted = 0;
+        for (int j = 52 - 16; j < 52; j++)
+            for (int i = 17; i < 17 + 14; i++)
+                if (pixels[(size_t)j * surface.width + i] == colour) painted++;
+        checkf(painted == 14 * 16, "the ground bar painted %d of %d",
+               painted, 14 * 16);
+        // And nothing under its foot.
+        int below = 0;
+        for (int j = 52; j < 60; j++)
+            for (int i = 17; i < 17 + 14; i++)
+                if (pixels[(size_t)j * surface.width + i] == colour) below++;
+        checkf(below == 0, "%d pixels below the foot, wanted %d", below, 0);
+        // The window is transparent where nothing is drawn: the corner is
+        // untouched.
+        check(pixels[0] == 0, "the window is left transparent");
+
+        // The tooltips, in 00404d37's own order: the top strips are the four
+        // countries' ground and purse, the bottom their leader and total.
+        char tip[80];
+        check(panelGraphTip(&game, 20, 20, tip, sizeof tip) &&
+              strstr(tip, "Area") != NULL,
+              "the first strip is the first country's ground");
+        check(panelGraphTip(&game, 36, 20, tip, sizeof tip) &&
+              strstr(tip, "Funds") != NULL,
+              "the next one is its purse");
+        check(panelGraphTip(&game, 20, 120, tip, sizeof tip) &&
+              strstr(tip, "Leader") != NULL,
+              "and the bottom half is the leader");
+        check(!panelGraphTip(&game, 4, 20, tip, sizeof tip),
+              "the margin has no tooltip");
+    }
+
     if (failures) { printf("%d failure(s)\n", failures); return 1; }
     printf("panels checks ok\n");
     return 0;

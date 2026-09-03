@@ -196,6 +196,13 @@ unsigned uiBarItemCommand(int menu, int item);
 // tooltips come out of the STRINGTABLE keyed by command - "Alliance
 // Setting" for 40012 - so this is that string, in whichever language the
 // release is.  A null or empty one puts the tooltip away.
+// One tooltip: a pale box with a line round it and the text inside, its top
+// left where it is put.  The tool bar has had one all along; the Graph
+// Window's bars want the same one, because that is what the original gives
+// them - 00404d37 hands every bar's rectangle and its sentence to a
+// tooltips_class32 window.
+void uiTipBox(Surface *out, int x, int y, const char *text);
+
 void uiToolSetTip(unsigned command, const char *text);
 const char *uiToolTip(unsigned command);
 
