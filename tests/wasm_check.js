@@ -542,6 +542,11 @@ createLordMonarch().then((M) => {
     // whole point is that the flow works from a game that was being played.
     {
         M._lm_load_stage(0);
+        // Everything but Load Single Map is the campaign, which is what
+        // decides whether a win is worth anything - 0041f4c0's mode 4 files
+        // no record and goes nowhere.
+        expect('a stage laid out from outside is the campaign', M._lm_quest(),
+               1);
         M._lm_picture_dismiss();
         M._lm_pause(0);
         let steps = 0;

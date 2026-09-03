@@ -513,7 +513,12 @@ static void endStageCheck(void) {
     const int mode = endStageMode(outcome, &score, &g_campaign, g_stage,
                                   g_quest);
     int against = 0;
-    if (mode != END_DEFEATED && mode != END_TIME_OVER)
+    // 0041f4c0 works the score out and files it only inside the campaign -
+    // `DAT_004365cc != 0 && DAT_0043450c < DAT_004376cc` - so a single map
+    // wins nothing and opens nothing, which is the whole of what mode 4
+    // means.  This port filed one for it.
+    if (g_quest && mode != END_DEFEATED && mode != END_TIME_OVER &&
+        g_stage < stageCount())
         campaignRecord(&g_campaign, g_stage, &score, &against);
     endStageOpen(&g_end, mode, &score, g_stage,
                  g_stages.count ? g_stages.name[g_stage] : "", against);
@@ -793,7 +798,13 @@ EMSCRIPTEN_KEEPALIVE void lm_set_zoom(int zoom) {
 
 EMSCRIPTEN_KEEPALIVE int lm_zoom(void) { return g_zoom; }
 
-EMSCRIPTEN_KEEPALIVE int lm_load_stage(int stage) { return loadStage(stage); }
+// Laying a stage out from outside the game's own two lists means the
+// campaign: Load Single Map is the one thing that does not, and it says so
+// through the dialog.
+EMSCRIPTEN_KEEPALIVE int lm_load_stage(int stage) {
+    g_quest = 1;
+    return loadStage(stage);
+}
 
 EMSCRIPTEN_KEEPALIVE void lm_pause(int paused) { g_running = !paused; }
 EMSCRIPTEN_KEEPALIVE int lm_running(void) { return g_running; }
