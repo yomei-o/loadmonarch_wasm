@@ -2011,85 +2011,144 @@ SimActionResult simClearTarget(Sim *sim, unsigned slot) {
 // probably starts a stage from a saved template.  Until that is read, this
 // puts one leader on each castle so a stage can begin at all.  It is marked
 // out here rather than dressed up as the original's own doing.
+// 004273f0, which is what the original does to a map once its bytes are in:
+// it is the whole of a stage's opening state, and this port had been inventing
+// one instead.  Read in the order the routine walks the board.
+//
+//   terrain 6              a neutral unit's mark.  The cell becomes bare land
+//                          at a hundred and a neutral entity stands on it -
+//                          fifty-six of them at most, which is the counter the
+//                          routine opens with.
+//   terrain 0x14 to 0x17   a castle.  Its country's capital and identity go in
+//                          the faction record, and it is handed two entities:
+//                          the king on the castle itself, order 0x2d, worth a
+//                          thousand - and an ordinary unit on the square
+//                          directly below, order 1, worth two hundred.
+//
+// That second unit is the one this port was missing, and everything else it
+// invented followed from the gap.  A country whose only entity is its king has
+// no strength by 0041b370 - a king's own is not counted - so it is marked and
+// finished off at once, and the port papered over that by handing every
+// country a settlement nobody in the executable ever builds.  There is no
+// seeded settlement.  There is a unit, and building the first village is the
+// first thing it does.
+//
+// Then every settlement the map does supply is valued at (own neighbours + 1)
+// times sixteen rather than the hundred the loader left, which is exactly the
+// gate growFromUnit opens at - so a village the map gives you grows on the
+// next tick rather than after sixteen of them.
 void simSeedLeaders(Sim *sim) {
     GameState *state = sim->state;
+
+    unsigned neutralsLeft = 0x38;       // the routine's own counter
     for (unsigned i = 0; i < WORLD_CELLS; i++) {
-        const unsigned char t = state->world.cells[i].terrain;
+        WorldCell *cell = &state->world.cells[i];
+        const unsigned char t = cell->terrain;
+        const unsigned char col = (unsigned char)(i / WORLD_GRID);
+        const unsigned char row = (unsigned char)(i % WORLD_GRID);
+
+        if (t == 6) {
+            cell->terrain = 0;
+            cell->value = 100;
+            if (!neutralsLeft) continue;
+            const unsigned slot = allocEntity(state);
+            if (slot >= ENTITY_COUNT) continue;
+            neutralsLeft--;
+            Entity *e = &state->entities[slot];
+            e->position[0] = col;
+            e->position[1] = row;
+            e->target[0] = col;
+            e->target[1] = row;
+            e->at0c = 6;
+            e->at0d = 0x0e;
+            e->faction = 4;
+            e->at08 = 200;
+            e->at0f = 0x81;
+            e->flags = 0;
+            cell->occupant = (unsigned char)slot;
+            continue;
+        }
+
         if (t < 0x14 || t > 0x17) continue;
         const unsigned faction = t - 0x14u;
-        const unsigned slot = allocEntity(state);
-        if (slot >= ENTITY_COUNT) return;
-        Entity *entity = &state->entities[slot];
-        entity->faction = (unsigned char)faction;
-        entity->position[0] = (unsigned char)(i / WORLD_GRID);
-        entity->position[1] = (unsigned char)(i % WORLD_GRID);
-        entity->target[0] = entity->position[0];
-        entity->target[1] = entity->position[1];
-        entity->flags = 0;
-        // 2000 rather than the 200 a unit costs to raise, so a stage can be
-        // played rather than spending its only leader on the first order.
-        // Another thing this function invents; see above.
-        entity->at08 = 2000;
-        entity->at0c = 6;
-        entity->at0d = 0x20 | 1;        // the leader bit, plus the plain order
-        entity->at0f = 4;               // what the faction becomes if lost
-        entity->at18 = 0x1f0;
-        entity->at220 = 0xff;
-        state->world.cells[i].occupant = (unsigned char)slot;
+        if (faction >= FACTION_COUNT) continue;
+        Faction *owner = &state->factions[faction];
+        owner->at08[0] = col;
+        owner->at08[1] = row;
+        owner->at00[0] = (unsigned char)faction;
 
-        // The faction record's own two identity fields, which nothing in the
-        // executable ever writes - only a saved scenario does.  +0x0c names the
-        // leader, which the Graph Window prints the strength of, and +0x08 and
-        // +0x09 are the capital, which the tax fill floods from and a retreat
-        // heads for.  Both are ours, like the rest of this function.
-        if (faction < FACTION_COUNT) {
-            state->factions[faction].at0c = slot;
-            state->factions[faction].at08[0] = entity->position[0];
-            state->factions[faction].at08[1] = entity->position[1];
-        }
+        // The king, on the castle.
+        const unsigned king = allocEntity(state);
+        if (king >= ENTITY_COUNT) continue;
+        owner->at0c = king;
+        Entity *e = &state->entities[king];
+        e->position[0] = col;
+        e->position[1] = row;
+        e->target[0] = col;
+        e->target[1] = row;
+        e->at0c = 6;
+        e->at0d = 0x2d;             // the leader bit and order thirteen
+        e->faction = (unsigned char)faction;
+        e->at08 = 1000;
+        e->flags = 0;
+        e->at18 = ROUTE_EMPTY;
+        e->at220 = 0xff;
+
+        // And an ordinary one on the square below it.
+        const unsigned second = allocEntity(state);
+        if (second >= ENTITY_COUNT) continue;
+        e = &state->entities[second];
+        e->position[0] = col;
+        e->position[1] = (unsigned char)(row + 1);
+        e->target[0] = e->position[0];
+        e->target[1] = e->position[1];
+        e->at0c = 6;
+        e->at0d = 1;
+        e->faction = (unsigned char)faction;
+        e->at08 = 200;
+        e->flags = 0;
+        e->at18 = ROUTE_EMPTY;
+        e->at220 = 0xff;
     }
 
-    // And one settlement each, where a map does not supply any.
-    //
-    // Seven of the fifteen maps start every country with a castle and nothing
-    // else, and by 0041b370 a country with no settlement has no strength at
-    // all - a leader's own strength is not counted.  0041b370 then marks it,
-    // and 0041f090 finishes it off on the first tick.  Taken literally, those
-    // seven maps end before they begin.
-    //
-    // That is the third thing pointing the same way: nothing writes the
-    // faction record's capital or leader either.  A .MAP is not a whole stage
-    // - the original loads a scenario that supplies the entities and those
-    // fields, and this port has never had one.  So this hands each country the
-    // first settlement a player would build anyway.  Ours, like the rest of
-    // this function.
-    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
-        int has = 0;
-        for (int i = 0; i < WORLD_CELLS && !has; i++)
-            if (state->world.cells[i].terrain == (unsigned char)(f + 8)) has = 1;
-        if (has) continue;
+    // The neutral country's record, which the routine sets by hand.
+    {
+        Faction *wild = &state->factions[4];
+        wild->at00[0] = 4;
+        wild->funds = 5000;
+        wild->at1e = 0x80;
+        wild->at14 = 0;
+        wild->flags &= ~0x27u;
+        wild->at0c = 0;
+    }
 
-        const int col = state->factions[f].at08[0];
-        const int row = state->factions[f].at08[1];
-        if (!inBounds(col, row)) continue;
-        // Outward in rings: a castle covers more than one cell, so its
-        // immediate neighbours are usually castle too.
-        int placed = 0;
-        for (int ring = 1; ring <= 6 && !placed; ring++)
-            for (int dc = -ring; dc <= ring && !placed; dc++)
-                for (int dr = -ring; dr <= ring && !placed; dr++) {
-                    if (dc > -ring && dc < ring && dr > -ring && dr < ring)
-                        continue;               // only the ring's edge
-                    const int c = col + dc, r = row + dr;
-                    if (!inBounds(c, r)) continue;
-                    WorldCell *cell = &state->world.cells[WORLD_INDEX(c, r)];
-                    if (cell->terrain != 0 &&
-                        !(cell->terrain >= 0x0c && cell->terrain < 0x10))
-                        continue;
-                    cell->terrain = (unsigned char)(f + 8);
-                    cell->value = 100;
-                    placed = 1;
-                }
+    // What the map's own settlements are worth: the growth gate, not a
+    // hundred.
+    for (unsigned i = 0; i < WORLD_CELLS; i++) {
+        WorldCell *cell = &state->world.cells[i];
+        const unsigned char owner = (unsigned char)(cell->terrain - 8u);
+        if (owner > 3) continue;
+        Neighbourhood around;
+        scanNeighbours(state, i / WORLD_GRID, i % WORLD_GRID, owner, &around);
+        cell->value = (around.ownGround + 1u) * 0x10u;
+    }
+
+    // 00427210's own pass: every cell's occupant is cleared and then written
+    // from the entities that are live, which is how the two above get their
+    // cell links without either of them setting one.
+    for (unsigned i = 0; i < WORLD_CELLS; i++) {
+        state->world.cells[i].occupant = CELL_NO_ENTITY;
+        state->world.cells[i].overlay = 0;
+    }
+    for (unsigned i = 0; i < ENTITY_COUNT; i++) {
+        Entity *e = &state->entities[i];
+        e->flags21c &= ~1u;
+        e->at220 = 0xff;
+        if (e->flags & 0x80) continue;
+        if (e->position[0] >= WORLD_GRID || e->position[1] >= WORLD_GRID)
+            continue;
+        state->world.cells[WORLD_INDEX(e->position[0], e->position[1])]
+            .occupant = (unsigned char)i;
     }
     (void)sim;
 }
@@ -2218,6 +2277,10 @@ int simAdvanceRoute(GameState *state, unsigned slot) {
 /* ------------------------------------------------- entities, 004204f0 */
 
 static void stepPlainUnit(Sim *sim, unsigned slot);     // 00401770, below
+static void kingOnCastle(Sim *sim, unsigned slot);      // 004015a0, below
+static int payUpkeep(GameState *state, unsigned slot, unsigned index,
+                     unsigned faction);                 // 0041a920, below
+static int trampleGround(GameState *state, unsigned index, unsigned faction);
 static void stepOrderedUnit(Sim *sim, unsigned slot);   // 00403170, below
 static void stepStandingOrder(Sim *sim, unsigned slot); // 00402bc0, below
 static void fallbackOrder(Sim *sim, unsigned slot);     // 00403100, below
@@ -2436,6 +2499,29 @@ static void stepWalk(Sim *sim, unsigned slot) {
     const unsigned col = entity->position[0];
     const unsigned row = entity->position[1];
 
+    // 00401000's own three opening lines, which this port had lost:
+    //
+    //   if ((cell.terrain - faction != 0x14) && (FUN_0041a920() == 0)) return;
+    //   FUN_004015a0();
+    //   FUN_00420a40();
+    //
+    // The upkeep decides whether a king away from its castle acts at all, and
+    // then it recruits and tramples - both of them before anything asks whose
+    // country this is.  004015a0 was buried inside kingDecides here, and
+    // kingDecides only ever runs for the countries the machine plays, so the
+    // player's king never raised a soldier in its life.  One came out of the
+    // castle at the start of a stage, walked back in, and that was the last
+    // the player saw of an army.
+    const unsigned here = WORLD_INDEX(col, row);
+    const unsigned faction = entity->faction;
+    if (faction >= FACTION_COUNT) return;
+    if ((unsigned char)(state->world.cells[here].terrain - faction) != 0x14 &&
+        payUpkeep(state, slot, here, faction) == 0)
+        return;
+    kingOnCastle(sim, slot);            // 004015a0
+    if (entity->flags & 0x80) return;   // the upkeep can starve it to death
+    trampleGround(state, here, faction);
+
     // 00401000 splits on whether the king has anywhere to be.  With a route it
     // walks, and on the way it notices things; without one it strikes at
     // whatever is beside it and then - only for the countries the machine
@@ -2450,7 +2536,7 @@ static void stepWalk(Sim *sim, unsigned slot) {
         // 0041d690 hands back, which is what this port had it doing.
         return;
     }
-    if (entity->faction < FACTION_COUNT) {
+    {
         // A king that is out of its castle and standing on a seam of ore tells
         // the country where it is: the position into +0x20, and flag 4 to say
         // there is something to say.  Flag 2 is what "out of the castle" means,
@@ -3052,7 +3138,9 @@ static void kingDecides(Sim *sim, unsigned slot) {
     const unsigned faction = state->entities[slot].faction;
     if (faction >= FACTION_COUNT) return;
 
-    kingOnCastle(sim, slot);            // 004015a0, before anything else
+    // 004015a0 used to be called from here.  It belongs at the top of
+    // 00401000, where every king reaches it - this half of the routine is
+    // only for the countries the machine plays.
     if (kingLeavesCastle(sim, slot)) return;
 
     state->factions[faction].flags &= ~0x20u;

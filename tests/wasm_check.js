@@ -66,9 +66,16 @@ createLordMonarch().then((M) => {
     expect('starting funds', M._lm_funds(0), 5000);
     // 241 rather than the map's 242: seeding turns one of them into the first
     // settlement, on the seven maps that ship without any.
-    expect('claimed ground on B_000', M._lm_count(0, 1), 241);
-    expect('and it has a settlement to start from', M._lm_count(0, 0),
-           (n) => n > 0);
+    // 004273f0's start, which is the whole of it: the map's ground as the map
+    // drew it, no settlement anywhere, and two entities per country - the king
+    // on the castle and one ordinary unit on the square below.  There used to
+    // be a seeded settlement here and 241 cells of ground because the seed ate
+    // one of them; both were this port's invention.
+    expect('claimed ground on B_000', M._lm_count(0, 1), 242);
+    expect('and no settlement to start from', M._lm_count(0, 0), 0);
+    expect('but a king and a unit', M._lm_count(0, 3), 2);
+    expect('and so has everybody else',
+           [1, 2, 3].map((f) => M._lm_count(f, 3)).join(), '2,2,2');
 
     // A frame comes back as RGBA the canvas can take, and it is not blank.
     const W = M._lm_width(), H = M._lm_height();
@@ -311,27 +318,33 @@ createLordMonarch().then((M) => {
     // is where an order can quietly be dropped, because 0041f790 rewrites the
     // balloon 00423cc0 reads to decide whether a unit answers.
     {
-        let at = null;
-        for (let y = 40; y < 420 && !at; y += 8)
-            for (let x = 40; x < 580 && !at; x += 8)
-                if (M._lm_unit_here(x, y)) at = [x, y];
-        expect('one of the player units is on screen', at !== null, true);
-        expect('clicking it chooses it', M._lm_select_at(at[0], at[1], 1), 1);
-        for (let i = 0; i < 20; i++) M._lm_step(1);
-        expect('and it stays chosen while the clock runs',
-               M._lm_selected(), 1);
-
-        // Where the page points before it clicks.  00423cc0 answers only for a
-        // unit whose balloon says it can get there, so the aim decides.
-        let to = null;
-        for (let y = 8; y < 460 && !to; y += 16)
-            for (let x = 8; x < 620 && !to; x += 16)
-                if (M._lm_aim(x, y)) to = [x, y];
-        expect('and it can be aimed somewhere', to !== null, true);
-        for (let i = 0; i < 20; i++) M._lm_step(1);
-        M._lm_aim(to[0], to[1]);
-        const went = M._lm_order_at(1, 0, to[0], to[1]);
-        expect('and takes the order afterwards', went, (n) => n > 0);
+        // Choose a unit, let the clock run, then aim and order - and if the
+        // unit spent itself on a village while the clock was running, which
+        // 0040b330 retires a builder worth two hundred or less for, choose
+        // another and try again.  A unit turning into a settlement is the game
+        // working, not a fault.
+        let went = 0, tries = 0;
+        while (went === 0 && tries < 8) {
+            tries++;
+            let at = null;
+            for (let y = 40; y < 420 && !at; y += 8)
+                for (let x = 40; x < 580 && !at; x += 8)
+                    if (M._lm_unit_here(x, y)) at = [x, y];
+            if (!at) break;
+            M._lm_clear_selection();
+            if (M._lm_select_at(at[0], at[1], 1) !== 1) { M._lm_step(5); continue; }
+            for (let i = 0; i < 20; i++) M._lm_step(1);
+            if (M._lm_selected() === 0) continue;   // it built and was retired
+            // 00423cc0 answers only for a unit whose balloon says it can get
+            // there, so the aim decides where an order will land.
+            for (let y = 8; y < 460 && went === 0; y += 16)
+                for (let x = 8; x < 620 && went === 0; x += 16) {
+                    if (!M._lm_aim(x, y)) continue;
+                    went = M._lm_order_at(1, 0, x, y);
+                }
+        }
+        expect('a chosen unit takes an order with the clock running',
+               went, (n) => n > 0);
         expect('which spends the choice', M._lm_selected(), 0);
 
         // And the drag that gathers an army.

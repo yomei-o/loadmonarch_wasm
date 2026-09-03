@@ -162,6 +162,10 @@ int main(void) {
         e->at0d = 0x20;                         // the leader bit
         e->at18 = 0;                            // a route, so it walks
         e->at14 = 8;
+        // 00401000 opens with 0041a920, the upkeep, and a unit worth nothing
+        // starves on it before it ever takes a step.  A king is worth a
+        // thousand when 004273f0 lays a stage out, so this one is too.
+        e->at08 = 1000;
         for (unsigned i = 0; i < 8; i++) e->route[i] = 5;   // south-east
         e->at0c = 0;                            // facing the wrong way
         e->position[0] = 20;
