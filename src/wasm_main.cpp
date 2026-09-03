@@ -265,6 +265,10 @@ int loadStage(int stage) {
     // Whatever the last stage ended with, it is not on the screen any more.
     memset(&g_end, 0, sizeof g_end);
     memset(&g_notice, 0, sizeof g_notice);
+    // The order menu goes with it: one left open when a stage ended would
+    // still be up over the new board, and the first click on it would be
+    // spent putting it away instead of choosing a unit.
+    uiOrderClose(&g_menu);
     g_sim.events = 0;
     g_endSaid = 0;
     return 1;
