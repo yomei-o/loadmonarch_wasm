@@ -17,6 +17,7 @@ extern "C" {
 #include "render.h"
 #include "sim.h"
 #include "dlgrun.h"
+#include "panels.h"
 #include "ui.h"
 #include "state.h"
 #include "world.h"
@@ -213,6 +214,33 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     if (g_showStatus) renderStatus(&g_game, &g_surface);
+
+    // The three windows, down the right of the board where the original puts
+    // them, drawn from the game's own art rather than by the page.
+    {
+        int at = 4;
+        if (g_windowShown[1]) {
+            const int onBoard = g_game.cursorCol < WORLD_GRID &&
+                                g_game.cursorRow < WORLD_GRID;
+            const WorldCell *under = onBoard
+                ? &g_game.world.cells[WORLD_INDEX(g_game.cursorCol,
+                                                  g_game.cursorRow)] : NULL;
+            panelUnitWindow(&g_surface, &g_game, g_viewW - PANEL_SIDE - 4, at,
+                            under ? (int)under->terrain : -1,
+                            under ? under->value : 0u);
+            at += PANEL_SIDE + 4;
+        }
+        if (g_windowShown[0]) {
+            panelProgressWindow(&g_surface, &g_game, g_sim.humanFaction,
+                                g_sim.days,
+                                g_sim.countdown,
+                                g_viewW - PANEL_SIDE - 4, at);
+            at += PANEL_SIDE + 4;
+        }
+        if (g_windowShown[2] && g_viewH - at > 100)
+            panelGraphWindow(&g_surface, &g_game, g_viewW - PANEL_SIDE - 4, at,
+                             PANEL_SIDE, g_viewH - at - 4);
+    }
     uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
     // Hidden bars still take their room - the board is where it was, and the
     // strip is drawn in the face grey - because a map that jumps about when a

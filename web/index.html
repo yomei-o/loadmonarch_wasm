@@ -176,12 +176,10 @@
       <thead><tr><th class="name">勢力</th><th>資金</th><th>税</th><th>占有</th><th>戦力</th><th>王</th></tr></thead>
       <tbody></tbody>
     </table>
-    <h2>PROGRESS WINDOW</h2>
-    <canvas id="progwin" width="176" height="176"
-            style="width:100%;image-rendering:pixelated"></canvas>
-    <h2>UNIT WINDOW</h2>
-    <canvas id="unitwin" width="176" height="176"
-            style="width:100%;image-rendering:pixelated"></canvas>
+    <!-- The Progress and Unit windows are the game's own now: it draws
+         them in the canvas from its own art, where the original has
+         them.  Display / Progress Window and Unit Window turn them on
+         and off, as does the tool bar. -->
     <h2>CURSOR</h2>
     <table id="cursor"><tbody></tbody></table>
     <h2>WORLD</h2>
@@ -220,92 +218,10 @@ createLordMonarch().then(function (M) {
   // the left and three across on the right.  The routine's own coordinates
   // land in the lower one: the 32-pixel terrain tile at (16, 112), the number
   // at (64, 120), and the gauge along y = 96 from x = 72.  If those line up
-  // inside the slots, the strip is the right one.
-  var unitWin = document.getElementById('unitwin');
-  // 112 is where the strip starts on the sheet.  It is not a guess: at that
-  // row the border is whole, and the tile, the gauge and the number land
-  // inside the three slots the art has for them.  A row either way and
-  // something bleeds in from what is above or below.
-  var UNIT_WIN_TOP = 112;
-
-  function blitSheet(g, sx, sy, w, h, dx, dy) {
-    var ptr = M._lm_ui_region(sx, sy, w, h);
-    if (!ptr) return false;
-    var img = new ImageData(
-        new Uint8ClampedArray(M.HEAPU8.buffer, ptr, w * h * 4).slice(), w, h);
-    g.putImageData(img, dx, dy);
-    return true;
-  }
-
-  // The large white digits sit along the top of the sheet, eight by sixteen
-  // each, and the game draws its numbers right-aligned.
-  function blitNumber(g, value, right, y) {
-    var text = String(value);
-    for (var i = 0; i < text.length; i++) {
-      var d = text.charCodeAt(text.length - 1 - i) - 48;
-      if (d < 0 || d > 9) continue;
-      blitSheet(g, d * 8, 0, 8, 16, right - (i + 1) * 8, y);
-    }
-  }
-
-  function drawUnitWindow() {
-    var g = unitWin.getContext('2d');
-    g.clearRect(0, 0, 176, 176);
-    // The background strip, in two halves because a region is capped at 256.
-    blitSheet(g, 0, UNIT_WIN_TOP, 176, 96, 0, 0);
-    blitSheet(g, 0, UNIT_WIN_TOP + 96, 176, 80, 0, 96);
-
-    var t = M._lm_cursor_terrain();
-    if (t < 0) return;
-    // The cell's own tile, at the 32-pixel size, where 00426900 puts it.
-    var ptr = M._lm_terrain_tile(2, t);
-    if (ptr) {
-      var img = new ImageData(
-          new Uint8ClampedArray(M.HEAPU8.buffer, ptr, 32 * 32 * 4).slice(),
-          32, 32);
-      g.putImageData(img, 16, 112);
-    }
-    // The number, and the gauge above it.
-    var value = M._lm_cursor_value();
-    blitNumber(g, value, 152, 120);
-    var over = (t >= 8 && t < 12) ? 0x90 : 0xff;
-    var n = Math.min(30, Math.floor(value * 30 / over));
-    for (var i = 0; i < n && i < 10; i++)
-      blitSheet(g, (i % 10) * 8, (Math.floor(i / 10) + 4) * 16, 8, 16,
-                72 + i * 8, 96);
-  }
-
-  // The Progress Window, the other 176-wide panel on the sheet - rows 288 to
-  // 463, where the border closes cleanly and every fitting sits inside it.
-  // Its slots were measured off the art, and what belongs in each is written
-  // on the panel itself: a money bag beside one, a per-cent sign and a pair of
-  // scales beside another, a sun and an hourglass beside the last two.
-  var progWin = document.getElementById('progwin');
-  var PROG_WIN_TOP = 288;
-
-  function drawProgressWindow() {
-    var g = progWin.getContext('2d');
-    g.clearRect(0, 0, 176, 176);
-    blitSheet(g, 0, PROG_WIN_TOP, 176, 96, 0, 0);
-    blitSheet(g, 0, PROG_WIN_TOP + 96, 176, 80, 0, 96);
-
-    var me = M._lm_human();
-
-    // The bar at the top is two rows in one frame: an empty one above and a
-    // full gradient below it, grey through yellow to red.  The gradient is the
-    // scale - filling the bar means copying its first N pixels up into the
-    // empty row, so the bar changes colour as it grows.  What it measures is
-    // not written anywhere; the share of the board is the reading that suits a
-    // window called Progress, and it is the one number this port has exactly.
-    var share = M._lm_area(me) / 10000;             // hundredths of a per cent
-    var filled = Math.max(0, Math.min(128, Math.round(share * 128)));
-    if (filled > 0) blitSheet(g, 24, PROG_WIN_TOP + 26, filled, 6, 24, 16);
-
-    blitNumber(g, M._lm_funds(me), 80, 40);         // the money bag's slot
-    blitNumber(g, M._lm_tax(me), 144, 40);          // the one marked per cent
-    blitNumber(g, M._lm_days(), 80, 104);           // the sun
-    blitNumber(g, M._lm_days_left(), 144, 104);     // the hourglass
-  }
+  // The Unit and Progress windows used to be drawn here, out of the same
+  // sheet: rows 112 to 287 for one and 288 to 463 for the other.  src/panels.c
+  // does it now, in the canvas, so that both hosts show the same window and
+  // the pointer never has to leave the game to read one.
 
   // 00426900's gauge, drawn from the game's own art: up to thirty pieces of
   // eight by sixteen at row (n / 10 + 4) * 16, column (n % 10) * 8 - which is
@@ -539,16 +455,12 @@ createLordMonarch().then(function (M) {
       }
     }
 
-    // The Display menu and the tool bar turn these three on and off, so the
-    // page follows what the game says rather than keeping its own answer.
-    var showUnit = M._lm_window_shown(1);
-    var showProgress = M._lm_window_shown(0);
-    var showGraph = M._lm_window_shown(2);
-    unitWin.style.display = showUnit ? '' : 'none';
-    progWin.style.display = showProgress ? '' : 'none';
-    document.getElementById('factions').style.display = showGraph ? '' : 'none';
-    if (showUnit) drawUnitWindow();
-    if (showProgress) drawProgressWindow();
+    // The Unit and Progress windows are the game's own now - it draws them in
+    // the canvas from its own art, where the original puts them - so the two
+    // that were here are gone.  The country table stays, because it is the
+    // Graph Window's information in a form a page can sort and click.
+    document.getElementById('factions').style.display =
+        M._lm_window_shown(2) ? '' : 'none';
 
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];

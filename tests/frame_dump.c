@@ -7,6 +7,7 @@
 #include "../src/host.h"
 #include "../src/render.h"
 #include "../src/dlgrun.h"
+#include "../src/panels.h"
 #include "../src/ui.h"
 #include "../src/sim.h"
 #include "../src/state.h"
@@ -82,6 +83,22 @@ int main(int argc, char **argv) {
         dlgRunHover(&runner, runner.dlg.x + 30, runner.dlg.y + 60);
         dlgRunDraw(&surface, &runner, &game);
         printf("dialog %d up\n", which);
+    }
+
+    // panels draws the three windows the game opens beside the board.
+    for (int a = 6; a < argc; a++) {
+        if (strcmp(argv[a], "panels") != 0) continue;
+        game.cursorCol = 20;
+        game.cursorRow = 20;
+        const WorldCell *under =
+            &game.world.cells[WORLD_INDEX(game.cursorCol, game.cursorRow)];
+        int at = 4;
+        panelUnitWindow(&surface, &game, W - PANEL_SIDE - 4, at,
+                        (int)under->terrain, under->value);
+        at += PANEL_SIDE + 4;
+        panelProgressWindow(&surface, &game, 0, sim.days, sim.countdown,
+                            W - PANEL_SIDE - 4, at);
+        printf("the three windows\n");
     }
 
     // bar:<n> draws MENU 101 across the top with its nth menu dropped, which
