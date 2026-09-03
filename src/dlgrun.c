@@ -1,3 +1,4 @@
+#include "dlgload.h"
 #include "dlgrun.h"
 
 #include "font.h"
@@ -101,24 +102,10 @@ static void fillDefaultOrders(DlgRunner *r) {
 
 /* ------------------------------------------------------------------ open */
 
-int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
-    const DlgTemplate *tpl = NULL;
-    switch (which) {
-    case DLG_DEFAULT_ORDERS:   tpl = &kDlgDefaultOrders; break;
-    case DLG_VERSION:          tpl = &kDlgVersion; break;
-    case DLG_INFORMATION:      tpl = &kDlgInformation; break;
-    case DLG_SYSTEM_SETTING:   tpl = &kDlgSystemSetting; break;
-    case DLG_LOAD:             tpl = &kDlgLoad; break;
-    case DLG_SAVE:             tpl = &kDlgSave; break;
-    case DLG_LOAD_SINGLE_MAP:  tpl = &kDlgLoadSingleMap; break;
-    case DLG_ALLIANCE:         tpl = &kDlgAlliance; break;
-    case DLG_SOUND_SETTING:    tpl = &kDlgSoundSetting; break;
-    case DLG_HELP:             tpl = &kDlgHelp; break;
-    case DLG_LOAD_QUEST_MAP:   tpl = &kDlgLoadQuestMap; break;
-    case DLG_CUSTOM_SOUNDS:    tpl = &kDlgCustomSounds; break;
-    default: return 0;
-    }
-    dlgOpen(&r->dlg, tpl, surfaceW, surfaceH);
+// What a dialog is filled with when it opens: its lists, its values, and
+// the controls the program greys rather than the resource.  Split out of
+// dlgRunOpen so the template can come from either place.
+static void dlgRunFurnish(DlgRunner *r, DlgWhich which) {
     r->which = which;
     r->allyPick = -1;
 
@@ -233,6 +220,35 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
     default:
         break;
     }
+}
+
+int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
+    // Whatever the loaded release has for it, and dlgdefs.c - the English
+    // release, transcribed - where there is nothing to read.  See dlgload.c.
+    const DlgTemplate *tpl = dlgLoaded(which);
+    if (tpl) {
+        dlgOpen(&r->dlg, tpl, surfaceW, surfaceH);
+        dlgRunFurnish(r, which);
+        return 1;
+    }
+    switch (which) {
+    case DLG_DEFAULT_ORDERS:   tpl = &kDlgDefaultOrders; break;
+    case DLG_VERSION:          tpl = &kDlgVersion; break;
+    case DLG_INFORMATION:      tpl = &kDlgInformation; break;
+    case DLG_SYSTEM_SETTING:   tpl = &kDlgSystemSetting; break;
+    case DLG_LOAD:             tpl = &kDlgLoad; break;
+    case DLG_SAVE:             tpl = &kDlgSave; break;
+    case DLG_LOAD_SINGLE_MAP:  tpl = &kDlgLoadSingleMap; break;
+    case DLG_ALLIANCE:         tpl = &kDlgAlliance; break;
+    case DLG_SOUND_SETTING:    tpl = &kDlgSoundSetting; break;
+    case DLG_HELP:             tpl = &kDlgHelp; break;
+    case DLG_LOAD_QUEST_MAP:   tpl = &kDlgLoadQuestMap; break;
+    case DLG_CUSTOM_SOUNDS:    tpl = &kDlgCustomSounds; break;
+    default: break;
+    }
+    if (!tpl) return 0;
+    dlgOpen(&r->dlg, tpl, surfaceW, surfaceH);
+    dlgRunFurnish(r, which);
     return 1;
 }
 

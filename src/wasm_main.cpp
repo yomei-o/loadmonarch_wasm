@@ -18,6 +18,7 @@ extern "C" {
 #include "rsrc.h"
 #include "render.h"
 #include "sim.h"
+#include "dlgload.h"
 #include "dlgrun.h"
 #include <time.h>
 
@@ -381,6 +382,8 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
     loadMenuText();
+    // And the dialogs, which the Japanese release lays out differently.
+    dlgLoadFromHost(&g_host);
     if (!loadStage(0)) return 0;
     layoutSurfaces();
     // The opening picture, over a stage that is laid out and waiting for Go.

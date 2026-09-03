@@ -15,7 +15,7 @@ EXPORTS=_lm_open_zip,_lm_message,_lm_width,_lm_height,_lm_stage_name,_lm_stage,_
 # failed link then looked like a build that left no status at all.
 "$EMCC" -O2 \
     src/wasm_main.cpp src/world.c src/state.c src/sim.c src/render.c \
-    src/font.c src/font16.c src/orders.c src/ui.c src/dlg.c src/dlgdefs.c src/dlgrun.c src/toolbar.c src/panels.c \
+    src/font.c src/font16.c src/orders.c src/ui.c src/dlg.c src/dlgdefs.c src/dlgrun.c src/dlgload.c src/toolbar.c src/panels.c \
     src/rsrc.c src/rsrc_sjis.c src/endstage.c src/notice.c src/awards.c src/bz.c src/gfx.c src/host.c src/zip.c src/midi.c src/synth.c src/smf.c src/picture.c \
     -sALLOW_MEMORY_GROWTH=1 -sSINGLE_FILE=1 \
     -sMODULARIZE=1 -sEXPORT_NAME=createLordMonarch \

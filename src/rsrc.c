@@ -219,11 +219,15 @@ static const unsigned char *readClass(const unsigned char *p, char *out,
                                       int size) {
     if (rd16(p) == 0) { out[0] = 0; return p + 2; }
     if (rd16(p) == 0xffff) {
-        static const char *kOrdinal[7] = {
-            "", "Button", "Edit", "Static", "ListBox", "ScrollBar", "ComboBox"
+        // 0x80 is BUTTON, and the six run in that order - getting this
+        // one out by a place turned every button into a static and
+        // every static into an edit box, which is what the dialogs
+        // looked like: white bars where the numbers belong.
+        static const char *kOrdinal[6] = {
+            "Button", "Edit", "Static", "ListBox", "ScrollBar", "ComboBox"
         };
         const unsigned n = rd16(p + 2);
-        snprintf(out, size, "%s", n >= 0x80 && n <= 0x86
+        snprintf(out, size, "%s", n >= 0x80 && n <= 0x85
                  ? kOrdinal[n - 0x80] : "?");
         return p + 4;
     }

@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "../src/dlg.h"
+#include "../src/dlgload.h"
 #include "../src/host.h"
 #include "../src/rsrc.h"
 #include "../src/ui.h"
@@ -130,19 +131,23 @@ int main(int argc, char **argv) {
     /* -------------------------------------------------------- the dialogs */
     // Every dialog the port lays out, against its own resource.  The port
     // spells the ids out here because a DlgTemplate does not carry one.
-    static const struct { unsigned id; const DlgTemplate *tpl; } kDialogs[] = {
-        {104, &kDlgLoadQuestMap},
-        {106, &kDlgSave},
-        {107, &kDlgLoad},
-        {112, &kDlgCustomSounds},
-        {115, &kDlgSystemSetting},
-        {118, &kDlgInformation},
-        {119, &kDlgAlliance},
-        {120, &kDlgVersion},
-        {123, &kDlgHelp},
-        {124, &kDlgDefaultOrders},
-        {126, &kDlgSoundSetting},
-        {127, &kDlgLoadSingleMap},
+    static const struct {
+        unsigned id;
+        const DlgTemplate *tpl;
+        DlgWhich which;
+    } kDialogs[] = {
+        {104, &kDlgLoadQuestMap,  DLG_LOAD_QUEST_MAP},
+        {106, &kDlgSave,          DLG_SAVE},
+        {107, &kDlgLoad,          DLG_LOAD},
+        {112, &kDlgCustomSounds,  DLG_CUSTOM_SOUNDS},
+        {115, &kDlgSystemSetting, DLG_SYSTEM_SETTING},
+        {118, &kDlgInformation,   DLG_INFORMATION},
+        {119, &kDlgAlliance,      DLG_ALLIANCE},
+        {120, &kDlgVersion,       DLG_VERSION},
+        {123, &kDlgHelp,          DLG_HELP},
+        {124, &kDlgDefaultOrders, DLG_DEFAULT_ORDERS},
+        {126, &kDlgSoundSetting,  DLG_SOUND_SETTING},
+        {127, &kDlgLoadSingleMap, DLG_LOAD_SINGLE_MAP},
     };
     // The Japanese release lays its dialogs out for Japanese text - 104 is
     // thirty-one units taller and a control short of the English one, and 126
@@ -236,6 +241,64 @@ int main(int argc, char **argv) {
         if (wrong) failures += wrong;
         printf("  DIALOG %3u %-26s %2d controls%s\n", kDialogs[d].id,
                want.caption, want.controls, wrong ? "  (see above)" : "");
+    }
+
+    // And the templates dlgload.c builds out of the resource, against the
+    // transcription - kinds included, which is the one thing dlgload.c
+    // decides for itself.  An ordinal class table out by one place turned
+    // every button into a static and every static into an edit box, and
+    // nothing here noticed until the dialog was looked at.
+    {
+        const int loaded = dlgLoadFromHost(&host);
+        printf("  dlgload read %d of %u dialogs\n", loaded,
+               (unsigned)(sizeof kDialogs / sizeof kDialogs[0]));
+        check(loaded > 0, "it read some");
+        for (unsigned d = 0; d < sizeof kDialogs / sizeof kDialogs[0]; d++) {
+            const DlgTemplate *mine = kDialogs[d].tpl;
+            const DlgTemplate *got = dlgLoaded(kDialogs[d].which);
+            if (!got) {
+                printf("FAIL  DIALOG %u was not loaded\n", kDialogs[d].id);
+                failures++;
+                continue;
+            }
+            int n = 0, m = 0;
+            for (const DlgControl *c = mine->control; c->kind != DC_END; c++) n++;
+            for (const DlgControl *c = got->control; c->kind != DC_END; c++) m++;
+            if (n != m) {
+                printf("FAIL  DIALOG %u: %d controls loaded, %d in the port\n",
+                       kDialogs[d].id, m, n);
+                failures++;
+                continue;
+            }
+            int wrong = 0;
+            for (int i = 0; i < m; i++) {
+                const DlgControl *r = &got->control[i];
+                int found = 0;
+                for (int j = 0; j < n && !found; j++) {
+                    const DlgControl *c = &mine->control[j];
+                    if (c->id == r->id && c->x == r->x && c->y == r->y &&
+                        c->w == r->w && c->h == r->h) {
+                        found = 1;
+                        if (c->kind != r->kind) {
+                            if (wrong < 3)
+                                printf("FAIL  DIALOG %u control %d is kind %d "
+                                       "loaded, %d in the port\n",
+                                       kDialogs[d].id, r->id, r->kind,
+                                       c->kind);
+                            wrong++;
+                        }
+                    }
+                }
+                if (!found) {
+                    if (wrong < 3)
+                        printf("FAIL  DIALOG %u: loaded control %d at %d,%d "
+                               "matches nothing\n", kDialogs[d].id, r->id,
+                               r->x, r->y);
+                    wrong++;
+                }
+            }
+            failures += wrong;
+        }
     }
 
     if (failures) {

@@ -11,6 +11,7 @@ Two sources, because the font is generated and the list has to be too:
   and would otherwise be lost the next time the font is regenerated
 * what the two releases' MENU and DIALOG resources want, which is what
   tools/missing_glyphs.py works out
+* the stage names in MAP/NAME.TXT, which the Load Quest Map list shows
 
 So regenerating the font is:
 
@@ -59,6 +60,30 @@ def main():
 
     want = dict.fromkeys(sorted(kanji), '')
     archives = sys.argv[1:] or ['ds7e.zip', 'ds7j.zip']
+
+    # MAP/NAME.TXT: the quest's name and the fifteen stage titles, which the
+    # Load Quest Map list shows and which are Shift-JIS already.
+    import zipfile
+    for archive in archives:
+        z = zipfile.ZipFile(archive)
+        for name in z.namelist():
+            if not name.upper().endswith('NAME.TXT'):
+                continue
+            raw = z.read(name)
+            i = 0
+            while i < len(raw) - 1:
+                lead = raw[i]
+                if (0x81 <= lead <= 0x9f) or (0xe0 <= lead <= 0xfc):
+                    code = (lead << 8) | raw[i + 1]
+                    if row_of.get(code, 0) > 0x28:
+                        try:
+                            want[code] = bytes(raw[i:i + 2]).decode('shift_jis')
+                        except UnicodeDecodeError:
+                            want[code] = ''
+                    i += 2
+                else:
+                    i += 1
+
     for archive in archives:
         for text in missing_glyphs.resource_strings(archive):
             for ch in text:
