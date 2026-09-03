@@ -300,9 +300,10 @@ static const char *kHelpPages[4] = {
     "and the stage is yours.",
 };
 
-// What the original puts into these controls, it puts in with
-// SetDlgItemText: the control's own text is replaced and Windows repaints its
-// whole rectangle.  The port used to paint over the resource's text instead,
+// What the original puts into these controls, it puts in the way Windows
+// does: `SetDlgItemInt` for the numbers and `SendDlgItemMessageA` with
+// WM_SETTEXT for the words - it imports no SetDlgItemTextA - so the control's
+// own text is replaced and Windows repaints its whole rectangle.  The port used to paint over the resource's text instead,
 // which showed in the Japanese release - a static twenty rows tall draws its
 // text two rows down, so the last two rows of "å¨é¨" stayed under the number
 // that was meant to replace it.  Anything that fits in a control's text goes

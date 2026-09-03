@@ -63,12 +63,20 @@ static void blitSheetPart(Surface *out, const World *world, int sx, int sy,
 
 // 00426900's gauge: up to thirty pieces of eight by sixteen taken from row
 // (n / 10 + 4) * 16, column (n % 10) * 8 - three rows of ten on the sheet,
-// blue then green then yellow, so a full bar changes colour as it fills.
+// blue then green then yellow.
+//
+// The destination is **one** row of ten.  004265b9's `lea ecx, [edx*8 + 0x48]`
+// with `edx = (n % 10) + pitch * 12` has no term for `n / 10` in it at all, so
+// piece 10 lands on top of piece 0 in green and piece 20 on top of that in
+// yellow: the bar fills blue, then fills again green over the blue, then
+// yellow.  Drawing them on three rows - which is what this did - showed only
+// the blue tenth of a gauge and left the two rows below it in the panel's
+// other slots.
 static void blitGauge(Surface *out, const World *world, int n, int dx,
                       int dy) {
     for (int i = 0; i < n && i < 30; i++)
         blitSheet(out, world, (i % 10) * 8, (i / 10 + 4) * 16, 8, 16,
-                  dx + (i % 10) * 8, dy + (i / 10) * 16);
+                  dx + (i % 10) * 8, dy);
 }
 
 void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
@@ -96,9 +104,13 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
     }
 
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 152, y + 120, value, out);
+    // 004269c0: a cell of terrain 8 to 11 is measured against 0x90 and every
+    // other against 0xff, thirty pieces at the full value, and 00426b59 caps
+    // the count at 0x1e - not at ten.  The eleventh piece goes back to the
+    // left in green and the twenty-first in yellow.
     const unsigned over = (terrain >= 8 && terrain < 12) ? 0x90u : 0xffu;
     int n = (int)(value * 30u / (over ? over : 1u));
-    if (n > 10) n = 10;                 // the slot the panel leaves is one row
+    if (n > 30) n = 30;
     blitGauge(out, w, n, x + 72, y + 96);
 }
 
