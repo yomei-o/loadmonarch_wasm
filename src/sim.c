@@ -547,10 +547,11 @@ int simMusicWanted(const Sim *sim) {
 // 0041f0d0's queue.  Anything past the eighth in one tick is dropped rather
 // than overwriting the ones already waiting; four countries cannot raise more
 // than four of each in a game, so it never comes to that.
-static void pushEvent(Sim *sim, int kind, unsigned faction) {
+static void pushEvent(Sim *sim, int kind, unsigned faction, unsigned other) {
     if (sim->events >= SIM_EVENTS_MAX) return;
     sim->event[sim->events].kind = (unsigned char)kind;
     sim->event[sim->events].faction = (unsigned char)faction;
+    sim->event[sim->events].other = (unsigned char)other;
     sim->events++;
 }
 
@@ -595,7 +596,7 @@ void simConquerFaction(Sim *sim, unsigned faction) {
 
     // FUN_00424520: the view goes to the castle that has just come down and
     // dialog 122 says whose it was.
-    pushEvent(sim, SIM_EVENT_FALLEN, faction);
+    pushEvent(sim, SIM_EVENT_FALLEN, faction, faction);
 
     // And then the count.  0041f0d0 walks the four and only breaks the
     // alliances when exactly two have the flag: with two countries left there
@@ -609,7 +610,7 @@ void simConquerFaction(Sim *sim, unsigned faction) {
         Faction *side = &state->factions[f];
         if (side->flags & 0x40) continue;
         if (side->at1e >= PLAYABLE_FACTIONS) continue;
-        pushEvent(sim, SIM_EVENT_BREAK_ALLIANCE, f);
+        pushEvent(sim, SIM_EVENT_BREAK_ALLIANCE, f, side->at1e);
         side->at1e = 0x80;
     }
 }

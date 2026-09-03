@@ -30,6 +30,13 @@ void renderWorld(const World *world, int zoom, int viewX, int viewY,
 void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                  int transpose, Surface *out);
 
+// 004243c0 and 00424460: one tile of a sprite bank at x,y.  The first copies
+// every pixel and the second leaves the transparent index alone, and the
+// windows the program paints itself use both - dialog 122 drops a castle in
+// opaquely and lays the gate towers over it.
+void renderSprite(Surface *out, const TileBank *bank, unsigned number,
+                  int x, int y, int opaque);
+
 // The game's own digits, measured off the interface sheet: eight by sixteen at
 // the top of it, and a four by eight set below.  White and red of each.
 typedef enum {

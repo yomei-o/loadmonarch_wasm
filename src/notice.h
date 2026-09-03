@@ -10,17 +10,23 @@
 // There are two of them, told apart by the low half of the parameter
 // FUN_004095d0 is handed:
 //
-//   0  00411d70, from FUN_00424520 - "%s has Fallen".  The window plays five
-//      frames of the country's castle coming down first and only writes the
+//   0  00411d70, from FUN_00424520 - "%s has Fallen".  It plays five frames
+//      of the country's king going down fighting first and only writes the
 //      words at tick six.
 //   1  00411eb0, from 0041f0d0 - "Break alliance", which every country still
 //      standing gets when the second of the four has fallen.
 //
-// Not done: the five frames of the castle, and the two flags 00411eb0 draws
-// beside its words.  Both are sprite numbers built out of the country's own
-// terrain byte - 00411d70 asks for `(byte << 3) | 0x66` and then
-// `(tick + byte * 8) - 1 | 0xa4` - and neither the numbering nor the bank they
-// index has been worked out yet.
+// The sprite numbers are 0041b520's own, which renderSpriteNumber packs the
+// same way: 0x60 | faction << 3 | facing is a leader standing, and 0xa4 |
+// faction << 3 | phase is a leader fighting.  So 00411d70's `(byte << 3) |
+// 0x66` is the country's king, and the four frames after it -
+// `(tick + byte * 8) - 1 | 0xa4` - are that king fighting, phases nought to
+// three.  A country's notice is its king's last stand, not its castle.
+//
+// 00411eb0's pair for "Break alliance" is two kings: `(byte << 3) | 100` is
+// this country's at 16,16 and `(ally | 0xc) << 3` the ally's at 208,16.  Both
+// through 00424460, which leaves the transparent index alone, where the
+// king's own frames go in opaquely through 004243c0.
 #ifndef NOTICE_WINDOW_H
 #define NOTICE_WINDOW_H
 
@@ -45,13 +51,17 @@ typedef struct {
     int kind;
     int tick;
     unsigned faction;
+    unsigned ally;              // for "Break alliance": who it was with
     char name[24];              // the country's own name, for "%s has Fallen"
 } Notice;
 
-void noticeOpen(Notice *notice, int kind, unsigned faction, const char *name);
+void noticeOpen(Notice *notice, int kind, unsigned faction, unsigned ally,
+                const char *name);
 // One 100 ms timer tick.  Answers non-zero once it has closed itself.
 int noticeStep(Notice *notice);
 int noticeDismiss(Notice *notice);
+// `world` gives it the sheet for the frame and the sprite bank for the
+// castle.
 void noticeDraw(Surface *out, const Notice *notice, const World *world,
                 int x, int y);
 

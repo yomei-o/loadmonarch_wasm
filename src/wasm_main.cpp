@@ -480,7 +480,7 @@ static void noticeService(void) {
         g_viewY = (int)side->at08[1] * ts - g_viewH / 2;
         clampView();
     }
-    noticeOpen(&g_notice, event.kind, f, name);
+    noticeOpen(&g_notice, event.kind, f, event.other, name);
 }
 
 // 0041f6c0's certificate: the class it has just worked out, the program's

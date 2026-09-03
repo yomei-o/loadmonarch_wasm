@@ -313,7 +313,7 @@ int main(int argc, char **argv) {
     // has finished falling.
     {
         static Notice notice;
-        noticeOpen(&notice, NOTICE_FALLEN, 3, "Blackland");
+        noticeOpen(&notice, NOTICE_FALLEN, 3, 3, "Blackland");
         memset(surface.pixels, 0, (size_t)surface.width * surface.height);
         noticeDraw(&surface, &notice, &world, 10, 10);
         const unsigned char want =
@@ -343,7 +343,7 @@ int main(int argc, char **argv) {
                notice.tick, NOTICE_LIFE + 1);
 
         // A click closes it early.
-        noticeOpen(&notice, NOTICE_BREAK_ALLIANCE, 1, "Redland");
+        noticeOpen(&notice, NOTICE_BREAK_ALLIANCE, 1, 2, "Redland");
         memset(surface.pixels, 0, (size_t)surface.width * surface.height);
         noticeDraw(&surface, &notice, &world, 10, 10);
         checkf(band(&surface, 10, 10 + 0x18, UI_LIGHT) > 60,

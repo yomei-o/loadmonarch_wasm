@@ -86,9 +86,8 @@ unsigned renderSpriteNumber(const Entity *entity, unsigned frame) {
     return base | (unsigned)(entity->at0c & 6) | (faction << 3) | beat;
 }
 
-// 00424460: one tile of the sprite bank over the surface, 'p' left alone.
-static void blitSprite(const TileBank *bank, unsigned number, int x, int y,
-                       Surface *out) {
+void renderSprite(Surface *out, const TileBank *bank, unsigned number,
+                  int x, int y, int opaque) {
     if (!bank->pixels || number >= bank->tiles) return;
     const int ss = bank->tileSize;
     const unsigned char *tile = bank->pixels + (size_t)number * ss * ss;
@@ -100,10 +99,16 @@ static void blitSprite(const TileBank *bank, unsigned number, int x, int y,
             const int px = x + tx;
             if (px < 0 || px >= out->width) continue;
             const unsigned char v = tile[ty * ss + tx];
-            if (v == CHR_TRANSPARENT) continue;
+            if (!opaque && v == CHR_TRANSPARENT) continue;
             dst[px] = v;
         }
     }
+}
+
+// 00424460: one tile of the sprite bank over the surface, 'p' left alone.
+static void blitSprite(const TileBank *bank, unsigned number, int x, int y,
+                       Surface *out) {
+    renderSprite(out, bank, number, x, y, 0);
 }
 
 // 004244b0: the order balloon, taken from the interface sheet rather than the

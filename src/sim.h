@@ -17,6 +17,7 @@ typedef enum {
 typedef struct {
     unsigned char kind;
     unsigned char faction;
+    unsigned char other;        // the ally, for a broken alliance
 } SimEvent;
 
 typedef struct {
