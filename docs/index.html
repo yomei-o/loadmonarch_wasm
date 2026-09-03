@@ -80,7 +80,8 @@
   out.  Nothing else belongs to the page any more.
 -->
 <header>
-  <span class="brand">LORD MONARCH<small>移植途中 / a port in progress</small></span>
+  <span class="brand">LORD MONARCH<small>移植途中 / a port in progress</small><small
+        id="build" title="このページのビルド刻印。新しいビルドが出ると自分で乗り換えます"></small></span>
   <button id="langE" class="on">English</button>
   <button id="langJ">日本語</button>
   <label class="filebtn">zip を開く<input type="file" id="file" accept=".zip" hidden></label>
@@ -103,7 +104,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903072341"></script>
+<script src="loadmonarch.js?v=20260903074710"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -113,6 +114,33 @@ createLordMonarch().then(function (M) {
   var note = document.getElementById('note');
   var loaded = false;
   var said = false;      // the stage's verdict, announced once
+
+  // Which build this page is, and whether a newer one is up.  The stamp is
+  // written in by tools/build_wasm.sh, and docs/version.txt carries the same
+  // one - so asking for that file past the cache says whether what is loaded
+  // is current.  It is not, often: GitHub Pages serves this page with
+  // max-age=600 and the module's cache buster is inside the page, so a cached
+  // page pins a cached module and a fresh push looks like no push at all.
+  var BUILD = '20260903074710';
+  var buildTag = document.getElementById('build');
+  buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
+
+  function checkBuild() {
+    fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (text) {
+          if (!text) return;
+          var live = text.trim();
+          if (!live || live === BUILD) return;
+          // A query the browser has not seen is a document it has to fetch.
+          location.replace(location.pathname + '?v=' + live);
+        })
+        .catch(function () {});          // opened from a file:// path
+  }
+  if (BUILD.charAt(0) !== '_') {         // not a build, so nothing to compare
+    checkBuild();
+    setInterval(checkBuild, 60000);
+  }
 
   function say(text) {
     note.textContent = text;

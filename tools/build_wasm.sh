@@ -20,6 +20,15 @@ sh tools/lowpri.sh "$EMCC" -O2 \
 
 # A new build is a new URL, so a browser can never pair fresh HTML with a
 # cached module - the trap that cost an afternoon on the simtower port.
+#
+# That is only half of it, though: the stamp lives inside the page, and GitHub
+# Pages serves the page itself with max-age=600.  A browser holding a
+# ten-minute-old page therefore holds a ten-minute-old module with it, and the
+# build looks stale however often it is pushed.  So the stamp also goes in a
+# file of its own, which the page asks for past the cache and uses to step onto
+# the new build by itself.
 V="$(date -u '+%Y%m%d%H%M%S')"
-sed "s/loadmonarch\.js/loadmonarch.js?v=$V/" web/index.html > docs/index.html
+printf '%s' "$V" > docs/version.txt
+sed -e "s/loadmonarch\.js/loadmonarch.js?v=$V/" \
+    -e "s/__BUILD__/$V/" web/index.html > docs/index.html
 echo "built docs/loadmonarch.js + docs/index.html (v=$V)"
