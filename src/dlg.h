@@ -42,8 +42,8 @@ typedef struct {
     const char *text;
 } DlgControl;
 
-#define DLG_CONTROLS_MAX 40
-#define DLG_ITEMS_MAX 64
+#define DLG_CONTROLS_MAX 48
+#define DLG_ITEMS_MAX 96
 #define DLG_ITEM_TEXT 40
 #define DLG_BANKS 2
 
@@ -128,5 +128,7 @@ extern const DlgTemplate kDlgLoadSingleMap;     // 127
 extern const DlgTemplate kDlgAlliance;          // 119
 extern const DlgTemplate kDlgSoundSetting;      // 126
 extern const DlgTemplate kDlgHelp;              // 123
+extern const DlgTemplate kDlgLoadQuestMap;      // 104
+extern const DlgTemplate kDlgCustomSounds;      // 112
 
 #endif

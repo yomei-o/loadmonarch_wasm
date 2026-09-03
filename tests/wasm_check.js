@@ -360,6 +360,32 @@ createLordMonarch().then((M) => {
                M._lm_cursor_row() >= top, true);
     }
 
+    // Every command MENU 101 and the tool bar can send has to lead somewhere:
+    // either the game carries it out, or it puts a dialog up.  A menu item
+    // that does nothing is the thing that makes a game unplayable.
+    {
+        const commands = [
+            40051, 40021, 40020, 40117, 40110, 40114, 40044,          // System
+            40045, 40030, 40048, 40049, 40050, 40012, 40033, 40116,   // Controls
+            60001, 60002, 60003, 60005, 40108, 40111,                 // Display
+            40062, 40061, 40113, 40080, 40081, 40082, 40083, 40038,   // Orders
+            40037, 40055,                                             // Help
+            40120,                                                    // tool bar
+        ];
+        let dead = [];
+        for (const id of commands) {
+            const did = M._lm_command(id);
+            const dlg = did ? 0 : M._lm_dialog_open(id);
+            if (dlg) M._lm_dialog_click(-100, -100);   // put it away again
+            if (!did && !dlg) dead.push(id);
+        }
+        expect('no menu command does nothing', dead.join(','), '');
+        console.log(`  ${commands.length} menu commands, all live`);
+        M._lm_command(40111);                          // windows back as they were
+        M._lm_command(40045);                          // and the clock running
+        M._lm_load_stage(1);
+    }
+
     // The original's own save: write it, change the world, read it back.
     {
         const size = M._lm_save_size();

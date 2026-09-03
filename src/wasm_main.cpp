@@ -130,6 +130,10 @@ int loadStage(int stage) {
 // callbacks further down.
 static void dialogsReady(void);
 
+// The music exports, which the sound dialog reaches back into.
+extern "C" EMSCRIPTEN_KEEPALIVE int lm_music_play(int number, int loop);
+extern "C" EMSCRIPTEN_KEEPALIVE void lm_music_stop(void);
+
 extern "C" {
 
 // The player's zip, copied in by the page.  Returns the number of stages when
@@ -518,6 +522,22 @@ static int hostSlotRemove(void *, int slot) {
     return 1;
 }
 
+// SOUND/SOUND.CFG for dialog 112.
+static int hostTuneName(void *, int tune, char *out, int size) {
+    if (tune < 0 || tune >= (int)g_tunes.count) return 0;
+    snprintf(out, (size_t)size, "%3u %s", g_tunes.entry[tune],
+             g_tunes.name[tune]);
+    return 1;
+}
+static int hostTuneNumber(void *, int tune) {
+    return tune >= 0 && tune < (int)g_tunes.count ? (int)g_tunes.entry[tune] : 0;
+}
+static void hostTunePlay(void *, int tune) {
+    if (tune < 0 || tune >= (int)g_tunes.count) return;
+    lm_music_play((int)g_tunes.entry[tune], g_tunes.loops[tune]);
+}
+static void hostTuneStop(void *) { lm_music_stop(); }
+
 static int hostGetSpeed(void *) { return g_speed; }
 static void hostSetSpeed(void *, int speed) {
     g_speed = speed < 0 ? 0 : speed > 29 ? 29 : speed;
@@ -546,6 +566,11 @@ static void dialogsReady(void) {
     g_dlgHost.slotWrite = hostSlotWrite;
     g_dlgHost.slotRemove = hostSlotRemove;
     g_dlgHost.slots = SAVE_SLOTS;
+    g_dlgHost.tuneName = hostTuneName;
+    g_dlgHost.tuneNumber = hostTuneNumber;
+    g_dlgHost.tunes = (int)g_tunes.count;
+    g_dlgHost.tunePlay = hostTunePlay;
+    g_dlgHost.tuneStop = hostTuneStop;
     g_dlgHost.getSpeed = hostGetSpeed;
     g_dlgHost.setSpeed = hostSetSpeed;
     g_dlgHost.stageName = hostStageName;
@@ -642,9 +667,20 @@ EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
     case 40113:                                     // Recall Leader
         return simRecallLeader(&g_sim, g_sim.humanFaction);
     case 40062:                                     // Overall Order, new units
-        return lm_select_all(0);
+        lm_select_all(0);
+        return 1;                                   // done, however many it found
     case 40061:                                     // Overall Order, all
-        return lm_select_all(1);
+        lm_select_all(1);
+        return 1;
+    case 60001:                                     // Unit Window
+        g_windowShown[1] = !g_windowShown[1];
+        return 1;
+    case 60002:                                     // Progress Window
+        g_windowShown[0] = !g_windowShown[0];
+        return 1;
+    case 60003:                                     // Graph Window
+        g_windowShown[2] = !g_windowShown[2];
+        return 1;
     case 40080: case 40081: case 40082: case 40083: {
         // Leader Position: mark that country's king and look at him.
         int col = 0, row = 0;

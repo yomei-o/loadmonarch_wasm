@@ -22,7 +22,9 @@ typedef enum {
     DLG_LOAD_SINGLE_MAP,        // 127
     DLG_ALLIANCE,               // 119, from Controls / Alliance Setting
     DLG_SOUND_SETTING,          // 126, from Controls / Customize Sounds
-    DLG_HELP                    // 123, from Help / Quick Rules
+    DLG_HELP,                   // 123, from Help / Quick Rules
+    DLG_LOAD_QUEST_MAP,         // 104, from System / Load Quest Map
+    DLG_CUSTOM_SOUNDS           // 112, from Controls / Customize Sounds
 } DlgWhich;
 
 // What the host has to do for the port, because it is the host's business and
@@ -37,6 +39,14 @@ typedef struct {
     int (*slotWrite)(void *user, int slot, const char *name);
     int (*slotRemove)(void *user, int slot);
     int slots;
+
+    // The soundtrack, for dialog 112: SOUND/SOUND.CFG's entries, and playing
+    // or stopping one.
+    int (*tuneName)(void *user, int tune, char *out, int size);
+    int (*tuneNumber)(void *user, int tune);
+    int tunes;
+    void (*tunePlay)(void *user, int tune);
+    void (*tuneStop)(void *user);
 
     // The clock: 0 slowest, 29 fastest, which is DAT_00437698's range.
     int (*getSpeed)(void *user);
@@ -70,6 +80,7 @@ typedef struct {
     int firstEmpty;             // the save slot Save New will use, or -1
     int lastOrdered;            // how many took the order the Information
                                 // dialog was asking about
+    int showEnding;             // 104's Ending was pressed; the host reads it
 } DlgRunner;
 
 void dlgRunInit(DlgRunner *r, Sim *sim, const DlgHost *host);

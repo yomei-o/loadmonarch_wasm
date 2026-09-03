@@ -202,7 +202,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260903023857"></script>
+<script src="loadmonarch.js?v=20260903025604"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -539,8 +539,16 @@ createLordMonarch().then(function (M) {
       }
     }
 
-    drawUnitWindow();
-    drawProgressWindow();
+    // The Display menu and the tool bar turn these three on and off, so the
+    // page follows what the game says rather than keeping its own answer.
+    var showUnit = M._lm_window_shown(1);
+    var showProgress = M._lm_window_shown(0);
+    var showGraph = M._lm_window_shown(2);
+    unitWin.style.display = showUnit ? '' : 'none';
+    progWin.style.display = showProgress ? '' : 'none';
+    document.getElementById('factions').style.display = showGraph ? '' : 'none';
+    if (showUnit) drawUnitWindow();
+    if (showProgress) drawProgressWindow();
 
     var world = document.querySelector('#world tbody');
     var actions = ['-', '置いた', '資金不足', '置けない', '-', '-', 'ユニットを使い切った'];

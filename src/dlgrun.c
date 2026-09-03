@@ -30,10 +30,11 @@ DlgWhich dlgForCommand(int command) {
     case 40033: return DLG_SYSTEM_SETTING;      // Controls / System Setting
     case 40051: return DLG_LOAD;                // System / Load
     case 40021: return DLG_SAVE;                // System / Save
-    case 40020:                                 // System / Load Quest Map
+    case 40020: return DLG_LOAD_QUEST_MAP;      // System / Load Quest Map
     case 40117: return DLG_LOAD_SINGLE_MAP;     // System / Load Single Map
     case 40012: return DLG_ALLIANCE;            // Controls / Alliance Setting
-    case 40116: return DLG_SOUND_SETTING;       // Controls / Customize Sounds
+    case 40116: return DLG_SOUND_SETTING;       // Controls / Sound Setting
+    case 40067: return DLG_CUSTOM_SOUNDS;       // and the long form of it
     case 40037: return DLG_HELP;                // Help / Quick Rules
     default: return DLG_NONE;
     }
@@ -113,6 +114,8 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
     case DLG_ALLIANCE:         tpl = &kDlgAlliance; break;
     case DLG_SOUND_SETTING:    tpl = &kDlgSoundSetting; break;
     case DLG_HELP:             tpl = &kDlgHelp; break;
+    case DLG_LOAD_QUEST_MAP:   tpl = &kDlgLoadQuestMap; break;
+    case DLG_CUSTOM_SOUNDS:    tpl = &kDlgCustomSounds; break;
     default: return 0;
     }
     dlgOpen(&r->dlg, tpl, surfaceW, surfaceH);
@@ -133,7 +136,35 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
         dlgEnable(&r->dlg, 1110, 0);
         break;
     case DLG_LOAD_SINGLE_MAP:
+    case DLG_LOAD_QUEST_MAP:
         fillStages(r);
+        // 104 keeps Awards greyed in the resource itself; the port has no
+        // campaign record behind the rest, so those statics stay at "---".
+        dlgEnable(&r->dlg, 1188, 0);
+        break;
+    case DLG_CUSTOM_SOUNDS:
+        dlgClearItems(&r->dlg);
+        if (r->host && r->host->tuneName) {
+            char name[DLG_ITEM_TEXT];
+            for (int i = 0; i < r->host->tunes && i < DLG_ITEMS_MAX; i++)
+                if (r->host->tuneName(r->host->user, i, name, sizeof name))
+                    dlgAddItem(&r->dlg, name);
+        }
+        dlgSetValue(&r->dlg, 1128, 1);          // MIDI, which is what there is
+        dlgEnable(&r->dlg, 1130, 0);            // no CD
+        dlgEnable(&r->dlg, 1133, 0);
+        dlgEnable(&r->dlg, 1137, 0);
+        // The release ships no WAVE files at all, so the whole of the lower
+        // half has nothing to work on.
+        dlgEnable(&r->dlg, 1020, 0);
+        dlgEnable(&r->dlg, 1090, 0);
+        dlgEnable(&r->dlg, 1091, 0);
+        dlgEnable(&r->dlg, 1132, 0);
+        dlgEnable(&r->dlg, 1135, 0);
+        dlgEnable(&r->dlg, 1134, 0);
+        dlgEnable(&r->dlg, 1192, 0);
+        dlgEnable(&r->dlg, 1194, 0);
+        dlgEnable(&r->dlg, 10, 0);
         break;
     case DLG_SYSTEM_SETTING:
         if (r->host && r->host->getWindow) {
@@ -272,6 +303,31 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
                                           (unsigned)r->allyPick));
         break;
     }
+    case DLG_LOAD_QUEST_MAP: {
+        // The map name and the count are the two the port can honestly fill.
+        if (r->dlg.listSel >= 0 && r->dlg.listSel < r->dlg.items[0] &&
+            dlgControlRect(&r->dlg, 1039, &x, &y, &w, &h))
+            fontDrawText(out, x, y, (unsigned char)UI_DARK,
+                         r->dlg.item[0][r->dlg.listSel]);
+        if (dlgControlRect(&r->dlg, 1051, &x, &y, &w, &h)) {
+            char n[16];
+            snprintf(n, sizeof n, "%d", r->stageCount);
+            fontDrawText(out, x, y, (unsigned char)UI_DARK, n);
+        }
+        break;
+    }
+    case DLG_CUSTOM_SOUNDS: {
+        // The file the chosen entry plays, which is its number: entry ten is
+        // SOUND/LM010.MID.
+        if (r->dlg.listSel >= 0 && r->host && r->host->tuneNumber &&
+            dlgControlRect(&r->dlg, 1131, &x, &y, &w, &h)) {
+            char path[32];
+            snprintf(path, sizeof path, "SOUND/LM%03d.MID",
+                     r->host->tuneNumber(r->host->user, r->dlg.listSel));
+            fontDrawText(out, x + 4, y + 2, (unsigned char)UI_DARK, path);
+        }
+        break;
+    }
     case DLG_HELP: {
         const int page = dlgValue(&r->dlg, 1122);
         if (page >= 0 && page < 4 &&
@@ -396,8 +452,24 @@ int dlgRunClick(DlgRunner *r, int x, int y) {
         break;
 
     case DLG_LOAD_SINGLE_MAP:
+    case DLG_LOAD_QUEST_MAP:
         if (id == 1040 && r->dlg.listSel >= 0 && r->host && r->host->loadStage)
             r->host->loadStage(r->host->user, r->dlg.listSel);
+        else if (id == 1189) {                  // Ending
+            r->showEnding = 1;
+            break;
+        }
+        break;
+
+    case DLG_CUSTOM_SOUNDS:
+        if (id == 1088 && r->dlg.listSel >= 0 && r->host && r->host->tunePlay) {
+            r->host->tunePlay(r->host->user, r->dlg.listSel);
+            return 0;                           // it stays up while it plays
+        }
+        if (id == 1089) {
+            if (r->host && r->host->tuneStop) r->host->tuneStop(r->host->user);
+            return 0;
+        }
         break;
 
     case DLG_ALLIANCE:

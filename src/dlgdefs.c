@@ -181,3 +181,91 @@ static const DlgControl kHelp[] = {
     {DC_END, 0, 0, 0, 0, 0, ""},
 };
 const DlgTemplate kDlgHelp = {"Help", 289, 161, kHelp};
+
+/* --------------------------------------------------- 104 "Load Quest Map" */
+
+// The campaign browser, and the biggest of them: the list of maps, then what
+// is known about the one picked - Information, Area, Battle and Results - most
+// of which the resource itself fills with "---".  A port with no campaign
+// record behind it leaves those as they are rather than inventing numbers.
+static const DlgControl kLoadQuestMap[] = {
+    {DC_LIST,   1002,   5,  5, 155, 35, ""},
+    {DC_DEFPUSH,1040, 165,  5,  45, 15, "Go!"},
+    {DC_PUSH,      2, 165, 25,  45, 15, "Cancel"},
+
+    {DC_GROUP, 65535,   5, 45, 205, 55, "Information"},
+    {DC_TEXT,  65535,  10, 55,  45, 10, "Map name"},
+    {DC_TEXT,   1039, 105, 55,  95, 10, "---"},
+    {DC_TEXT,   1049,  10, 70,  85, 10, "Player class"},
+    {DC_TEXT,   1117, 105, 70,  60, 10, "??"},
+    {DC_TEXT,   1050,  10, 85,  85, 10, "Maps"},
+    {DC_TEXT,   1051, 105, 85,  55, 10, "??"},
+    {DC_PUSH,   1188, 175, 65,  30, 15, "Awards"},
+    {DC_PUSH,   1189, 175, 80,  30, 14, "Ending"},
+
+    {DC_GROUP, 65535,   5,105, 205, 30, "Area"},
+    {DC_TEXT,  65535,  10,115,  45,  8, "You"},
+    {DC_TEXT,  65535,  55,115,  45,  8, "Enemy"},
+    {DC_TEXT,  65535, 100,115,  45,  8, "Percentage"},
+    {DC_TEXT,  65535, 150,115,  55,  8, "Penalty"},
+    {DC_TEXT,   1181,  10,125,  40,  8, "---"},
+    {DC_TEXT,   1180,  55,125,  40,  8, "---"},
+    {DC_TEXT,   1182, 100,125,  40,  8, "---"},
+    {DC_TEXT,   1186, 150,125,  55,  8, "---"},
+
+    {DC_GROUP, 65535,   5,140, 205, 30, "Battle"},
+    {DC_TEXT,  65535,  10,150,  45,  8, "You"},
+    {DC_TEXT,  65535,  55,150,  45,  8, "Enemy"},
+    {DC_TEXT,  65535, 100,150,  45,  8, "Percentage"},
+    {DC_TEXT,  65535, 150,150,  55,  8, "Bonus"},
+    {DC_TEXT,   1183,  10,160,  40,  8, "---"},
+    {DC_TEXT,   1184,  55,160,  40,  8, "---"},
+    {DC_TEXT,   1185, 100,160,  40,  8, "---"},
+    {DC_TEXT,   1187, 150,160,  55,  8, "---"},
+
+    {DC_GROUP, 65535,   5,175, 205, 50, "Results"},
+    {DC_TEXT,   1047,  10,185, 130,  8, "Remaining with bonus"},
+    {DC_TEXT,   1115, 150,185,  55, 10, "---"},
+    {DC_TEXT,   1053,  10,195, 130, 10, "Days remaining for this stage"},
+    {DC_TEXT,   1118, 150,195,  55, 10, "---"},
+    {DC_TEXT,   1048,  10,210, 135, 10, "Total Bonus"},
+    {DC_TEXT,   1116, 150,210,  55, 10, "---"},
+    {DC_END, 0, 0, 0, 0, 0, ""},
+};
+const DlgTemplate kDlgLoadQuestMap = {"Load Quest Map", 214, 230,
+                                      kLoadQuestMap};
+
+/* -------------------------------------------- 112 "Customize Current Sounds" */
+
+// SOUND/SOUND.CFG's ninety-four entries live in the top list; the half below
+// is for WAVE files, of which the release has none, so it is greyed.
+static const DlgControl kCustomSounds[] = {
+    {DC_GROUP, 65535,   5,  0, 215, 80, "BGM"},
+    {DC_LIST,   1019,  10, 10, 160, 30, ""},
+    {DC_PUSH,   1088, 175, 10,  40, 10, "Play"},
+    {DC_PUSH,   1089, 175, 25,  40, 10, "Stop"},
+    {DC_RADIO,  1128,  10, 45,  30, 10, "MIDI"},
+    {DC_EDIT,   1131,  45, 45, 125, 12, ""},
+    {DC_PUSH,   1134, 175, 40,  40, 10, "Reference"},
+    {DC_RADIO,  1130,  10, 65,  30, 10, "CD"},
+    {DC_EDIT,   1133,  45, 65,  24, 12, ""},
+    {DC_EDIT,   1137,  70, 65, 100, 12, ""},
+
+    {DC_GROUP, 65535,   5, 85, 215, 60, "Sound Effects"},
+    {DC_LIST,   1020,  10, 95, 160, 30, ""},
+    {DC_PUSH,   1090, 175, 95,  40, 10, "Play"},
+    {DC_PUSH,   1091, 175,110,  40, 11, "Stop"},
+    {DC_TEXT,  65535,  10,130,  30, 10, "WAVE"},
+    {DC_EDIT,   1132,  45,130, 125, 12, ""},
+    {DC_PUSH,   1135, 175,125,  40, 10, "Reference"},
+
+    {DC_GROUP, 65535,   5,150, 165, 45, "Customize Current Sounds"},
+    {DC_EDIT,   1194,  10,160, 155, 12, ""},
+    {DC_COMBO,  1192,  10,175,  80, 40, ""},
+    {DC_PUSH,     10,  95,176,  70, 10, "Initialize Setting"},
+    {DC_PUSH,      9, 175,155,  45, 15, "OK"},
+    {DC_PUSH,      2, 175,180,  45, 15, "Cancel"},
+    {DC_END, 0, 0, 0, 0, 0, ""},
+};
+const DlgTemplate kDlgCustomSounds = {"Customize Current Sounds", 224, 201,
+                                      kCustomSounds};
