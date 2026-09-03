@@ -575,11 +575,17 @@ createLordMonarch().then((M) => {
         const won = M._lm_sweeps();
         expect('the record is the days it had left with the bonus',
                record > 0, true);
-        // 0041f6c0 ends in FUN_004067c0 when the stage just cleared is the
-        // furthest one: the next stage is laid out there and then, which is
-        // what 4 says.
-        expect('the click goes on to the next stage', M._lm_end_click(), 4);
-        expect('and that is the stage on the board', M._lm_stage(), 1);
+        // 0041f6c0 opens dialog 114 first when the class has gone up, and
+        // the first stage cleared is a class up from nothing - so the click
+        // hands over to the certificate, and the certificate's click is what
+        // ends in FUN_004067c0 and the next stage.
+        expect('the click puts the certificate up', M._lm_end_click(), 5);
+        expect('which is up', M._lm_awards_up(), 1);
+        expect('at the class the record earns', M._lm_awards_rank(), 1);
+        expect('and its click goes on to the next stage',
+               M._lm_awards_click(), 4);
+        expect('that stage is on the board', M._lm_stage(), 1);
+        expect('and the certificate is gone', M._lm_awards_up(), 0);
         expect('and it is gone', M._lm_end_up(), 0);
         expect('a second click does nothing', M._lm_end_click(), 0);
         console.log(`  a stage was won in ${won} sweeps and filed ` +

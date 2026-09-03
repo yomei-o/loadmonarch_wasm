@@ -15,7 +15,7 @@ $CC_SH -O2 -Wall -Isrc -o tests/unit_window.exe    tests/unit_window.c src/world
 echo "built tests/unit_window.exe"
 $CC_SH -O2 -Wall -Isrc -o tests/progress_window.exe tests/progress_window.c src/world.c src/host.c src/zip.c src/bz.c src/gfx.c
 echo "built tests/progress_window.exe"
-SIM="src/sim.c src/state.c src/world.c src/render.c src/orders.c src/ui.c src/dlg.c src/dlgdefs.c src/dlgrun.c src/toolbar.c src/panels.c src/endstage.c src/notice.c src/font.c src/font16.c src/bz.c src/gfx.c src/host.c src/zip.c"
+SIM="src/sim.c src/state.c src/world.c src/render.c src/orders.c src/ui.c src/dlg.c src/dlgdefs.c src/dlgrun.c src/toolbar.c src/panels.c src/endstage.c src/notice.c src/awards.c src/picture.c src/font.c src/font16.c src/bz.c src/gfx.c src/host.c src/zip.c"
 $CC_SH -O2 -Wall -Wextra -o tests/state_test.exe     tests/state_test.c $SIM
 echo "built tests/state_test.exe"
 $CC_SH -O2 -Wall -Wextra -o tests/growth_test.exe    tests/growth_test.c $SIM

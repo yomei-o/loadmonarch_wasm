@@ -17,6 +17,9 @@ extern "C" {
 #include "render.h"
 #include "sim.h"
 #include "dlgrun.h"
+#include <time.h>
+
+#include "awards.h"
 #include "endstage.h"
 #include "notice.h"
 #include "panels.h"
@@ -63,6 +66,12 @@ DlgHost g_dlgHost;
 // in the GameState a stage load replaces.
 EndStage g_end;
 Notice g_notice;                // dialog 122, whichever of the two it is
+Awards g_awards;                // dialog 114, the certificate
+Picture g_awardPic;             // the season's interlude picture behind it
+// What 0041f6c0 does after the certificate is answered - it opens dialog 114
+// first and only then calls FUN_004067c0.  Holds lm_end_click's own answer
+// until the window goes.
+int g_afterAwards;
 Campaign g_campaign;
 int g_endSaid;                  // the outcome this window was opened for
 int g_endRankUp;                // did the last click take the player up a class
@@ -474,6 +483,20 @@ static void noticeService(void) {
     noticeOpen(&g_notice, event.kind, f, name);
 }
 
+// 0041f6c0's certificate: the class it has just worked out, the program's
+// own name - which is what DAT_004376dc holds and what the citation quotes -
+// and today's date, which is also what picks the season's picture.
+static void openAwards(unsigned rank) {
+    const time_t now = time(nullptr);
+    const struct tm *local = localtime(&now);
+    const int year = local ? local->tm_year + 1900 : 1997;
+    const int month = local ? local->tm_mon + 1 : 1;
+    const int day = local ? local->tm_mday : 1;
+    awardsOpen(&g_awards, rank, "Lord Monarch", year, month, day);
+    pictureFree(&g_awardPic);
+    pictureLoad(&g_awardPic, &g_host, awardsPictureStem(month));
+}
+
 EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // A picture is a window over the game in the original and the game is not
     // running behind it.  The opening logo used to sit over a war already
@@ -507,12 +530,60 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 
 // Draws the world and resolves the palette, handing back RGBA the canvas can
 // take straight into an ImageData.
+// Dialog 114: 004120c0 loads the season's picture into the window's own
+// bitmap and writes the citation on top of it.  The picture is true colour
+// here where the board is indexed, so the words are drawn into a scratch
+// surface of their own and painted over it - black with a white shadow, which
+// is 0040a870's colours 10 and 11.
+static void drawAwards(void) {
+    const int W = g_viewW, H = g_viewH + UI_CHROME_H;
+    for (int i = 0; i < W * H; i++) g_pixels[i] = 0xff000000u;
+    const int px0 = (W - AWARD_W) / 2, py0 = (H - AWARD_H) / 2;
+    if (g_awardPic.pixels) {
+        const int dx = (W - (int)g_awardPic.width) / 2;
+        const int dy = (H - (int)g_awardPic.height) / 2;
+        for (unsigned y = 0; y < g_awardPic.height; y++) {
+            const int py = dy + (int)y;
+            if (py < 0 || py >= H) continue;
+            for (unsigned x = 0; x < g_awardPic.width; x++) {
+                const int px = dx + (int)x;
+                if (px < 0 || px >= W) continue;
+                g_pixels[(size_t)py * W + px] =
+                    g_awardPic.pixels[(size_t)y * g_awardPic.width + x];
+            }
+        }
+    }
+    static unsigned char scratchPixels[AWARD_W * AWARD_H];
+    static Surface scratch;
+    surfaceInit(&scratch, AWARD_W, AWARD_H, scratchPixels);
+    memset(scratchPixels, 0, sizeof scratchPixels);
+    awardsDraw(&scratch, &g_awards, &g_awardPic, 0, 0);
+    for (int y = 0; y < AWARD_H; y++) {
+        const int py = py0 + y;
+        if (py < 0 || py >= H) continue;
+        for (int x = 0; x < AWARD_W; x++) {
+            const int px = px0 + x;
+            if (px < 0 || px >= W) continue;
+            const unsigned char v = scratchPixels[(size_t)y * AWARD_W + x];
+            if (!v) continue;
+            g_pixels[(size_t)py * W + px] = v == (unsigned char)UI_LIGHT
+                ? 0xffffffffu : 0xff000000u;
+        }
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     g_frame++;                  // DAT_00435b1c, which 5927 counts up
     // A picture stands alone: the game's own window is not up behind it, so
     // there is nothing to draw under it and nothing to draw it over.
     if (g_pictureUp && g_picture.pixels) {
         drawPicture();
+        return g_pixels;
+    }
+    // Dialog 114 is a picture with words on it, and both are its own: the
+    // board is not behind it either.
+    if (g_awards.up) {
+        drawAwards();
         return g_pixels;
     }
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
@@ -1334,7 +1405,10 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
     // it is rather than only when it has gone up.
     if (stage + 1 >= stageCount()) {
         g_campaign.rank = rank;
-        return 3;
+        // FUN_00409570: the certificate, then the ending.
+        openAwards(rank);
+        g_afterAwards = 3;
+        return 5;
     }
     g_endRankUp = rank > g_campaign.rank && rank != 0;
     if (g_endRankUp) g_campaign.rank = rank;
@@ -1342,7 +1416,15 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
     // has got - DAT_0043450c - DAT_00436a00 == -1 - the next one is laid out
     // at once.  This is the "go to the next stage" the window promises; it is
     // not the player who has to go and find it.
-    if (g_campaign.reached == stage + 1) {
+    const int advances = g_campaign.reached == stage + 1;
+    if (g_endRankUp) {
+        // 0041f6c0 opens the certificate before it goes anywhere, so the
+        // advance waits for the click on it.
+        openAwards(rank);
+        g_afterAwards = advances ? 4 : 1;
+        return 5;
+    }
+    if (advances) {
         // FUN_004067c0 puts DAT_004365cc back to one on its way in.
         g_quest = 1;
         if (loadStage(stage + 1)) return 4;
@@ -1351,8 +1433,27 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
 }
 
 // Whether that click also took the player up a class - 0041f6c0 opens dialog
-// 114 for it, which this port does not draw yet.
+// 114 for it.
 EMSCRIPTEN_KEEPALIVE int lm_end_rank_up(void) { return g_endRankUp; }
+
+// Dialog 114.  A click closes it like every other control-less window, and
+// what was waiting behind it happens then: 0041f6c0 opens the certificate and
+// only afterwards calls FUN_004067c0 for the next stage.
+EMSCRIPTEN_KEEPALIVE int lm_awards_up(void) { return g_awards.up; }
+EMSCRIPTEN_KEEPALIVE int lm_awards_rank(void) { return (int)g_awards.rank; }
+EMSCRIPTEN_KEEPALIVE int lm_awards_click(void) {
+    if (!g_awards.up) return 0;
+    awardsDismiss(&g_awards);
+    pictureFree(&g_awardPic);
+    const int what = g_afterAwards;
+    g_afterAwards = 0;
+    if (what == 4) {
+        g_quest = 1;                    // FUN_004067c0's own doing
+        if (loadStage(g_stage + 1)) return 4;
+        return 1;
+    }
+    return what ? what : 1;
+}
 EMSCRIPTEN_KEEPALIVE int lm_campaign_rank(void) {
     return (int)g_campaign.rank;
 }

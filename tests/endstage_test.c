@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "../src/endstage.h"
+#include "../src/awards.h"
 #include "../src/notice.h"
 #include "../src/sim.h"
 #include "../src/ui.h"
@@ -350,6 +351,85 @@ int main(int argc, char **argv) {
                band(&surface, 10, 10 + 0x18, UI_LIGHT), 60);
         check(noticeDismiss(&notice), "a click closes it");
         check(!noticeDismiss(&notice), "and a second does nothing");
+    }
+
+    /* ------------------------------------------------------ dialog 114 */
+
+    // 0041f6c0's class, out of the campaign's own records: a thousand days a
+    // step to ten thousand, then ten thousand a step, and past a hundred
+    // thousand it is the top of the twenty.
+    {
+        static Campaign c;
+        campaignClear(&c);
+        checkf(campaignRank(&c) == 0, "an empty campaign is class %d, not %d",
+               (int)campaignRank(&c), 0);
+        c.remaining[0] = 1861;
+        c.reached = 1;
+        checkf(campaignRank(&c) == 1, "1861 days is class %d, not %d",
+               (int)campaignRank(&c), 1);
+        c.remaining[1] = 9999;
+        c.reached = 2;
+        checkf(campaignRank(&c) == 9, "9999 days is class %d, not %d",
+               (int)campaignRank(&c), 9);
+        c.remaining[2] = 10000;
+        c.reached = 3;
+        checkf(campaignRank(&c) == 10, "10000 days is class %d, not %d",
+               (int)campaignRank(&c), 10);
+        c.remaining[3] = 99999;
+        c.reached = 4;
+        checkf(campaignRank(&c) == 18, "99999 days is class %d, not %d",
+               (int)campaignRank(&c), 18);
+        c.remaining[4] = 100000;
+        c.reached = 5;
+        checkf(campaignRank(&c) == 0x13, "100000 days is class %d, not %d",
+               (int)campaignRank(&c), 0x13);
+        // The names are DS:0x433480's, in its own order.
+        check(strcmp(awardsRankName(0), "Class -") == 0, "class nought");
+        check(strcmp(awardsRankName(1), "Class 9") == 0, "class one is 9");
+        check(strcmp(awardsRankName(9), "Class 1") == 0, "class nine is 1");
+        check(strcmp(awardsRankName(10), "First Degree") == 0, "then degrees");
+        check(strcmp(awardsRankName(19), "Master") == 0, "and Master at the top");
+    }
+
+    // 004121c8 picks the picture by the month, and the four are the seasons.
+    {
+        static const struct { int month; const char *stem; } kSeason[] = {
+            {1, "GAKU4"}, {2, "GAKU4"}, {3, "GAKU1"}, {5, "GAKU1"},
+            {6, "GAKU2"}, {8, "GAKU2"}, {9, "GAKU3"}, {11, "GAKU3"},
+            {12, "GAKU4"},
+            // Anything outside one to twelve is January's.
+            {0, "GAKU4"}, {13, "GAKU4"},
+        };
+        for (unsigned i = 0; i < sizeof kSeason / sizeof kSeason[0]; i++) {
+            const char *got = awardsPictureStem(kSeason[i].month);
+            if (strcmp(got, kSeason[i].stem) != 0) {
+                printf("FAIL  month %d asks for %s, not %s\n",
+                       kSeason[i].month, got, kSeason[i].stem);
+                failures++;
+            }
+        }
+    }
+
+    // And the citation, which is thirteen centred lines of black on white.
+    {
+        static Awards awards;
+        awardsOpen(&awards, 7, "Lord Monarch", 1997, 9, 15);
+        check(awards.up, "the certificate is up");
+        memset(surface.pixels, 0, (size_t)surface.width * surface.height);
+        awardsDraw(&surface, &awards, NULL, 0, 0);
+        // Its first line and its last, at 004120c0's own y.
+        checkf(band(&surface, 0, 0x30, UI_DARK) > 30,
+               "\"Awords\" has %d dark pixels, wanted over %d",
+               band(&surface, 0, 0x30, UI_DARK), 30);
+        checkf(band(&surface, 0, 0xfc, UI_DARK) > 60,
+               "the dated line has %d, wanted over %d",
+               band(&surface, 0, 0xfc, UI_DARK), 60);
+        // The class it was given is in there, at its own line.
+        checkf(band(&surface, 0, 0x52, UI_DARK) > 30,
+               "the class line has %d, wanted over %d",
+               band(&surface, 0, 0x52, UI_DARK), 30);
+        check(awardsDismiss(&awards), "a click closes it");
+        check(!awardsDismiss(&awards), "and a second does nothing");
     }
 
     if (failures) {
