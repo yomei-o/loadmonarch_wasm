@@ -533,7 +533,7 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         if (at >= 0) {
             panelProgressWindow(&g_side, &g_game, g_sim.humanFaction,
                                 g_sim.days, g_sim.countdown, g_speed,
-                                g_frame, 4, at);
+                                g_frame, g_sim.shortOfFunds, 4, at);
             g_progressY = at;
         }
         at = windowTop(2);

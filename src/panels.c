@@ -182,7 +182,7 @@ static void mark(Surface *out, const World *w, int sheetX, int dx, int dy) {
 
 void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
                          unsigned days, unsigned daysLeft, int speed,
-                         unsigned frame, int x, int y) {
+                         unsigned frame, int broke, int x, int y) {
     const World *w = &game->world;
     blitPanel(out, w, 0, PROGRESS_TOP, PANEL_W, PANEL_H, x, y);
     if (faction >= FACTION_COUNT) return;
@@ -214,11 +214,26 @@ void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
              x + SLIDER_X0 + at, y + CLOCK_ROW);
     }
 
-    renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 40,
-                 game->factions[faction].funds, out);
-    // The tax box comes with a per cent sign already printed in it, at x 136
-    // to 143, so the number stops short of that rather than being written over
-    // it - which also settles what the rate is measured in.
+    // The four numbers, where 00419ab0's own four TextOut calls put them:
+    // "%6d" at 32,40 and "%2d" at 120,40 on the top row, "%6d" at 32,104 and
+    // 96,104 on the bottom.  Both formats right-align inside their field, so
+    // the right edge of a six-character number written at 32 is 80 - which is
+    // where the port's own right-aligned digits already ended.  The tax box
+    // comes with a per cent sign printed in it at 136 to 143, and "%2d" at 120
+    // ends at 136 exactly.
+    //
+    // 00419d40 is the one thing that was missing: the purse goes red for the
+    // sweep in which the country could not pay - DAT_0043451c - and white
+    // again after it.
+    if (broke) {
+        char purse[16];
+        snprintf(purse, sizeof purse, "%u", game->factions[faction].funds);
+        fontDrawTextRight(out, x + 80, y + 40, (unsigned char)UI_END_RED,
+                          purse);
+    } else {
+        renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 40,
+                     game->factions[faction].funds, out);
+    }
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 136, y + 40,
                  game->factions[faction].taxRate, out);
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 104, days, out);
@@ -369,5 +384,20 @@ void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
         at += 34;
         total += c->strength;
     }
+
+    // 00404e40's seventeenth line, which the port did not have: the neutral
+    // country's own total, out of faction four's +0x10 and its name at
+    // DS:0x435b75.  "%s Unit and Base Totals %d", or "%s Defeated" when there
+    // is nothing of it left.
+    if (at + 16 <= y + h) {
+        const Faction *wild = &game->factions[4];
+        const char *name = worldCountryName(&game->world, 4);
+        if (wild->strength == 0)
+            snprintf(line, sizeof line, "%s Defeated", name);
+        else
+            snprintf(line, sizeof line, "%s %u", name, wild->strength);
+        fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
+    }
+    (void)total;
 
 }

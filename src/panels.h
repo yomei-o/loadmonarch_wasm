@@ -19,9 +19,11 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
 // itself, what the player has set it to, and how fast the clock is running.
 // `frame` is DAT_00435b1c, the frame counter - the clock that slides along the
 // middle strip turns as it goes, in eight steps.
+// `broke` is DAT_0043451c: 00419d49 writes the purse in red rather than
+// white for the sweep in which the country could not pay for something.
 void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
                          unsigned days, unsigned daysLeft, int speed,
-                         unsigned frame, int x, int y);
+                         unsigned frame, int broke, int x, int y);
 
 // What a point in the window is on.  0041a1b0 reads two draggable strips - the
 // tax along the top and the clock along the bottom - and 0041a3d0 reads the
