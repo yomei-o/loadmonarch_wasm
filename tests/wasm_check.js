@@ -330,7 +330,11 @@ createLordMonarch().then((M) => {
     // put on the first row under the bar is on row zero of the view.
     {
         const bar = M._lm_bar_height();
+        // The chrome is the menu bar with the tool bar under it; a dropped
+        // menu starts where the menu bar ends, not where the chrome does.
+        const menu = M._lm_menu_height();
         expect('the bar has a height', bar, (n) => n > 0);
+        expect('and the menu is part of it', menu, (n) => n > 0 && n <= bar);
         expect('a click on the map is not the bar',
                M._lm_bar_click(300, bar + 40), -1);
         expect('a click on a title is', M._lm_bar_click(30, 4), 0);
@@ -341,7 +345,7 @@ createLordMonarch().then((M) => {
         for (let x = 4; x < 400 && !found; x += 6) {
             M._lm_bar_click(x, 4);
             if (!M._lm_bar_open()) continue;
-            const cmd = M._lm_bar_click(x + 10, bar + 8);
+            const cmd = M._lm_bar_click(x + 10, menu + 8);
             if (cmd === 40045 || cmd === 40051) found = cmd;
         }
         expect('an item answers with its command', found, (n) => n > 0);

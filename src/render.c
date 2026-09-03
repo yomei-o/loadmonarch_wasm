@@ -8,6 +8,7 @@
 #include "render.h"
 
 #include "font.h"
+#include "toolbar.h"
 
 #include <string.h>
 
@@ -341,6 +342,12 @@ void renderPalette(const GameState *game, int zoom,
     };
     for (unsigned i = 0; i < 7; i++)
         for (int c = 0; c < 3; c++) table[0xf0 + i][c] = chrome[i][c];
+
+    // And the tool bar's own sixteen, which BITMAP 102 brings with it - the
+    // standard VGA set, with entry seven the face grey the icons sit on.
+    for (unsigned i = 0; i < 16; i++)
+        for (int c = 0; c < 3; c++)
+            table[0xd0 + i][c] = kToolbarPalette[i][c];
 
     for (int c = 0; c < 3; c++) {
         table[0x1f][c] =

@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include "font.h"
+#include "toolbar.h"
 
 #include <string.h>
 
@@ -17,6 +18,22 @@ static void fill(Surface *out, int x, int y, int w, int h, unsigned char c) {
             row[px] = c;
         }
     }
+}
+
+// A raised edge without the face behind it, which is what a tool bar button
+// wears when the pointer is over it.
+static void bevelUpAt(Surface *out, int x, int y, int w, int h) {
+    fill(out, x, y, w, 1, (unsigned char)UI_LIGHT);
+    fill(out, x, y, 1, h, (unsigned char)UI_LIGHT);
+    fill(out, x, y + h - 1, w, 1, (unsigned char)UI_SHADOW);
+    fill(out, x + w - 1, y, 1, h, (unsigned char)UI_SHADOW);
+}
+
+static void bevelDownAt(Surface *out, int x, int y, int w, int h) {
+    fill(out, x, y, w, 1, (unsigned char)UI_SHADOW);
+    fill(out, x, y, 1, h, (unsigned char)UI_SHADOW);
+    fill(out, x, y + h - 1, w, 1, (unsigned char)UI_LIGHT);
+    fill(out, x + w - 1, y, 1, h, (unsigned char)UI_LIGHT);
 }
 
 // The raised panel a menu is drawn on: white along the top and left, grey then
@@ -449,4 +466,108 @@ unsigned uiBarClick(MenuBar *bar, int x, int y, int *inside) {
     bar->open = -1;
     bar->hotItem = -1;
     return chosen->enabled ? chosen->command : 0;
+}
+
+
+/* ------------------------------------------------------------ the tool bar */
+
+void uiToolInit(ToolBar *tool) {
+    tool->hot = -1;
+    tool->held = -1;
+}
+
+// Where each button starts, walking the resource: a button is as wide as its
+// icon plus a little, a separator is a narrow gap.
+#define TOOL_PAD 4
+#define TOOL_SEP 8
+
+static int toolPlace(int button) {
+    int at = 2;
+    for (int i = 0; i < button && i < kToolbarButtons; i++)
+        at += kToolbarCommand[i] ? kToolbarButton + TOOL_PAD * 2 : TOOL_SEP;
+    return at;
+}
+
+// Which button a point is on, counting separators out.
+static int toolAt(int x, int y) {
+    if (y < UI_BAR_H || y >= UI_BAR_H + UI_TOOL_H) return -1;
+    for (int i = 0; i < kToolbarButtons; i++) {
+        if (!kToolbarCommand[i]) continue;
+        const int at = toolPlace(i);
+        if (x >= at && x < at + kToolbarButton + TOOL_PAD * 2) return i;
+    }
+    return -1;
+}
+
+// What carries the pressed look because it is what the game is doing.
+static int toolLatched(int command, int running, int zoom) {
+    switch (command) {
+    case 40045: return running;
+    case 40030: return !running;
+    case 40048: return zoom == 0;
+    case 40049: return zoom == 1;
+    case 40050: return zoom == 2;
+    default: return 0;
+    }
+}
+
+void uiToolDraw(Surface *out, const ToolBar *tool, int running, int zoom) {
+    fill(out, 0, UI_BAR_H, out->width, UI_TOOL_H, (unsigned char)UI_FACE);
+    fill(out, 0, UI_BAR_H + UI_TOOL_H - 1, out->width, 1,
+         (unsigned char)UI_SHADOW);
+
+    int image = 0;
+    for (int i = 0; i < kToolbarButtons; i++) {
+        const int command = kToolbarCommand[i];
+        const int at = toolPlace(i);
+        if (!command) {
+            // A separator: the groove the period drew between groups.
+            fill(out, at + TOOL_SEP / 2 - 1, UI_BAR_H + 3, 1, UI_TOOL_H - 8,
+                 (unsigned char)UI_SHADOW);
+            fill(out, at + TOOL_SEP / 2, UI_BAR_H + 3, 1, UI_TOOL_H - 8,
+                 (unsigned char)UI_LIGHT);
+            continue;
+        }
+        const int bw = kToolbarButton + TOOL_PAD * 2;
+        const int down = (tool->held == i && tool->hot == i) ||
+                         toolLatched(command, running, zoom);
+        if (tool->hot == i || down) {
+            if (down) bevelDownAt(out, at, UI_BAR_H + 2, bw, UI_TOOL_H - 5);
+            else bevelUpAt(out, at, UI_BAR_H + 2, bw, UI_TOOL_H - 5);
+        }
+        // The icon, with the face grey left out so the button shows through.
+        const int ix = image * kToolbarButton;
+        for (int y = 0; y < kToolbarH; y++)
+            for (int x = 0; x < kToolbarButton; x++) {
+                const unsigned char v =
+                    kToolbarPixels[(size_t)y * kToolbarW + ix + x];
+                if (v == 7) continue;           // the face grey is the paper
+                const int px = at + TOOL_PAD + x + (down ? 1 : 0);
+                const int py = UI_BAR_H + 4 + y + (down ? 1 : 0);
+                if (px < 0 || px >= out->width || py < 0 || py >= out->height)
+                    continue;
+                out->pixels[(size_t)py * out->width + px] =
+                    (unsigned char)(UI_TOOL_BASE + v);
+            }
+        image++;
+    }
+}
+
+int uiToolHover(ToolBar *tool, int x, int y) {
+    if (y < UI_BAR_H || y >= UI_BAR_H + UI_TOOL_H) {
+        tool->hot = -1;
+        return 0;
+    }
+    tool->hot = toolAt(x, y);
+    return 1;
+}
+
+unsigned uiToolClick(ToolBar *tool, int x, int y, int *inside) {
+    *inside = 0;
+    if (y < UI_BAR_H || y >= UI_BAR_H + UI_TOOL_H) return 0;
+    *inside = 1;
+    const int i = toolAt(x, y);
+    tool->held = -1;
+    if (i < 0) return 0;
+    return kToolbarCommand[i];
 }

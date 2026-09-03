@@ -30,6 +30,19 @@ typedef struct {
     // with a limit runs out of.
     unsigned days;
     unsigned countdown;
+
+    // 00423cc0's asking, which the original does with a modal dialog in the
+    // middle of its loop.  DAT_00434548 is the policy - 0 ask, 1 let the rest
+    // through, 2 hold the rest back - DAT_0043454c the unit being asked about
+    // and DAT_00434544 which of the two things is wrong with its route.  The
+    // rest is where to pick the loop up again.
+    int askPolicy;
+    int askUnit;
+    int askKind;                // 0 a friend in the way, 1 enemies in the path
+    int askAt;                  // the entity the loop stopped on
+    int askGiven;               // how many had taken the order by then
+    unsigned askOrder;
+    int askModifier, askCol, askRow;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);
@@ -145,7 +158,16 @@ int simShortenRoute(GameState *state, unsigned slot);
 int simSelect(Sim *sim, unsigned slot, int col, int row, int force);
 int simSelectAll(Sim *sim, int force);
 void simClearSelection(GameState *state);
+// Answers how many units took the order, or SIM_ORDER_ASK when one of them
+// can only get there the hard way and the player has to say whether it should.
+// The host shows the Information dialog and calls simOrderAnswer, which picks
+// the loop up where it stopped.
+#define SIM_ORDER_ASK (-1)
 int simOrderSelected(Sim *sim, unsigned order, int modifier, int col, int row);
+
+// 0 Go, 1 Don't go, 2 Remainder go, 3 Remainder don't go - the four buttons of
+// dialog 118, in the order the resource has them.  Answers as above.
+int simOrderAnswer(Sim *sim, int choice);
 
 // 004237e0 and the loop over it.  Asks a chosen unit whether it can reach a
 // cell and writes the answer into the balloon over its head - 2 safely, 3 only

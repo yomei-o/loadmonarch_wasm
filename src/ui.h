@@ -73,7 +73,13 @@ int uiOrderClick(OrderMenu *menu, const GameState *game, int x, int y,
 // MENU 101 out of the executable's .rsrc, item for item and command for
 // command, with the wording from its string table.  A command the port cannot
 // carry out yet is marked so it draws greyed, the way Windows draws one.
-#define UI_BAR_H 20
+#define UI_BAR_H 20             // how tall the menu bar is
+#define UI_TOOL_H 24            // and the tool bar under it
+#define UI_CHROME_H (UI_BAR_H + UI_TOOL_H)
+
+// The tool bar's own palette goes here; the icons are four-bit and bring their
+// own sixteen colours, which are the standard VGA ones.
+#define UI_TOOL_BASE 0xd0u
 #define UI_MENU_MAX 5
 #define UI_MENU_ITEMS 12
 
@@ -106,5 +112,27 @@ void uiBarDraw(Surface *out, const GameState *game, int running,
 int uiBarHover(MenuBar *bar, int x, int y);
 unsigned uiBarClick(MenuBar *bar, int x, int y, int *inside);
 int uiBarOpen(const MenuBar *bar);
+
+/* ------------------------------------------------------------ the tool bar */
+
+// Lord Monarch puts no words up there: twenty-three 16x16 icons out of
+// BITMAP 102, with the command of each in the MFC tool bar resource beside it.
+typedef struct {
+    int hot;                    // the button under the pointer, or -1
+    int held;                   // the one the button went down on, or -1
+} ToolBar;
+
+void uiToolInit(ToolBar *tool);
+
+// Draws it under the menu bar.  `running` ticks Start or Pause, and `zoom`
+// which of Small, Medium and Large is on.
+void uiToolDraw(Surface *out, const ToolBar *tool, int running, int zoom);
+
+// Non-zero when the pointer is over the bar at all.
+int uiToolHover(ToolBar *tool, int x, int y);
+
+// The command the button under the point sends, or 0.  *inside comes back
+// non-zero when the point was on the bar, whether or not it hit a button.
+unsigned uiToolClick(ToolBar *tool, int x, int y, int *inside);
 
 #endif

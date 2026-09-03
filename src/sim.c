@@ -1291,17 +1291,34 @@ int simAimSelection(Sim *sim, int col, int row) {
 // Leader".
 //
 // Returns how many units took the order.
-int simOrderSelected(Sim *sim, unsigned order, int modifier, int col,
-                     int row) {
+// The body of 00423cc0's loop, from `from` onward.  It stops and answers
+// SIM_ORDER_ASK the first time it meets a unit whose balloon says three or
+// four while the policy is still "ask".
+static int orderFrom(Sim *sim, int from, int given, int answered) {
     GameState *state = sim->state;
-    int given = 0;
-    for (int i = 0; i < ENTITY_COUNT; i++) {
+    const unsigned order = sim->askOrder;
+    const int modifier = sim->askModifier;
+    const int col = sim->askCol, row = sim->askRow;
+    for (int i = from; i < ENTITY_COUNT; i++) {
         Entity *entity = &state->entities[i];
         if ((entity->flags21c & 1) == 0) continue;
+
+        // Three is "powerful enemies in path", four "passage blocked by
+        // friendly unit"; either is worth asking about - once each, which is
+        // what `answered` remembers.
+        if (sim->askPolicy == 0 && i != answered &&
+            (entity->at220 == 3 || entity->at220 == 4)) {
+            sim->askKind = entity->at220 == 3;
+            sim->askUnit = i;
+            sim->askAt = i;
+            sim->askGiven = given;
+            return SIM_ORDER_ASK;
+        }
         entity->flags21c &= ~1u;
 
         const unsigned char balloon = entity->at220;
         entity->at220 = 0xff;
+        if (sim->askPolicy == 2) continue;      // the rest were held back
         if (balloon == 1 || balloon == 0xff) continue;
 
         unsigned char code = (unsigned char)order;
@@ -1334,7 +1351,43 @@ int simOrderSelected(Sim *sim, unsigned order, int modifier, int col,
         }
         if (laid == 1 || laid == 10) given++;
     }
+    sim->askPolicy = 0;                         // 00423cc0 clears it at the end
+    sim->askUnit = -1;
     return given;
+}
+
+int simOrderSelected(Sim *sim, unsigned order, int modifier, int col,
+                     int row) {
+    sim->askPolicy = 0;
+    sim->askUnit = -1;
+    sim->askOrder = order;
+    sim->askModifier = modifier;
+    sim->askCol = col;
+    sim->askRow = row;
+    return orderFrom(sim, 0, 0, -1);
+}
+
+int simOrderAnswer(Sim *sim, int choice) {
+    if (sim->askUnit < 0 || sim->askUnit >= ENTITY_COUNT)
+        return orderFrom(sim, 0, 0, -1);
+    Entity *entity = &sim->state->entities[sim->askUnit];
+    switch (choice) {
+    case 1:                                     // Don't go: this one only
+        entity->at220 = 0xff;
+        break;
+    case 2:                                     // Remainder go
+        sim->askPolicy = 1;
+        break;
+    case 3:                                     // Remainder don't go
+        sim->askPolicy = 2;
+        break;
+    default:                                    // Go: this one, and ask again
+        break;                                  // about whoever is next
+    }
+    const int at = sim->askAt;
+    const int given = sim->askGiven;
+    sim->askUnit = -1;
+    return orderFrom(sim, at, given, at);
 }
 
 /* ------------------------------------------------------------- actions */

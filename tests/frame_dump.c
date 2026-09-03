@@ -94,6 +94,9 @@ int main(int argc, char **argv) {
         bar.open = which;
         bar.hotMenu = which;
         bar.hotItem = 0;
+        ToolBar tool;
+        uiToolInit(&tool);
+        uiToolDraw(&surface, &tool, 1, zoom);
         uiBarDraw(&surface, &game, 1, &bar);
         printf("menu bar with menu %d down\n", which);
     }
