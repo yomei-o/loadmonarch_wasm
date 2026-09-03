@@ -17,6 +17,7 @@ extern "C" {
 #include "render.h"
 #include "sim.h"
 #include "dlgrun.h"
+#include "endstage.h"
 #include "panels.h"
 #include "ui.h"
 #include "state.h"
@@ -56,6 +57,12 @@ int g_showTool = 1;             // Hide Tool Bar
 int g_progressY = -1;           // where the Progress Window was last drawn
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
+// 0041f4c0's own window and the record behind it.  The campaign has to outlive
+// a stage - it is what says which maps are open - so it sits here rather than
+// in the GameState a stage load replaces.
+EndStage g_end;
+Campaign g_campaign;
+int g_endSaid;                  // the outcome this window was opened for
 
 // What the page keeps for the dialogs: eight save slots and the three windows
 // it draws beside the board.  The slots live on the page (localStorage), so
@@ -170,6 +177,9 @@ int loadStage(int stage) {
     g_lastAction = 0;
     // Stopped, the way 18727 leaves it.  Nothing moves until Start.
     g_running = 0;
+    // Whatever the last stage ended with, it is not on the screen any more.
+    memset(&g_end, 0, sizeof g_end);
+    g_endSaid = 0;
     return 1;
 }
 
@@ -406,12 +416,45 @@ EMSCRIPTEN_KEEPALIVE const char *lm_quest_name(void) {
 EMSCRIPTEN_KEEPALIVE int lm_stage_count(void) { return stageCount(); }
 EMSCRIPTEN_KEEPALIVE int lm_stage(void) { return g_stage; }
 
+// 0041f4c0's tail, which the tick reaches once a stage is decided: it puts
+// DAT_00434524 up - the world stops - files the score, and opens dialog 105
+// with the mode it worked out.  Everything after that waits for the click.
+static void endStageCheck(void) {
+    if (g_end.up) return;
+    const int outcome = simStageOutcome(&g_sim);
+    if (!outcome || g_endSaid == outcome) return;
+    g_endSaid = outcome;
+    g_running = 0;                      // DAT_00434524 = 1
+
+    StageScore score;
+    simStageScore(&g_sim, &score);
+    // The campaign is what the port plays: Load Single Map is a separate
+    // command and the port does not have that mode yet, so `quest` is one.
+    const int mode = endStageMode(outcome, &score, &g_campaign, g_stage, 1);
+    int against = 0;
+    if (mode != END_DEFEATED && mode != END_TIME_OVER)
+        campaignRecord(&g_campaign, g_stage, &score, &against);
+    endStageOpen(&g_end, mode, &score, g_stage,
+                 g_stages.count ? g_stages.name[g_stage] : "", against);
+}
+
 EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // A picture is a window over the game in the original and the game is not
     // running behind it.  The opening logo used to sit over a war already
     // under way.
+    if (g_end.up) {
+        // 00410020 is the window's WM_TIMER, and it runs while nothing else
+        // does - the animation and its prompt keep going with the world
+        // stopped.
+        for (int i = 0; i < times; i++) endStageStep(&g_end);
+        return;
+    }
     if (!g_running || g_pictureUp) return;
-    for (int i = 0; i < times; i++) simStep(&g_sim);
+    for (int i = 0; i < times; i++) {
+        simStep(&g_sim);
+        endStageCheck();
+        if (g_end.up) break;
+    }
 }
 
 // Draws the world and resolves the palette, handing back RGBA the canvas can
@@ -482,6 +525,11 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     if (g_showTool) uiToolDraw(&g_screen, &g_tool, g_running, g_zoom);
     if (g_showBar) uiBarDraw(&g_screen, &g_game, g_running, &g_bar);
     dlgRunDraw(&g_screen, &g_dlg, &g_game);         // and whatever dialog is up
+    // Dialog 105, which 0040fca0 centres.  Modal, so it goes over the lot.
+    if (g_end.up)
+        endStageDraw(&g_screen, &g_end, &g_game.world,
+                     (g_screen.width - END_W) / 2,
+                     (g_screen.height - END_H) / 2);
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
     unsigned char colours[256][3];
@@ -1180,6 +1228,56 @@ EMSCRIPTEN_KEEPALIVE int lm_human(void) { return (int)g_sim.humanFaction; }
 // 0041f4c0's verdict: 0 while the stage is being played, 1 when the player has
 // outlasted the rest, 2 when the player is out.
 EMSCRIPTEN_KEEPALIVE int lm_outcome(void) { return simStageOutcome(&g_sim); }
+
+/* ------------------------------------------------- dialog 105 and the record */
+
+// Is the end-of-stage window up, and in which of 0041f4c0's five modes.
+EMSCRIPTEN_KEEPALIVE int lm_end_up(void) { return g_end.up; }
+EMSCRIPTEN_KEEPALIVE int lm_end_mode(void) { return g_end.up ? g_end.mode : -1; }
+// Its own counter, +0x238 - the page has nothing to do with this beyond
+// knowing whether the invitation to click is showing yet.
+EMSCRIPTEN_KEEPALIVE int lm_end_tick(void) { return g_end.tick; }
+
+// The click 0040ea50 sends straight to the close, and 0041f4c0's tail after
+// it: a loss or a stage the clock beat plays the same stage again, and a win
+// leaves the board where it is with the next map open.  Answers what happened:
+//
+//   0  there was no window to dismiss
+//   1  dismissed, and the stage stands
+//   2  dismissed, and the same stage has been laid out again
+//   3  dismissed, and that was the last stage - the campaign is over
+EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
+    if (!g_end.up) return 0;
+    const int mode = g_end.mode;
+    const int stage = g_end.stage;
+    endStageDismiss(&g_end);
+    if (endStageReplays(mode)) {
+        // FUN_00405de0(DAT_0043450c): the same stage, laid out again.
+        loadStage(stage);
+        return 2;
+    }
+    // 0041f6c0: beating the last stage is what runs FUN_00409570, which opens
+    // the rank window and then the ending.  The page shows the picture.
+    if (stage + 1 >= stageCount()) return 3;
+    return 1;
+}
+
+// 00436a00: how far the campaign has got, which is how many maps Load Quest
+// Map will open.  Zero until the first stage is cleared.
+EMSCRIPTEN_KEEPALIVE int lm_campaign_reached(void) { return g_campaign.reached; }
+// The record a stage was cleared with - 00436a0c's own number - or nought if
+// it never has been.
+EMSCRIPTEN_KEEPALIVE int lm_campaign_record(int stage) {
+    if (stage < 0 || stage >= STAGE_MAX) return 0;
+    return (int)g_campaign.remaining[stage];
+}
+// And the way back in, for a page that keeps the record between visits.
+EMSCRIPTEN_KEEPALIVE void lm_campaign_set(int stage, int remaining) {
+    if (stage < 0 || stage >= STAGE_MAX) return;
+    g_campaign.remaining[stage] = (unsigned)(remaining > 0 ? remaining : 0);
+    if (remaining > 0 && g_campaign.reached <= stage)
+        g_campaign.reached = stage + 1;
+}
 
 /* ------------------------------------------- what is under the cursor */
 

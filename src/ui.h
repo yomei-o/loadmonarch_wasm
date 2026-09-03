@@ -26,6 +26,11 @@
 #define UI_PICK      0xf4u      // 0,0,128 - behind the item under the pointer
 #define UI_PICK_TEXT 0xf5u      // white on that
 #define UI_GREY_TEXT 0xf6u      // 128,128,128 - a command that cannot be used
+// 0040a870 builds its own twelve colours for the end-of-stage window,
+// and two of them are not in the scheme above: the grey its headings are
+// cut in and the red its penalty line is.  See src/endstage.c.
+#define UI_END_GREY  0xf7u      // 80,80,80
+#define UI_END_RED   0xf8u      // 245,0,0
 
 #define UI_ITEM_H 18            // one row of a menu
 #define UI_ORDERS_MAX 16

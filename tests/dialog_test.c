@@ -52,31 +52,47 @@ static int g_slotRead = -1, g_slotWrite = -1, g_slotRemove = -1;
 static int g_stageLoaded = -1;
 static char g_slot[4][32] = {"first", "", "third", ""};
 
-static int slotName(void *, int slot, char *out, int size) {
+static int slotName(void *host, int slot, char *out, int size) {
+    (void)host;
     if (slot < 0 || slot >= 4 || !g_slot[slot][0]) return 0;
     snprintf(out, (size_t)size, "%s", g_slot[slot]);
     return 1;
 }
-static int slotRead(void *, int slot) { g_slotRead = slot; return 1; }
-static int slotWrite(void *, int slot, const char *) {
+static int slotRead(void *host, int slot) {
+    (void)host;
+    g_slotRead = slot;
+    return 1;
+}
+static int slotWrite(void *host, int slot, const char *name) {
+    (void)host;
     g_slotWrite = slot;
     snprintf(g_slot[slot], sizeof g_slot[slot], "written");
     return 1;
 }
-static int slotRemove(void *, int slot) {
+static int slotRemove(void *host, int slot) {
+    (void)host;
     g_slotRemove = slot;
     g_slot[slot][0] = 0;
     return 1;
 }
-static int getSpeed(void *) { return g_speed; }
-static void setSpeed(void *, int s) { g_speed = s; }
-static int stageName(void *, int stage, char *out, int size) {
+static int getSpeed(void *host) { (void)host; return g_speed; }
+static void setSpeed(void *host, int s) { (void)host; g_speed = s; }
+static int stageName(void *host, int stage, char *out, int size) {
+    (void)host;
     snprintf(out, (size_t)size, "Stage %d", stage + 1);
     return 1;
 }
-static int loadStage(void *, int stage) { g_stageLoaded = stage; return 1; }
-static int getWindow(void *, int w) { return w >= 0 && w < 3 ? g_window[w] : 0; }
-static void setWindow(void *, int w, int on) {
+static int loadStage(void *host, int stage) {
+    (void)host;
+    g_stageLoaded = stage;
+    return 1;
+}
+static int getWindow(void *host, int w) {
+    (void)host;
+    return w >= 0 && w < 3 ? g_window[w] : 0;
+}
+static void setWindow(void *host, int w, int on) {
+    (void)host;
     if (w >= 0 && w < 3) g_window[w] = on;
 }
 

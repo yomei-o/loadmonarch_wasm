@@ -536,6 +536,55 @@ createLordMonarch().then((M) => {
         console.log('  the tax and the clock strips both drag');
     }
 
+    // The end of a stage: 0041f4c0's verdict, its window, and what a click on
+    // it does.  Played for real rather than forced - the purse is filled and
+    // the tax left alone, which is how the harness wins B_000 - because the
+    // whole point is that the flow works from a game that was being played.
+    {
+        M._lm_load_stage(0);
+        M._lm_picture_dismiss();
+        M._lm_pause(0);
+        let steps = 0;
+        for (; steps < 6000 && !M._lm_end_up(); steps++) {
+            M._lm_cheat_funds();
+            M._lm_step(10);
+        }
+        expect('a stage can be won', M._lm_end_up(), 1);
+        expect('and the world stopped when it was', M._lm_running(), 0);
+        // Mode 0 is 0041f4c0's first win in the campaign.
+        expect('the window opens in mode 0', M._lm_end_mode(), 0);
+        const before = M._lm_end_tick();
+        M._lm_step(50);
+        expect('its own timer runs while the world does not',
+               M._lm_end_tick() > before, true);
+        expect('the campaign has not filed it twice',
+               M._lm_campaign_reached(), 1);
+        const record = M._lm_campaign_record(0);
+        expect('the record is the days it had left with the bonus',
+               record > 0, true);
+        expect('a click dismisses it and leaves the stage', M._lm_end_click(),
+               1);
+        expect('and it is gone', M._lm_end_up(), 0);
+        expect('a second click does nothing', M._lm_end_click(), 0);
+        console.log(`  a stage was won in ${M._lm_sweeps()} sweeps and filed ` +
+                    `at ${record} days`);
+
+        // A loss lays the same stage out again, which is 0041f4c0's tail for
+        // modes 1 and 2.  Being knocked out is hard to arrange here, so what
+        // is checked is the other half: the same stage, played again from the
+        // top, is a stage the campaign has a record of - mode 3.
+        M._lm_load_stage(0);
+        M._lm_picture_dismiss();
+        M._lm_pause(0);
+        for (let i = 0; i < 6000 && !M._lm_end_up(); i++) {
+            M._lm_cheat_funds();
+            M._lm_step(10);
+        }
+        expect('winning it again is mode 3', M._lm_end_mode(), 3);
+        expect('and no further map opened', M._lm_campaign_reached(), 1);
+        M._lm_end_click();
+    }
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

@@ -8,3 +8,6 @@ loadmonarch*.exe
 *.obj
 *.ppm
 /tests/*.exe
+
+# Scratch: PPM dumps, the object files cl.exe leaves, probe scripts.
+/tmp/
