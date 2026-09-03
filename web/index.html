@@ -196,6 +196,17 @@ createLordMonarch().then(function (M) {
       note.textContent = '';
       loaded = true;
       campaignLoad();          // whatever this browser has cleared before
+      // And the stage it left off at.  Clearing a stage only opens the next
+      // one the first time (0041f752 advances only while the campaign has
+      // reached exactly this stage), so laying out the first stage again
+      // after a reload left the player clearing a stage that was already
+      // done, over and over, with nothing coming next.
+      var reached = M._lm_campaign_reached();
+      if (reached > 0 && reached < M._lm_stage_count()) {
+        M._lm_load_stage(reached);
+        say('第 ' + (reached + 1) + ' 面「' +
+            M.UTF8ToString(M._lm_stage_title()) + '」から。');
+      }
 
       drop.classList.add('hide');
       document.getElementById('cashBtn').disabled = false;
