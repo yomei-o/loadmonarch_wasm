@@ -137,6 +137,36 @@ static void blitBalloon(const UiSheet *ui, unsigned number, int size, int x,
     }
 }
 
+// 004242ad: the cursor's own frame - a white square with rounded corners,
+// taken from the interface sheet at `0x1078 + the tile size`.  The sheet is
+// 256 across, so that is (0x78 + size, 16): the three zooms sit at x = 128,
+// 136 and 152, all sixteen rows down, filling 128..184 without a gap.
+//
+// It is not a sprite.  The port laid sprite 0xcc in the cell under the mouse
+// and drew that instead, which in this release's own sprite bank is a red
+// balloon - 0xcc is what 0040b270 parks on a country the game wants looked
+// at, not the mouse.
+static void blitCursor(const UiSheet *ui, int size, int x, int y,
+                       Surface *out) {
+    if (!ui->pixels) return;
+    const unsigned sx = 0x78u + (unsigned)size;
+    const unsigned sy = 16u;
+    if (sx + (unsigned)size > UI_SHEET_W) return;
+    for (int ty = 0; ty < size; ty++) {
+        const int py = y + ty;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *dst = out->pixels + (size_t)py * out->width;
+        const unsigned char *row = ui->pixels + (size_t)(sy + ty) * UI_SHEET_W;
+        for (int tx = 0; tx < size; tx++) {
+            const int px = x + tx;
+            if (px < 0 || px >= out->width) continue;
+            const unsigned char v = row[sx + tx];
+            if (v == UI_TRANSPARENT) continue;
+            dst[px] = v;
+        }
+    }
+}
+
 // 004240c0 draws the units by sweeping the cells, not the entity array: a cell
 // names its occupant, and that is the only thing on screen.  An entity whose
 // cell link is stale is invisible, which is the original's behaviour and worth
@@ -168,12 +198,20 @@ void renderUnits(const GameState *game, int zoom, int viewX, int viewY,
                     blitBalloon(&game->world.ui, entity->at220, ts, cellX,
                                 cellY - ts, out);
             }
-            // And whatever the cell itself carries - the cursor lives here.
+            // And whatever the cell itself carries: 0040b270 parks a
+            // balloon here to point a country out.
             if (cell->overlay != 0)
                 blitSprite(bank, (frame & 1) + cell->overlay, cellX, cellY,
                            out);
         }
     }
+    // The frame last, over whatever is in the cell - which is where 00424290
+    // draws it, after the sweep that lays the cells down.
+    if (game->cursorCol < WORLD_GRID && game->cursorRow < WORLD_GRID)
+        blitCursor(&game->world.ui, ts,
+                   (int)game->cursorCol * ts - viewX,
+                   (int)game->cursorRow * ts - viewY, out);
+
 }
 
 /* ------------------------------------------- the interface, from data1.bz */

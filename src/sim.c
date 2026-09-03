@@ -1306,6 +1306,12 @@ int simSelectAll(Sim *sim, int force) {
     return chosen;
 }
 
+int simSelectionHolds(const GameState *state) {
+    for (int i = 0; i < ENTITY_COUNT; i++)
+        if (state->entities[i].flags21c & 1) return 1;
+    return 0;
+}
+
 // 00409f90.  Lets everyone go again: facing restored, balloon away, bit
 // cleared.  The original also unpauses here, the selection having held the
 // game still while it was made.

@@ -223,6 +223,13 @@ int simShortenRoute(GameState *state, unsigned slot);
 // already have orders as well as the idle ones.
 int simSelect(Sim *sim, unsigned slot, int col, int row, int force);
 int simSelectAll(Sim *sim, int force);
+// Is anything chosen?  Choosing holds the war still - the player picks while
+// the clock is stopped, and 00409f90 lets it go again - so both hosts ask
+// this before stepping.  Without it a unit walks out from under the pointer
+// before its order can be given, which is what made the port unplayable
+// unless the clock was stopped by hand.
+int simSelectionHolds(const GameState *state);
+
 void simClearSelection(GameState *state);
 // Answers how many units took the order, or SIM_ORDER_ASK when one of them
 // can only get there the hard way and the player has to say whether it should.

@@ -206,12 +206,12 @@ void stateLoad(GameState *state, const unsigned char *in) {
 // somewhere the game wants the player to look - 00424520 parks it on another
 // country when that country does something worth seeing.  A cell is a cell
 // however it was chosen, so the hosts point this at the mouse.
+// 0xcc is the balloon 0040b270 lays in a cell's own +0x14 to point a country
+// out; the mouse's own frame is not a sprite at all but a piece of the
+// interface sheet, which src/render.c draws.  Nothing lays 0xcc here yet.
 #define CURSOR_SPRITE 0xccu
 
 void stateMoveCursor(GameState *state, int col, int row) {
-    if (state->cursorCol < WORLD_GRID && state->cursorRow < WORLD_GRID)
-        state->world.cells[WORLD_INDEX(state->cursorCol, state->cursorRow)]
-            .overlay = 0;
     if (col < 0 || row < 0 || col >= WORLD_GRID || row >= WORLD_GRID) {
         state->cursorCol = 0xff;
         state->cursorRow = 0xff;
@@ -219,7 +219,6 @@ void stateMoveCursor(GameState *state, int col, int row) {
     }
     state->cursorCol = (unsigned char)col;
     state->cursorRow = (unsigned char)row;
-    state->world.cells[WORLD_INDEX(col, row)].overlay = CURSOR_SPRITE;
 }
 
 void stateStartStage(GameState *state) {

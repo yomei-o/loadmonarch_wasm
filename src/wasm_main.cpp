@@ -622,6 +622,9 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // windows; those run on lm_timer.
     if (g_notice.up || g_sim.events > 0 || g_end.up || g_awards.up) return;
     if (!g_running || g_pictureUp) return;
+    // Anything chosen, or the order menu up, holds the war still - which is
+    // what the original does while the player picks.
+    if (simSelectionHolds(&g_game) || g_menu.open) return;
     for (int i = 0; i < times; i++) {
         simStep(&g_sim);
         if (g_sim.events > 0) break;    // the notices go first

@@ -561,6 +561,9 @@ createLordMonarch().then(function (M) {
       if (M._lm_aim(p[0], p[1])) M._lm_menu_open(p[0], p[1]);
       else say('そこへは行けません');
     }
+    // Choosing holds the war still, as it does in the original, so say what
+    // is going on the first time it happens.
+    if (M._lm_selected() > 0) say('選んでいる間、時間は止まります');
     dragFrom = null;
   }
 

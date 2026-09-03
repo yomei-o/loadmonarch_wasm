@@ -335,7 +335,9 @@ static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wparam,
         return 0;
     }
     case WM_TIMER:
-        if (wparam == SIM_TIMER && app->running) {
+        // Anything chosen holds the war still, as it does in the original.
+        if (wparam == SIM_TIMER && app->running &&
+            !simSelectionHolds(&app->game)) {
             simStep(&app->sim);
             InvalidateRect(window, NULL, FALSE);
         }

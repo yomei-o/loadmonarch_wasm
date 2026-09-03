@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903213151"></script>
+<script src="loadmonarch.js?v=20260903221351"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903213151';
+  var BUILD = '20260903221351';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -561,6 +561,9 @@ createLordMonarch().then(function (M) {
       if (M._lm_aim(p[0], p[1])) M._lm_menu_open(p[0], p[1]);
       else say('そこへは行けません');
     }
+    // Choosing holds the war still, as it does in the original, so say what
+    // is going on the first time it happens.
+    if (M._lm_selected() > 0) say('選んでいる間、時間は止まります');
     dragFrom = null;
   }
 
