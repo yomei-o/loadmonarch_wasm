@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903221351"></script>
+<script src="loadmonarch.js?v=20260903222229"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903221351';
+  var BUILD = '20260903222229';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -491,7 +491,9 @@ createLordMonarch().then(function (M) {
       return;
     }
     if (M._lm_menu_up()) {
-      M._lm_menu_click(b[0], b[1]);
+      // -1 is Cancel, or a click outside it: 00424817 lets the units go on a
+      // click while any are chosen, and the war runs again.
+      if (M._lm_menu_click(b[0], b[1]) < 0) M._lm_clear_selection();
       e.preventDefault();
       return;
     }
@@ -550,20 +552,25 @@ createLordMonarch().then(function (M) {
     M._lm_drag_rect(0, 0, 0, 0, 0);
 
     if (moved) {
+      // A rubber band always gathers, whatever is chosen already.
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
+    } else if (M._lm_selected() > 0 && !e.shiftKey) {
+      // Something is chosen, so this click is the destination - even on a
+      // square one of your own is standing on.  That is what the rules say:
+      // choose, then choose where.  Picking another unit instead is what
+      // shift is for.
+      //
+      // 00424817 releases the units on a click while any are chosen, so a
+      // square they cannot reach lets them go rather than leaving the war
+      // stopped with nowhere to go.
+      if (M._lm_aim(p[0], p[1])) M._lm_menu_open(p[0], p[1]);
+      else { M._lm_clear_selection(); say('そこへは行けません'); }
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_at(p[0], p[1], 1);
-    } else if (M._lm_selected() > 0) {
-      // The destination: the circle first, and the orders only where the
-      // circle is - which is what lm_aim answers.
-      if (M._lm_aim(p[0], p[1])) M._lm_menu_open(p[0], p[1]);
-      else say('そこへは行けません');
+      say('選んでいる間、時間は止まります。行き先をクリック');
     }
-    // Choosing holds the war still, as it does in the original, so say what
-    // is going on the first time it happens.
-    if (M._lm_selected() > 0) say('選んでいる間、時間は止まります');
     dragFrom = null;
   }
 
