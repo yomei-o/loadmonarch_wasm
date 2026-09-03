@@ -6,6 +6,7 @@
 
 #include "../src/host.h"
 #include "../src/render.h"
+#include "../src/dlgrun.h"
 #include "../src/ui.h"
 #include "../src/sim.h"
 #include "../src/state.h"
@@ -61,6 +62,27 @@ int main(int argc, char **argv) {
     renderWorld(&game.world, zoom, viewX, viewY, 1, &surface);
     renderUnits(&game, zoom, viewX, viewY, 1, &surface);
     renderStatus(&game, &surface);
+
+    // dlg:<n> puts one of the game's own dialogs over the picture, so the
+    // chrome can be looked at without opening a window.
+    for (int a = 6; a < argc; a++) {
+        int which = -1;
+        if (sscanf(argv[a], "dlg:%d", &which) != 1) continue;
+        static DlgRunner runner;
+        static DlgHost host;
+        static Sim shown;
+        shown = sim;
+        host.slots = 0;
+        host.stages = 0;
+        dlgRunInit(&runner, &shown, &host);
+        if (!dlgRunOpen(&runner, (DlgWhich)which, W, H)) {
+            printf("dialog %d did not open\n", which);
+            continue;
+        }
+        dlgRunHover(&runner, runner.dlg.x + 30, runner.dlg.y + 60);
+        dlgRunDraw(&surface, &runner, &game);
+        printf("dialog %d up\n", which);
+    }
 
     // bar:<n> draws MENU 101 across the top with its nth menu dropped, which
     // is the only way to look at the chrome without opening a window.

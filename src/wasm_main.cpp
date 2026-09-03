@@ -16,6 +16,7 @@ extern "C" {
 #include "picture.h"
 #include "render.h"
 #include "sim.h"
+#include "dlgrun.h"
 #include "ui.h"
 #include "state.h"
 #include "world.h"
@@ -39,6 +40,19 @@ namespace {
 GameState g_game;
 Sim g_sim;
 OrderMenu g_menu;
+DlgRunner g_dlg;
+DlgHost g_dlgHost;
+
+// What the page keeps for the dialogs: eight save slots and the three windows
+// it draws beside the board.  The slots live on the page (localStorage), so
+// the port only holds their names and asks the page to do the reading and the
+// writing through these.
+#define SAVE_SLOTS 8
+char g_slotName[SAVE_SLOTS][40];
+int g_windowShown[3] = {1, 1, 1};
+int g_speed = 25;                   // DAT_00437698, 0 slow to 29 fast
+int g_slotWanted = -1;              // the slot the page is being asked for
+int g_slotAction = 0;               // 1 read, 2 write, 3 remove
 StageList g_stages;
 TuneList g_tunes;
 Host g_host;
@@ -108,6 +122,10 @@ int loadStage(int stage) {
 
 }   // namespace
 
+// Wired once the archive is open; defined with the dialog
+// callbacks further down.
+static void dialogsReady(void);
+
 extern "C" {
 
 // The player's zip, copied in by the page.  Returns the number of stages when
@@ -132,6 +150,7 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     surfaceInit(&g_screen, g_viewW, g_viewH + UI_BAR_H, g_indices);
     surfaceInit(&g_surface, g_viewW, g_viewH,
                 g_indices + (size_t)UI_BAR_H * g_viewW);
+    dialogsReady();
     return stageCount();
 }
 
@@ -184,6 +203,7 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderStatus(&g_game, &g_surface);
     uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
     uiBarDraw(&g_screen, &g_game, g_running, &g_bar);   // MENU 101
+    dlgRunDraw(&g_screen, &g_dlg, &g_game);         // and whatever dialog is up
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
     unsigned char colours[256][3];
@@ -445,6 +465,114 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_click(int x, int y) {
     if (done < 0) return -1;
     if (done == 0) return 0;
     return simOrderSelected(&g_sim, order, strength, col, row);
+}
+
+/* ---------------------------------------------------------- the dialogs */
+
+// Zero for an empty slot, which is how the dialog knows where Save New goes.
+static int hostSlotName(void *, int slot, char *out, int size) {
+    if (slot < 0 || slot >= SAVE_SLOTS || !g_slotName[slot][0]) return 0;
+    snprintf(out, (size_t)size, "%s", g_slotName[slot]);
+    return 1;
+}
+
+// The page does the actual reading and writing, because the bytes live in its
+// localStorage; these leave a note for it to pick up.
+static int hostSlotRead(void *, int slot) {
+    g_slotWanted = slot;
+    g_slotAction = 1;
+    return 1;
+}
+static int hostSlotWrite(void *, int slot, const char *name) {
+    if (slot < 0 || slot >= SAVE_SLOTS) return 0;
+    snprintf(g_slotName[slot], sizeof g_slotName[slot], "%s",
+             name && *name ? name : "Saved");
+    g_slotWanted = slot;
+    g_slotAction = 2;
+    return 1;
+}
+static int hostSlotRemove(void *, int slot) {
+    if (slot < 0 || slot >= SAVE_SLOTS) return 0;
+    g_slotName[slot][0] = 0;
+    g_slotWanted = slot;
+    g_slotAction = 3;
+    return 1;
+}
+
+static int hostGetSpeed(void *) { return g_speed; }
+static void hostSetSpeed(void *, int speed) {
+    g_speed = speed < 0 ? 0 : speed > 29 ? 29 : speed;
+}
+
+static int hostStageName(void *, int stage, char *out, int size) {
+    if (stage < 0 || stage >= stageCount()) return 0;
+    const char *name = g_stages.count ? g_stages.name[stage]
+                                      : stageFile(stage);
+    snprintf(out, (size_t)size, "%s", name ? name : "");
+    return 1;
+}
+static int hostLoadStage(void *, int stage) { return lm_load_stage(stage); }
+
+static int hostGetWindow(void *, int which) {
+    return which >= 0 && which < 3 ? g_windowShown[which] : 0;
+}
+static void hostSetWindow(void *, int which, int on) {
+    if (which >= 0 && which < 3) g_windowShown[which] = on ? 1 : 0;
+}
+
+static void dialogsReady(void) {
+    g_dlgHost.slotName = hostSlotName;
+    g_dlgHost.slotRead = hostSlotRead;
+    g_dlgHost.slotWrite = hostSlotWrite;
+    g_dlgHost.slotRemove = hostSlotRemove;
+    g_dlgHost.slots = SAVE_SLOTS;
+    g_dlgHost.getSpeed = hostGetSpeed;
+    g_dlgHost.setSpeed = hostSetSpeed;
+    g_dlgHost.stageName = hostStageName;
+    g_dlgHost.stages = lm_stage_count();
+    g_dlgHost.loadStage = hostLoadStage;
+    g_dlgHost.getWindow = hostGetWindow;
+    g_dlgHost.setWindow = hostSetWindow;
+    g_dlgHost.user = nullptr;
+    dlgRunInit(&g_dlg, &g_sim, &g_dlgHost);
+}
+
+// Opening one by the command number MENU 101 gives it.
+EMSCRIPTEN_KEEPALIVE int lm_dialog_open(int command) {
+    const DlgWhich which = dlgForCommand(command);
+    if (which == DLG_NONE) return 0;
+    g_dlgHost.stages = lm_stage_count();
+    return dlgRunOpen(&g_dlg, which, g_viewW, g_viewH + UI_BAR_H);
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_dialog_up(void) { return dlgRunUp(&g_dlg); }
+EMSCRIPTEN_KEEPALIVE void lm_dialog_hover(int x, int y) {
+    dlgRunHover(&g_dlg, x, y);
+}
+EMSCRIPTEN_KEEPALIVE int lm_dialog_click(int x, int y) {
+    return dlgRunClick(&g_dlg, x, y);
+}
+
+// What a dialog has asked the page to do with a save slot, and which one.
+// Reading it clears it.
+EMSCRIPTEN_KEEPALIVE int lm_slot_action(void) {
+    const int a = g_slotAction;
+    g_slotAction = 0;
+    return a;
+}
+EMSCRIPTEN_KEEPALIVE int lm_slot_wanted(void) { return g_slotWanted; }
+EMSCRIPTEN_KEEPALIVE int lm_slot_count(void) { return SAVE_SLOTS; }
+
+// The page tells the port what its slots are called, so the list can show them.
+EMSCRIPTEN_KEEPALIVE void lm_slot_set_name(int slot, const char *name) {
+    if (slot < 0 || slot >= SAVE_SLOTS) return;
+    snprintf(g_slotName[slot], sizeof g_slotName[slot], "%s", name ? name : "");
+}
+
+EMSCRIPTEN_KEEPALIVE int lm_speed(void) { return g_speed; }
+EMSCRIPTEN_KEEPALIVE void lm_set_speed(int speed) { hostSetSpeed(nullptr, speed); }
+EMSCRIPTEN_KEEPALIVE int lm_window_shown(int which) {
+    return hostGetWindow(nullptr, which);
 }
 
 /* -------------------------------------------------- MENU 101, the menu bar */

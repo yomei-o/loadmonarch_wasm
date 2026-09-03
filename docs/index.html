@@ -202,7 +202,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260902090211"></script>
+<script src="loadmonarch.js?v=20260903005228"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -773,22 +773,80 @@ createLordMonarch().then(function (M) {
   var dragFrom = null;          // a left-drag gathers an army
   var dragTo = null;
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  // What the host still owns: loading and saving, and the two boxes that say
-  // what happened.  Everything else in MENU 101 the game does itself.
+  // The save slots.  The dialogs are the game's own and live in the canvas;
+  // the bytes live here, because localStorage is the page's business.
+  var SLOT_KEY = SAVE_KEY + '-slot';
+
+  function slotLoadNames() {
+    for (var i = 0; i < M._lm_slot_count(); i++) {
+      var raw = null;
+      try { raw = localStorage.getItem(SLOT_KEY + i + '-name'); } catch (e) {}
+      var p = M._lm_alloc(64);
+      writeName(p, raw || '');
+      M._lm_slot_set_name(i, p);
+      M._lm_free(p);
+    }
+  }
+
+  // A short ASCII name into the port's heap.  The names are the player's own,
+  // so anything outside ASCII is dropped rather than mangled.
+  function writeName(ptr, text) {
+    var n = 0;
+    for (var i = 0; i < text.length && n < 38; i++) {
+      var c = text.charCodeAt(i);
+      if (c >= 32 && c < 127) M.HEAPU8[ptr + n++] = c;
+    }
+    M.HEAPU8[ptr + n] = 0;
+  }
+
+  // Whatever the dialog asked for: read a slot, write one, or drop one.
+  function slotService() {
+    var what = M._lm_slot_action();
+    if (!what) return;
+    var slot = M._lm_slot_wanted();
+    if (what === 1) {
+      var raw = null;
+      try { raw = localStorage.getItem(SLOT_KEY + slot); } catch (e) {}
+      if (!raw) { say('その枠は空です'); return; }
+      var bytes = Uint8Array.from(atob(raw), function (c) {
+        return c.charCodeAt(0);
+      });
+      var p = M._lm_alloc(bytes.length);
+      M.HEAPU8.set(bytes, p);
+      var ok = M._lm_load(p, bytes.length);
+      M._lm_free(p);
+      say(ok ? (slot + 1) + ' 番から再開しました' : 'その枠は読めません');
+    } else if (what === 2) {
+      var ptr = M._lm_save();
+      var size = M._lm_save_size();
+      var out = new Uint8Array(M.HEAPU8.buffer, ptr, size);
+      var text = '';
+      for (var i = 0; i < size; i += 0x8000)
+        text += String.fromCharCode.apply(
+            null, out.subarray(i, Math.min(i + 0x8000, size)));
+      try {
+        localStorage.setItem(SLOT_KEY + slot, btoa(text));
+        localStorage.setItem(SLOT_KEY + slot + '-name',
+                             '面' + (M._lm_stage() + 1) + ' ' +
+                             M._lm_days() + '日');
+      } catch (e) { say('保存できません'); return; }
+      slotLoadNames();
+      say((slot + 1) + ' 番に保存しました');
+    } else if (what === 3) {
+      try {
+        localStorage.removeItem(SLOT_KEY + slot);
+        localStorage.removeItem(SLOT_KEY + slot + '-name');
+      } catch (e) {}
+      say((slot + 1) + ' 番を消しました');
+    }
+    refreshPanel();
+  }
+
+  // What the host still owns of MENU 101.  Everything that has a dialog now
+  // goes to the game's own; only these are the page's.
   function hostCommand(id) {
-    if (id === 40051) { document.getElementById('loadBtn').onclick(); return; }
-    if (id === 40021) { document.getElementById('saveBtn').onclick(); return; }
-    if (id === 40020 || id === 40117) {
-      say('面は上の 前/次 で選べます');
-      return;
-    }
+    if (M._lm_dialog_open(id)) { slotLoadNames(); return; }
     if (id === 40111) { fitView(); say('窓を並べ直しました'); return; }
-    if (id === 40037) {
-      say('部隊をドラッグかクリックで選び、行かせたいマスをクリックすると' +
-          'そのマスに出せる命令が出ます');
-      return;
-    }
-    if (id === 40055) { say('Lord Monarch Online - 移植版'); return; }
     if (id === 60001 || id === 60002 || id === 60003) {
       say('その窓はページの右側に出ています');
       return;
@@ -798,6 +856,15 @@ createLordMonarch().then(function (M) {
 
   canvas.addEventListener('pointerdown', function (e) {
     if (!loaded) return;
+    // A dialog is modal: while one is up nothing else sees the pointer.
+    if (M._lm_dialog_up()) {
+      var q = viewPoint(e);
+      M._lm_dialog_click(q[0], q[1]);
+      slotService();
+      refreshPanel();
+      e.preventDefault();
+      return;
+    }
     // The menu bar, which is the game's own and drawn in the canvas: a click
     // there never reaches the map.
     var b = viewPoint(e);
@@ -902,6 +969,7 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
+    if (M._lm_dialog_up()) { M._lm_dialog_hover(p[0], p[1]); return; }
     if (M._lm_bar_hover(p[0], p[1])) return;
     if (M._lm_menu_up()) {
       M._lm_menu_hover(p[0], p[1]);
@@ -1036,9 +1104,22 @@ createLordMonarch().then(function (M) {
   var nextTick = 0;
   function tickInterval() { return (30 - speed) * 16; }
 
+  // System Setting's trackbar is the same number, so whichever was touched
+  // last wins and the other follows.
+  function speedFromGame() {
+    if (!loaded) return;
+    var s = M._lm_speed();
+    if (s === speed) return;
+    speed = s;
+    speedInput.value = String(s);
+    document.getElementById('speedRead').textContent =
+        speed + ' (' + tickInterval() + 'ms)';
+  }
+
   var speedInput = document.getElementById('speed');
   speedInput.oninput = function () {
     speed = Math.max(0, Math.min(29, parseInt(speedInput.value, 10) || 0));
+    if (loaded) M._lm_set_speed(speed);
     document.getElementById('speedRead').textContent =
         speed + ' (' + tickInterval() + 'ms)';
   };
@@ -1091,7 +1172,11 @@ createLordMonarch().then(function (M) {
         nextTick = now + tickInterval();
       }
       present();
-      if (now - lastPanel > 250) { refreshPanel(); lastPanel = now; }
+      if (now - lastPanel > 250) {
+        refreshPanel();
+        speedFromGame();
+        lastPanel = now;
+      }
     }
     requestAnimationFrame(frame);
   }
