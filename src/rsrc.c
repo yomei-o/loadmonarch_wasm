@@ -114,10 +114,12 @@ static const unsigned char *toSjis(unsigned code) {
 // writes its menu in ASCII and the Japanese one writes it in Japanese, and
 // both are the same string to a font that draws Shift-JIS.  The ampersand a
 // Windows menu marks its accelerator with is dropped.
-static const unsigned char *readText(const unsigned char *p, char *out,
+static const unsigned char *readText(const unsigned char *p,
+                                     const unsigned char *end, char *out,
                                      int size) {
     int at = 0;
     for (;;) {
+        if (p + 2 > end) break;
         const unsigned w = rd16(p);
         p += 2;
         if (!w) break;
@@ -153,7 +155,7 @@ static const unsigned char *menuItems(const unsigned char *p,
             RsrcMenuItem here;
             memset(&here, 0, sizeof here);
             here.popup = 1;
-            p = readText(p, here.text, RSRC_TEXT);
+            p = readText(p, end, here.text, RSRC_TEXT);
             if (depth > 0 && item) {
                 // Flattened: the submenu's own caption is dropped and its
                 // items go straight into the parent.
@@ -166,7 +168,7 @@ static const unsigned char *menuItems(const unsigned char *p,
             const unsigned command = rd16(p);
             p += 2;
             char text[RSRC_TEXT];
-            p = readText(p, text, RSRC_TEXT);
+            p = readText(p, end, text, RSRC_TEXT);
             if (item) {
                 memset(item, 0, sizeof *item);
                 item->command = command;
@@ -192,7 +194,7 @@ int rsrcMenuBar(const Pe *pe, unsigned id, RsrcMenuBar *out) {
         if (!(flags & 0x10)) return out->menus > 0;   // the bar is all popups
         RsrcMenu *menu = &out->menu[out->menus++];
         memset(menu, 0, sizeof *menu);
-        p = readText(p, menu->text, RSRC_TEXT);
+        p = readText(p, end, menu->text, RSRC_TEXT);
         p = menuItems(p, end, menu, 1);
         if (flags & 0x80) break;
     }
@@ -204,21 +206,29 @@ int rsrcMenuBar(const Pe *pe, unsigned id, RsrcMenuBar *out) {
 // A control's title can be an ordinal too, not only a string: DIALOG 120's
 // icon carries 0xffff and then the icon's own resource id, and reading that as
 // text swallowed the terminator and shifted every control after it.
-static const unsigned char *readTitle(const unsigned char *p, char *out,
+static const unsigned char *readTitle(const unsigned char *p,
+                                      const unsigned char *end, char *out,
                                       int size) {
+    if (out && size > 0) out[0] = 0;
+    if (p + 2 > end) return end;
     if (rd16(p) == 0xffff) {
+        if (p + 4 > end) return end;
         snprintf(out, size, "#%u", rd16(p + 2));
         return p + 4;
     }
-    return readText(p, out, size);
+    return readText(p, end, out, size);
 }
 
 // A class is either a nought word (none), an ordinal 0xffff followed by a
 // word, or a string.
-static const unsigned char *readClass(const unsigned char *p, char *out,
+static const unsigned char *readClass(const unsigned char *p,
+                                      const unsigned char *end, char *out,
                                       int size) {
+    if (out && size > 0) out[0] = 0;
+    if (p + 2 > end) return end;
     if (rd16(p) == 0) { out[0] = 0; return p + 2; }
     if (rd16(p) == 0xffff) {
+        if (p + 4 > end) return end;
         // 0x80 is BUTTON, and the six run in that order - getting this
         // one out by a place turned every button into a static and
         // every static into an edit box, which is what the dialogs
@@ -231,7 +241,7 @@ static const unsigned char *readClass(const unsigned char *p, char *out,
                  ? kOrdinal[n - 0x80] : "?");
         return p + 4;
     }
-    return readText(p, out, size);
+    return readText(p, end, out, size);
 }
 
 static const unsigned char *align4(const unsigned char *base,
@@ -270,17 +280,17 @@ int rsrcDialog(const Pe *pe, unsigned id, RsrcDialog *out) {
         p += 18;
     }
     char scratch[RSRC_TEXT];
-    p = readClass(p, scratch, RSRC_TEXT);       // the menu
-    p = readClass(p, scratch, RSRC_TEXT);       // the window class
-    p = readText(p, out->caption, RSRC_TEXT);
+    p = readClass(p, end, scratch, RSRC_TEXT);  // the menu
+    p = readClass(p, end, scratch, RSRC_TEXT);  // the window class
+    p = readText(p, end, out->caption, RSRC_TEXT);
     if (out->style & 0x40u) {                   // DS_SETFONT
         p += extended ? 6 : 2;                  // size, weight, italic, charset
-        p = readText(p, scratch, RSRC_TEXT);    // the face name
+        p = readText(p, end, scratch, RSRC_TEXT);   // the face name
     }
 
     for (unsigned i = 0; i < items && p < end; i++) {
         p = align4(base, p);
-        if (p + 18 > end) break;
+        if (p + (extended ? 24 : 18) > end) break;
         RsrcControl c;
         memset(&c, 0, sizeof c);
         if (extended) {
@@ -302,11 +312,12 @@ int rsrcDialog(const Pe *pe, unsigned id, RsrcDialog *out) {
             c.id = rd16(p + 16);
             p += 18;
         }
-        p = readClass(p, c.cls, RSRC_TEXT);
-        p = readTitle(p, c.text, RSRC_TEXT);
+        p = readClass(p, end, c.cls, RSRC_TEXT);
+        p = readTitle(p, end, c.text, RSRC_TEXT);
         // Creation data: a nought word means none, and any other value is
         // the size in bytes counting the word itself.  Adding two to it as
         // well shifted every control after the first one that had any.
+        if (p + 2 > end) break;
         const unsigned extra = rd16(p);
         p += extra ? extra : 2u;
         if (out->controls < RSRC_CONTROLS_MAX) out->control[out->controls++] = c;
