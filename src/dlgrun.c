@@ -176,6 +176,18 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
         dlgEnable(&r->dlg, 10, 0);
         dlgEnable(&r->dlg, 3, 0);
         break;
+    case DLG_INFORMATION: {
+        int chosen = 0;
+        for (int i = 0; i < ENTITY_COUNT; i++)
+            if (r->sim->state->entities[i].flags21c & 1) chosen++;
+        // 00412ff0 enables the two Remainder buttons only when more than one
+        // unit was picked; on its own there is no remainder to speak of.
+        dlgEnable(&r->dlg, 3, chosen > 1);
+        dlgEnable(&r->dlg, 4, chosen > 1);
+        r->askKind = r->sim->askKind;
+        r->askUnit = r->sim->askUnit;
+        break;
+    }
     case DLG_HELP:
         dlgClearItems(&r->dlg);
         dlgAddItem(&r->dlg, "Game Screen");
@@ -420,6 +432,25 @@ int dlgRunClick(DlgRunner *r, int x, int y) {
         }
         break;
 
+    case DLG_INFORMATION: {
+        // The four in the resource's own order: Go, Don't go, Remainder go,
+        // Remainder don't go.
+        int choice = 0;
+        if (id == 1069) choice = 1;
+        else if (id == 3) choice = 2;
+        else if (id == 4) choice = 3;
+        const int more = simOrderAnswer(r->sim, choice);
+        r->lastOrdered = more == SIM_ORDER_ASK ? r->lastOrdered : more;
+        if (more == SIM_ORDER_ASK) {
+            // Another unit is in the same difficulty; ask about that one.
+            const int w = r->dlg.surfaceW, h = r->dlg.surfaceH;
+            dlgClose(&r->dlg);
+            r->which = DLG_NONE;
+            dlgRunOpen(r, DLG_INFORMATION, w, h);
+            return 0;
+        }
+        break;
+    }
     case DLG_HELP:
         if (id == 1120 || id == 1121) {
             int page = dlgValue(&r->dlg, 1122) + (id == 1121 ? 1 : -1);

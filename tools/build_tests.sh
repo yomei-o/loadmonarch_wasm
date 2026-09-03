@@ -21,6 +21,8 @@ echo "built tests/growth_test.exe"
 # The music: the synthesiser from the sibling port, driven through src/midi.c.
 sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/midi_test.exe       tests/midi_test.c src/midi.c src/synth.c src/smf.c src/host.c src/zip.c
 echo "built tests/midi_test.exe"
+sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/dialog_test.exe     tests/dialog_test.c $SIM
+echo "built tests/dialog_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/menu_test.exe      tests/menu_test.c $SIM
 echo "built tests/menu_test.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -Wextra -o tests/font_test.exe      tests/font_test.c $SIM
@@ -36,6 +38,7 @@ echo "built tests/sim_harness.exe"
 sh tools/lowpri.sh "$GCC" -O2 -Wall -o tests/frame_dump.exe      tests/frame_dump.c $SIM
 echo "built tests/frame_dump.exe"
 ./tests/state_test.exe
+./tests/dialog_test.exe
 ./tests/menu_test.exe
 ./tests/font_test.exe ds7e.zip
 ./tests/font_test.exe ds7j.zip

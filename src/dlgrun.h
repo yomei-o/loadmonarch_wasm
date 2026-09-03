@@ -68,6 +68,8 @@ typedef struct {
     int allyPick;               // DLG_ALLIANCE: the country under the pointer
     int stageCount;             // how many rows the map list has
     int firstEmpty;             // the save slot Save New will use, or -1
+    int lastOrdered;            // how many took the order the Information
+                                // dialog was asking about
 } DlgRunner;
 
 void dlgRunInit(DlgRunner *r, Sim *sim, const DlgHost *host);

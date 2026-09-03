@@ -470,7 +470,14 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_click(int x, int y) {
     const int done = uiOrderClick(&g_menu, &g_game, x, y, &order, &strength);
     if (done < 0) return -1;
     if (done == 0) return 0;
-    return simOrderSelected(&g_sim, order, strength, col, row);
+    const int given = simOrderSelected(&g_sim, order, strength, col, row);
+    if (given == SIM_ORDER_ASK) {
+        // A unit can only get there the hard way; 00423cc0 asks about it,
+        // through dialog 118, before it goes.
+        dlgRunOpen(&g_dlg, DLG_INFORMATION, g_viewW, g_viewH + UI_CHROME_H);
+        return 0;
+    }
+    return given;
 }
 
 /* ---------------------------------------------------------- the dialogs */

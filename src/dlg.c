@@ -124,12 +124,18 @@ static int controlCount(const DlgTemplate *tpl) {
     return n;
 }
 
+// A combo box's height in the resource is how far its list drops, not how tall
+// the control is - dialog 124's first combo is seventy-one units, which would
+// otherwise cover the second combo and both buttons under it.  The bar itself
+// is one row.
+#define COMBO_H 20
+
 static void controlBox(const Dialog *d, const DlgControl *c,
                        int *x, int *y, int *w, int *h) {
     *x = d->x + c->x * DLG_SCALE;
     *y = d->y + (DLG_TITLE_H + c->y) * DLG_SCALE;
     *w = c->w * DLG_SCALE;
-    *h = c->h * DLG_SCALE;
+    *h = c->kind == DC_COMBO ? COMBO_H : c->h * DLG_SCALE;
 }
 
 int dlgControlRect(const Dialog *d, int id, int *x, int *y, int *w, int *h) {
@@ -151,6 +157,8 @@ void dlgOpen(Dialog *d, const DlgTemplate *tpl, int surfaceW, int surfaceH) {
     d->listSel = -1;
     const int w = tpl->w * DLG_SCALE;
     const int h = (tpl->h + DLG_TITLE_H) * DLG_SCALE;
+    d->surfaceW = surfaceW;
+    d->surfaceH = surfaceH;
     d->x = (surfaceW - w) / 2;
     d->y = (surfaceH - h) / 2;
     if (d->x < 0) d->x = 0;
@@ -284,7 +292,7 @@ void dlgDraw(Surface *out, const Dialog *d) {
             drawList(out, d, bankOf(d, c->id), cx, cy, cw, ch, d->listSel);
             break;
         case DC_COMBO: {
-            const int barH = 20;
+            const int barH = COMBO_H;
             fillRect(out, cx, cy, cw, barH, (unsigned char)UI_LIGHT);
             bevelDown(out, cx, cy, cw, barH);
             const int bank = bankOf(d, c->id);
@@ -332,7 +340,7 @@ void dlgDraw(Surface *out, const Dialog *d) {
             const int bank = bankOf(d, d->comboOpen);
             const int n = d->items[bank];
             const int rows = n < 8 ? n : 8;
-            drawList(out, d, bank, cx, cy + 20, cw, rows * ROW_H + 4,
+            drawList(out, d, bank, cx, cy + COMBO_H, cw, rows * ROW_H + 4,
                      dlgValue(d, d->comboOpen));
         }
     }
@@ -378,7 +386,7 @@ int dlgClick(Dialog *d, int x, int y) {
             const int bank = bankOf(d, d->comboOpen);
             const int n = d->items[bank];
             const int rows = n < 8 ? n : 8;
-            const int r = rowAt(d, bank, x, y, cx, cy + 20, cw,
+            const int r = rowAt(d, bank, x, y, cx, cy + COMBO_H, cw,
                                 rows * ROW_H + 4);
             if (r >= 0) dlgSetValue(d, d->comboOpen, r);
         }

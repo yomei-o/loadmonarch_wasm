@@ -83,6 +83,8 @@ typedef struct {
     // What the edit field holds, for Save.
     char edit[DLG_ITEM_TEXT];
 
+    int surfaceW, surfaceH;     // what it was centred on, so it can reopen
+
     int result;                 // the id of the button that closed it, or 0
 } Dialog;
 
