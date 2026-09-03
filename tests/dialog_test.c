@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "../src/dlgrun.h"
+#include "panels.h"
 #include "../src/state.h"
 #include "../src/world.h"
 
@@ -137,7 +138,7 @@ int main(void) {
     {
         dlgRunOpen(&r, DLG_SYSTEM_SETTING, 640, 480);
         expect("it took the speed it was given",
-               dlgValue(&r.dlg, 1118), 25 * 100 / 29);
+               dlgValue(&r.dlg, 1118), 25 * 100 / 30);
         int x, y, w, h;
         dlgControlRect(&r.dlg, 1118, &x, &y, &w, &h);
         dlgRunClick(&r, x + w - 2, y + h / 2);          // drag it to Fast
@@ -285,6 +286,32 @@ int main(void) {
         expect("and this trouble is the other kind", sim.askKind, 1);
         given = simOrderAnswer(&sim, 3);    // Remainder don't go
         expect("so nobody went", given, 0);
+    }
+
+    // 0041a1b0's two strips.  The arithmetic is its own: clamp x - 0x18 into
+    // 0 to 0x7c, divide by four, cap at thirty - so every reading but the last
+    // is four pixels wide and the strip answers thirty-one of them.
+    {
+        int v = -1;
+        expect("left of the strip is its left end",
+               panelProgressSlider(23, 24, &v) == PANEL_SLIDER_TAX && v == 0,
+               1);
+        panelProgressSlider(24, 24, &v);
+        expect("nought at the left end", v, 0);
+        panelProgressSlider(27, 24, &v);
+        expect("still nought three across", v, 0);
+        panelProgressSlider(28, 24, &v);
+        expect("one at four", v, 1);
+        panelProgressSlider(24 + 120, 24, &v);
+        expect("thirty at a hundred and twenty", v, 30);
+        panelProgressSlider(24 + 124, 24, &v);
+        expect("and thirty at the clamp", v, 30);
+        expect("the lower strip is the clock",
+               panelProgressSlider(60, 150, &v), PANEL_SLIDER_SPEED);
+        expect("between the two is neither",
+               panelProgressSlider(60, 90, &v), PANEL_SLIDER_NONE);
+        expect("and well right of them is neither",
+               panelProgressSlider(200, 24, &v), PANEL_SLIDER_NONE);
     }
 
     printf(failures ? "%d dialog check(s) failed\n" : "dialog checks ok\n",

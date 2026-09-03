@@ -200,7 +200,7 @@
 </main>
 <footer id="hint">右ドラッグ・ホイール・矢印: スクロール / 1・2・3: ズーム / Space: 一時停止 / 部隊を選択 → 地図をクリックで派遣 / 選択なしのクリックはユニット設置 / 音楽: ボタンから</footer>
 
-<script src="loadmonarch.js?v=20260903043115"></script>
+<script src="loadmonarch.js?v=20260903055023"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -690,6 +690,7 @@ createLordMonarch().then(function (M) {
   // the map is 48 cells across and the window shows a part of it, so getting
   // about has to be easy.
   var panning = null;
+  var sliding = false;          // dragging one of the Progress Window's strips
   var dragFrom = null;          // a left-drag gathers an army
   var dragTo = null;
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -796,8 +797,22 @@ createLordMonarch().then(function (M) {
       return;
     }
     // The three windows down the right are windows: a click on one of them
-    // does not reach the board under it.
-    if (M._lm_panel_hit(b[0], b[1])) { e.preventDefault(); return; }
+    // does not reach the board under it - and the Progress Window's two
+    // strips are draggable, which is how the tax and the clock are set by
+    // hand.  Touching the tax turns the automatic one off, as it does in the
+    // original.
+    if (M._lm_panel_hit(b[0], b[1])) {
+      var slider = M._lm_panel_drag(b[0], b[1]);
+      if (slider) {
+        sliding = true;
+        canvas.setPointerCapture(e.pointerId);
+        if (slider === 1) say('税率を手で決めました（自動課税は切れます）');
+        speedFromGame();
+      }
+      refreshPanel();
+      e.preventDefault();
+      return;
+    }
     if (M._lm_menu_up()) {
       var q = viewPoint(e);
       var took = M._lm_menu_click(q[0], q[1]);
@@ -862,6 +877,7 @@ createLordMonarch().then(function (M) {
   }
 
   canvas.addEventListener('pointerup', function (e) {
+    if (sliding) { sliding = false; e.preventDefault(); return; }
     if (panning) { panning = null; e.preventDefault(); return; }
     if (dragFrom) finishDrag(e);
   });
@@ -892,6 +908,11 @@ createLordMonarch().then(function (M) {
       return;
     }
     var p = viewPoint(e);
+    if (sliding) {
+      M._lm_panel_drag(p[0], p[1]);
+      speedFromGame();
+      return;
+    }
     if (M._lm_dialog_up()) { M._lm_dialog_hover(p[0], p[1]); return; }
     if (M._lm_bar_hover(p[0], p[1])) return;
     if (M._lm_menu_up()) {

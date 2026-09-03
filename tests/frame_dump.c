@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
         panelUnitWindow(&surface, &game, W - PANEL_SIDE - 4, at,
                         (int)under->terrain, under->value);
         at += PANEL_SIDE + 4;
-        panelProgressWindow(&surface, &game, 0, sim.days, sim.countdown,
+        panelProgressWindow(&surface, &game, 0, sim.days, sim.countdown, 25,
                             W - PANEL_SIDE - 4, at);
         printf("the three windows\n");
     }

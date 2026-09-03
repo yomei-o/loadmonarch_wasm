@@ -176,7 +176,7 @@ int dlgRunOpen(DlgRunner *r, DlgWhich which, int surfaceW, int surfaceH) {
             // The trackbar runs left to right as the label says: Fast is at
             // the right, and the game's own number is 0 slow to 29 fast.
             const int speed = r->host->getSpeed(r->host->user);
-            dlgSetValue(&r->dlg, 1118, speed * 100 / 29);
+            dlgSetValue(&r->dlg, 1118, speed * 100 / 30);
         }
         dlgSetValue(&r->dlg, 1114, r->sim->state->showOrders);
         break;
@@ -430,7 +430,7 @@ static void applySystemSetting(DlgRunner *r) {
         r->host->setWindow(r->host->user, 2, dlgValue(&r->dlg, 1070));
     }
     if (r->host && r->host->setSpeed)
-        r->host->setSpeed(r->host->user, dlgValue(&r->dlg, 1118) * 29 / 100);
+        r->host->setSpeed(r->host->user, dlgValue(&r->dlg, 1118) * 30 / 100);
     r->sim->state->showOrders = dlgValue(&r->dlg, 1114);
 }
 

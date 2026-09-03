@@ -36,6 +36,15 @@ static void blitSheet(Surface *out, const World *world, int sx, int sy,
     blitSheetPart(out, world, sx, sy, w, h, dx, dy, 0);
 }
 
+// One pixel off the interface sheet, for the times a fitting wants a colour
+// the sheet already has rather than one named here.
+static unsigned char sheetPixel(const World *world, int sx, int sy) {
+    const UiSheet *ui = &world->ui;
+    if (!ui->pixels || sx < 0 || sy < 0 || sx >= UI_SHEET_W || sy >= UI_SHEET_H)
+        return 0;
+    return ui->pixels[(size_t)sy * UI_SHEET_W + sx];
+}
+
 static void blitPanel(Surface *out, const World *world, int sx, int sy,
                       int w, int h, int dx, int dy) {
     blitSheetPart(out, world, sx, sy, w, h, dx, dy, 1);
@@ -102,28 +111,110 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
     blitGauge(out, w, n, x + 72, y + 96);
 }
 
+/* --------------------------------------------------- 0041a1b0's two strips */
+
+// Both run from x 24 to x 148 and answer nought to thirty, and the reading is
+// the original's own: clamp, take a hundred and twenty-four of it, divide by
+// four, cap at thirty.
+#define SLIDER_X0 24
+#define SLIDER_SPAN 124
+#define SLIDER_MAX 30
+
+// Both strips are built the same way: a well sixteen rows deep, black but for
+// a line four rows through the middle of it that runs the whole width - the
+// tax's shading from grey through orange to red, the clock's plain yellow.
+// There is no thumb anywhere on the sheet, so the line is not a scale to put a
+// marker on: it is the bar itself, drawn full and then blacked back to the
+// value.  Which is why the art as it sits is the strip at thirty.
+// The well itself is a hair wider than the range the mouse is read over: it
+// runs x 24 to 151, a hundred and twenty-eight across, where 0041a1b0's clamp
+// only reaches 124.  So the bar is drawn over the well and read over the clamp.
+#define BAR_W 128
+
+#define TAX_LINE 22
+#define SPEED_LINE 150
+#define LINE_H 4
+
+static int clampSlider(int v) {
+    return v < 0 ? 0 : v > SLIDER_MAX ? SLIDER_MAX : v;
+}
+
+// Black out the line from the value to the right-hand end of it, in whatever
+// black the well around it is drawn in - taken from the well rather than named
+// here, so it stays the sheet's own colour.
+//
+// The clock's line has the two figures standing on it, one at either end, and
+// the line runs behind them: blacking the tail out flat would cut the runner
+// off at the knees.  So that one is given the colour of its line and rubs out
+// only what is that colour.  The tax's rows have nothing on them, so it passes
+// -1 and the whole tail goes.
+static void barTail(Surface *out, const World *w, int x, int lineY, int wellY,
+                    int onlyColour, int value) {
+    // Sampled from the middle of the well, because both ends of the clock's
+    // have a figure standing in them.
+    const unsigned char black = sheetPixel(w, SLIDER_X0 + BAR_W / 2, wellY);
+    const int from = x + SLIDER_X0 +
+        (value * BAR_W + SLIDER_MAX - 1) / SLIDER_MAX;
+    const int to = x + SLIDER_X0 + BAR_W;
+    for (int j = 0; j < LINE_H; j++) {
+        const int py = lineY + j;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int px = from; px < to; px++) {
+            if (px < 0 || px >= out->width) continue;
+            if (onlyColour >= 0 && row[px] != (unsigned char)onlyColour)
+                continue;
+            row[px] = black;
+        }
+    }
+}
+
+static int sliderValue(int px) {
+    int at = px - SLIDER_X0;
+    if (at < 0) at = 0;
+    if (at > SLIDER_SPAN) at = SLIDER_SPAN;
+    at /= 4;
+    return at > SLIDER_MAX ? SLIDER_MAX : at;
+}
+
+PanelSlider panelProgressSlider(int px, int py, int *value) {
+    // 0041a1b0's hit areas are looser than the strips it draws: y 16 to 32 for
+    // the one and 144 to 160 for the other.
+    if (px < SLIDER_X0 - 8 || px > SLIDER_X0 + SLIDER_SPAN + 8)
+        return PANEL_SLIDER_NONE;
+    if (py >= 16 && py <= 32) {
+        if (value) *value = sliderValue(px);
+        return PANEL_SLIDER_TAX;
+    }
+    if (py >= 144 && py <= 160) {
+        if (value) *value = sliderValue(px);
+        return PANEL_SLIDER_SPEED;
+    }
+    return PANEL_SLIDER_NONE;
+}
+
 void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
-                         unsigned days, unsigned daysLeft, int x, int y) {
+                         unsigned days, unsigned daysLeft, int speed,
+                         int x, int y) {
     const World *w = &game->world;
     blitPanel(out, w, 0, PROGRESS_TOP, PANEL_W, PANEL_H, x, y);
     if (faction >= FACTION_COUNT) return;
 
-    // The bar at the top is two rows in one frame: an empty one above and a
-    // full gradient below it.  Filling it means copying the gradient's first N
-    // pixels up into the empty row, so it changes colour as it grows.  What it
-    // measures is not written anywhere; the share of the board is the reading
-    // that suits a window called Progress and the one this port has exactly.
-    // area is a percentage to two decimals, so a hundred per cent is 100.0
-    // and the whole bar is a hundred and twenty-eight pixels.
-    int filled = (int)(game->factions[faction].area * 128.0f / 100.0f);
-    if (filled < 0) filled = 0;
-    if (filled > 128) filled = 128;
-    if (filled > 0)
-        blitSheet(out, w, 24, PROGRESS_TOP + 26, filled, 6, x + 24, y + 16);
+    // Both bars come up full with the panel, so showing a value means blacking
+    // out what is past it.  Rounding up, so that thirty fills the line and
+    // nought leaves nothing of it.
+    barTail(out, w, x, y + TAX_LINE, PROGRESS_TOP + TAX_LINE - 4, -1,
+            clampSlider(game->factions[faction].taxRate));
+    barTail(out, w, x, y + SPEED_LINE, PROGRESS_TOP + SPEED_LINE - 4,
+            sheetPixel(w, SLIDER_X0 + BAR_W / 2, PROGRESS_TOP + SPEED_LINE),
+            clampSlider(speed));
 
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 40,
                  game->factions[faction].funds, out);
-    renderNumber(w, UI_FONT_LARGE_WHITE, x + 144, y + 40,
+    // The tax box comes with a per cent sign already printed in it, at x 136
+    // to 143, so the number stops short of that rather than being written over
+    // it - which also settles what the rate is measured in.
+    renderNumber(w, UI_FONT_LARGE_WHITE, x + 136, y + 40,
                  game->factions[faction].taxRate, out);
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 104, days, out);
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 144, y + 104, daysLeft, out);

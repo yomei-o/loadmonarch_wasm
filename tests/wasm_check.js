@@ -404,6 +404,29 @@ createLordMonarch().then((M) => {
         expect('a save of the wrong size is refused', M._lm_load(p, 10), 0);
     }
 
+    // The Progress Window's two strips, 0041a1b0.  The window has to be up
+    // for a drag to land on it, and the readings are taken in screen pixels
+    // the way a mouse gives them.
+    if (M._lm_window_shown(0)) {
+        const px = M._lm_progress_origin(0), py = M._lm_progress_origin(1);
+        expect('the Progress Window says where it is', px >= 0 && py >= 0,
+               true);
+        const human = M._lm_human();
+        expect('a drag lands on the top strip',
+               M._lm_panel_drag(px + 24 + 60, py + 24), 1);
+        expect('and set the tax by hand', M._lm_tax(human), 15);
+        expect('which turned the automatic tax off', M._lm_auto_tax(), 0);
+        M._lm_panel_drag(px + 24, py + 24);
+        expect('dragging it to the left end sets nothing', M._lm_tax(human),
+               0);
+        expect('a drag lands on the bottom strip',
+               M._lm_panel_drag(px + 24 + 40, py + 152), 2);
+        expect('and set the clock', M._lm_speed(), 10);
+        expect('between the two is neither',
+               M._lm_panel_drag(px + 60, py + 90), 0);
+        console.log('  the tax and the clock strips both drag');
+    }
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

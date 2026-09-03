@@ -45,6 +45,7 @@ ToolBar g_tool;
 int g_showBar = 1;              // Hide Title Bar, which is really the menu bar
 int g_showTool = 1;             // Hide Tool Bar
 int g_showStatus = 1;           // Status Window, the numbers over the board
+int g_progressY = -1;           // where the Progress Window was last drawn
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
 
@@ -55,7 +56,8 @@ DlgHost g_dlgHost;
 #define SAVE_SLOTS 8
 char g_slotName[SAVE_SLOTS][40];
 int g_windowShown[3] = {1, 1, 1};
-int g_speed = 25;                   // DAT_00437698, 0 slow to 29 fast
+int g_speed = 25;                   // DAT_00437698, 0 slow to 30 fast, which is
+                                    // the range 0041a1b0 clamps a drag into
 int g_slotWanted = -1;              // the slot the page is being asked for
 int g_slotAction = 0;               // 1 read, 2 write, 3 remove
 StageList g_stages;
@@ -179,6 +181,40 @@ EMSCRIPTEN_KEEPALIVE int lm_menu_height(void) { return UI_BAR_H; }
 // Whether a surface point lands on one of the three windows down the right.
 // They are windows, so they eat the click rather than letting it reach the
 // board underneath - which is what the original's do by being windows at all.
+// Where the Progress Window sits on screen, so that a caller reading its two
+// strips does not have to work the layout out for itself.  Axis 0 is x and 1
+// is y; -1 when the window is not up.
+EMSCRIPTEN_KEEPALIVE int lm_progress_origin(int axis) {
+    if (!g_windowShown[0] || g_progressY < 0) return -1;
+    return axis ? UI_CHROME_H + g_progressY : g_viewW - PANEL_SIDE - 4;
+}
+
+// DAT_0043769c, which 0041dc60 reads and a drag on the tax strip clears.
+EMSCRIPTEN_KEEPALIVE int lm_auto_tax(void) { return g_sim.autoTax ? 1 : 0; }
+
+// 0041a1b0: dragging the tax strip sets the rate by hand and turns the
+// automatic one off, which is what DAT_0043769c going to zero means; dragging
+// the clock strip sets DAT_00437698.  Non-zero when the point was on one.
+EMSCRIPTEN_KEEPALIVE int lm_panel_drag(int x, int y) {
+    if (!g_windowShown[0] || g_progressY < 0) return 0;
+    const int px = x - (g_viewW - PANEL_SIDE - 4);
+    const int py = y - UI_CHROME_H - g_progressY;
+    int value = 0;
+    switch (panelProgressSlider(px, py, &value)) {
+    case PANEL_SLIDER_TAX:
+        if (g_sim.humanFaction < FACTION_COUNT) {
+            g_game.factions[g_sim.humanFaction].taxRate = (unsigned char)value;
+            g_sim.autoTax = 0;
+        }
+        return 1;
+    case PANEL_SLIDER_SPEED:
+        g_speed = value;
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE int lm_panel_hit(int x, int y) {
     const int left = g_viewW - PANEL_SIDE - 4;
     if (x < left || x >= left + PANEL_SIDE) return 0;
@@ -253,9 +289,9 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         }
         if (g_windowShown[0]) {
             panelProgressWindow(&g_surface, &g_game, g_sim.humanFaction,
-                                g_sim.days,
-                                g_sim.countdown,
+                                g_sim.days, g_sim.countdown, g_speed,
                                 g_viewW - PANEL_SIDE - 4, at);
+            g_progressY = at;
             at += PANEL_SIDE + 4;
         }
         if (g_windowShown[2] && g_viewH - at > 100)
@@ -589,7 +625,7 @@ static void hostTuneStop(void *) { lm_music_stop(); }
 
 static int hostGetSpeed(void *) { return g_speed; }
 static void hostSetSpeed(void *, int speed) {
-    g_speed = speed < 0 ? 0 : speed > 29 ? 29 : speed;
+    g_speed = speed < 0 ? 0 : speed > 30 ? 30 : speed;
 }
 
 static int hostStageName(void *, int stage, char *out, int size) {
