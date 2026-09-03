@@ -156,6 +156,11 @@ int simMusicWanted(const Sim *sim);
 // over when the player is out, or when three of the four are.
 void simConquerFaction(Sim *sim, unsigned faction);
 
+// 0041abd0 over 0041abf0: a number below `limit`.  The window at the end of a
+// stage rolls against it as well - three in ten of its soldiers are a large
+// unit - so it is not sim.c's own any more.
+unsigned simRandom(unsigned limit);
+
 // Takes the oldest one and answers non-zero, or nothing and answers zero.
 int simTakeEvent(Sim *sim, SimEvent *out);
 void simCheckConquest(Sim *sim);

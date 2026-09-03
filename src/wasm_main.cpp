@@ -521,7 +521,8 @@ static void endStageCheck(void) {
         g_stage < stageCount())
         campaignRecord(&g_campaign, g_stage, &score, &against);
     endStageOpen(&g_end, mode, &score, g_stage,
-                 g_stages.count ? g_stages.name[g_stage] : "", against);
+                 g_stages.count ? g_stages.name[g_stage] : "", against,
+                 g_sim.humanFaction);
 }
 
 // 0041f0d0's notices, one at a time: they are modal in the original, so the

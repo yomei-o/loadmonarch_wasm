@@ -2695,7 +2695,7 @@ static void stepWalkOrdered(Sim *sim, unsigned slot) {
 // sequence - which it does not.
 static unsigned g_random = 1;
 
-static unsigned simRandom(unsigned limit) {
+unsigned simRandom(unsigned limit) {
     g_random = g_random * 1103515245u + 12345u;
     const unsigned value = (g_random >> 16) & 0x7fffu;
     return limit ? value % limit : 0u;

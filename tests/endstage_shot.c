@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
 
     static EndStage end;
     endStageOpen(&end, mode, &score, 4, "Backroad Euromap",
-                 mode == END_WON_AGAIN ? 37 : 0);
+                 mode == END_WON_AGAIN ? 37 : 0, 0);
     for (int i = 0; i < tick; i++) endStageStep(&end);
     endStageDraw(&surface, &end, &world, 0, 0);
 

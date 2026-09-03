@@ -11,3 +11,4 @@ loadmonarch*.exe
 
 # Scratch: PPM dumps, the object files cl.exe leaves, probe scripts.
 /tmp/
+tools/__pycache__/

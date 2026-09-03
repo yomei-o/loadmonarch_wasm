@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
     surfaceInit(&surface, 400, 400, pixels);
 
     static EndStage end;
-    endStageOpen(&end, END_WON, &score, 0, "Conqueror's trial", 0);
+    endStageOpen(&end, END_WON, &score, 0, "Conqueror's trial", 0, 0);
     check(end.up, "the window is up");
     memset(surface.pixels, 0, (size_t)surface.width * surface.height);
     endStageDraw(&surface, &end, &world, 20, 20);
@@ -248,7 +248,7 @@ int main(int argc, char **argv) {
           "a dismissed window draws nothing");
 
     // Mode 2 has no numbers at all, only "Game Over" in the panel.
-    endStageOpen(&end, END_DEFEATED, &score, 0, "Conqueror's trial", 0);
+    endStageOpen(&end, END_DEFEATED, &score, 0, "Conqueror's trial", 0, 0);
     memset(surface.pixels, 0, (size_t)surface.width * surface.height);
     endStageDraw(&surface, &end, &world, 20, 20);
     {
@@ -430,6 +430,77 @@ int main(int argc, char **argv) {
                band(&surface, 0, 0x52, UI_DARK), 30);
         check(awardsDismiss(&awards), "a click closes it");
         check(!awardsDismiss(&awards), "and a second does nothing");
+    }
+
+    // The parade: FUN_00411340's scripts, walked by 00410020 and moved by
+    // 004104d0.  What a test can say about it is where each actor starts,
+    // which script it is on, and where the script leaves it.
+    {
+        // 00410680: the king on script 0, and fifteen soldiers on the same
+        // one, 0x10 of wait apart, all out of the gate at 0xe0,0xd0.
+        static EndStage p;
+        endStageOpen(&p, END_WON, &score, 0, "Conqueror's trial", 0, 1);
+        int alive = 0;
+        for (int i = 0; i < END_ACTORS; i++) if (p.actor[i].alive) alive++;
+        checkf(alive == 16, "%d actors march, wanted %d", alive, 16);
+        check(p.actor[0].x == 0xe0 && p.actor[0].y == 0xd0,
+              "they start behind the right-hand gate");
+        checkf(p.actor[0].sprite == ((1u | 0xcu) << 3),
+               "the king is sprite %02x, wanted %02x",
+               p.actor[0].sprite, (1u | 0xcu) << 3);
+        for (int t = 0; t < 40; t++) endStageStep(&p);
+        checkf(p.actor[0].x < 0xe0, "the king has walked to %d, out of %d",
+               p.actor[0].x, 0xe0);
+        checkf(p.actor[15].command == 0x0f,
+               "the last soldier is still waiting: command %02x, wanted %02x",
+               p.actor[15].command, 0x0f);
+        // Script 0 walks 7 << 4 ticks by two, which is 0xe0 to nought, and
+        // then 0xff takes that actor away.
+        for (int t = 0; t < 200; t++) endStageStep(&p);
+        checkf(p.actor[0].x == 0, "the king ends at %d, wanted %d",
+               p.actor[0].x, 0);
+        check(!p.actor[0].alive, "and he is gone through the far gate");
+    }
+    {
+        // 00410be0: the king on script 3 and five soldiers on 5 to 9, which
+        // all end on the fighting sprites and 0x15 - stop for ever.
+        static EndStage p;
+        endStageOpen(&p, END_DEFEATED, &score, 0, "Conqueror's trial", 0, 1);
+        int alive = 0;
+        for (int i = 0; i < END_ACTORS; i++) if (p.actor[i].alive) alive++;
+        checkf(alive == 6, "%d stay for the last fight, wanted %d", alive, 6);
+        for (int t = 0; t < 300; t++) endStageStep(&p);
+        checkf((p.actor[0].sprite & 0xa4u) == 0xa4u,
+               "the king ends on sprite %02x, wanted 0xa4 over the side (%d)",
+               p.actor[0].sprite, 0);
+        check(p.actor[0].wait < 0, "and he never steps again");
+        checkf((p.actor[1].sprite & 0xa0u) == 0xa0u,
+               "a soldier ends on %02x, wanted 0xa0 over the side (%d)",
+               p.actor[1].sprite, 0);
+    }
+    {
+        // 00410910: one of the neutral country's - side 4, sprite 0xc0 -
+        // walks in from the left while the king walks out, and the king's
+        // script holds the whole parade still for 0x15e.
+        static EndStage p;
+        endStageOpen(&p, END_TIME_OVER, &score, 0, "Conqueror's trial", 0, 1);
+        check(p.actor[16].alive && p.actor[16].side == 4 &&
+              p.actor[16].sprite == 0xc0,
+              "one of the neutral country's comes the other way");
+        for (int t = 0; t < 80; t++) endStageStep(&p);
+        checkf(p.actor[16].x > 0, "he has walked in to %d, out of %d",
+               p.actor[16].x, 0);
+        int held = 0;
+        for (int t = 0; t < 400 && held <= END_ACTORS; t++) {
+            endStageStep(&p);
+            held = p.hold;
+        }
+        checkf(held > END_ACTORS, "the hold is %d, wanted over %d",
+               held, END_ACTORS);
+        const int was = p.actor[16].x;
+        endStageStep(&p);
+        checkf(p.actor[16].x == was, "and nobody moves: %d, was %d",
+               p.actor[16].x, was);
     }
 
     if (failures) {

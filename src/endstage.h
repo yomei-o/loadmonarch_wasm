@@ -22,12 +22,12 @@
 // an earlier one again.  The last stage instead runs FUN_00409570: dialog 114,
 // then 121, then "Congratulations! you have completed ...".
 //
-// Not done, and worth doing: the parade.  Each scene sets up twenty actors at
-// +0x25c (0x118 bytes apiece) through FUN_00411340 and 00410020 walks them
-// with FUN_00410200 and draws them with FUN_004104d0 - the player's own
-// soldiers marching across the garden, behind the two gate towers the routine
-// stamps back over them from the sheet at 0x2c000 and 0x2c0e0.  The text and
-// the flow are here; the marching is not.
+// The parade: each scene sets up as many as twenty actors at +0x25c, 0x118
+// bytes apiece, through FUN_00411340, and 00410020 walks them with
+// FUN_00410200 and draws them with FUN_004104d0.  An actor is a sprite, a
+// place, a step and a little program - the scripts FUN_00411340 builds on its
+// own stack, which tools/walk_scripts.py recovers - and the whole of it is the
+// player's own soldiers marching across the garden behind the gate towers.
 #ifndef ENDSTAGE_H
 #define ENDSTAGE_H
 
@@ -65,14 +65,35 @@ typedef struct {
     unsigned rank;                  // DAT_00436a04, 0041f6c0's player class
 } Campaign;
 
+// One of the parade.  The fields are 00410200's and 004104d0's, by the
+// offsets they use into the 0x118 bytes an actor has.
+#define END_ACTORS 20
+#define END_SCRIPTS 14                 // FUN_00411340 builds fourteen
+#define END_SCRIPT_MAX 24
+
 typedef struct {
-    int up;                         // is the window showing
+    int alive;                      // +0x258
+    int wait;                       // +0x25c, -1 stops for ever
+    int x, y;                       // +0x260, +0x264
+    unsigned char command;          // +0x268, what it is doing now
+    int pc;                         // +0x368, a word at a time
+    signed char step;               // +0x369
+    unsigned char sprite;           // +0x36a, the base without the facing
+    signed char facing;             // +0x36b
+    unsigned char side;             // +0x36c
+    unsigned short script[END_SCRIPT_MAX];
+} EndActor;
+
+typedef struct {
+    int up;
     int mode;                       // EndStageMode
     int tick;                       // +0x238, one per WM_TIMER
     int stage;                      // DAT_0043450c when it opened
     char name[STAGE_NAME];          // FUN_0041a650's title for that stage
     StageScore score;               // frozen when it opened
     int against;                    // DAT_00436438: this run less the record
+    EndActor actor[END_ACTORS];
+    int hold;                       // +0x5838: nobody moves while this counts
 } EndStage;
 
 void campaignClear(Campaign *campaign);
@@ -99,8 +120,9 @@ int campaignRecord(Campaign *campaign, int stage, const StageScore *score,
 int endStageMode(int outcome, const StageScore *score, const Campaign *campaign,
                  int stage, int quest);
 
+// `side` is the player's own country, whose soldiers march.
 void endStageOpen(EndStage *end, int mode, const StageScore *score, int stage,
-                  const char *name, int against);
+                  const char *name, int against, unsigned side);
 void endStageStep(EndStage *end);
 // Answers non-zero if the window was up and has now been dismissed.
 int endStageDismiss(EndStage *end);
