@@ -72,11 +72,25 @@ static void drawBox(Surface *out, int x, int y, int w, unsigned char ink) {
     }
 }
 
+static int drawUpTo(Surface *out, int x, int y, int right, unsigned char ink,
+                    const char *text);
+
 int fontDrawText(Surface *out, int x, int y, unsigned char ink,
                  const char *text) {
+    return drawUpTo(out, x, y, 1 << 24, ink, text);
+}
+
+int fontDrawTextClipped(Surface *out, int x, int y, int right,
+                        unsigned char ink, const char *text) {
+    return drawUpTo(out, x, y, right, ink, text);
+}
+
+static int drawUpTo(Surface *out, int x, int y, int right, unsigned char ink,
+                    const char *text) {
     int at = x;
     for (const unsigned char *p = (const unsigned char *)text; *p;) {
         if (isLead(p[0]) && p[1]) {
+            if (at + 16 > right) break;
             const unsigned code = ((unsigned)p[0] << 8) | p[1];
             const unsigned char *glyph = wideGlyph(code);
             if (glyph) {
@@ -93,6 +107,7 @@ int fontDrawText(Surface *out, int x, int y, unsigned char ink,
             at += 16;
             p += 2;
         } else {
+            if (at + 8 > right) break;
             const unsigned char *glyph = kFontHalf[p[0]];
             for (int row = 0; row < 16; row++)
                 for (int col = 0; col < 8; col++)

@@ -64,6 +64,7 @@ int g_showTool = 1;             // Hide Tool Bar
 #define COUNTRY_WINDOW 3
 int g_progressY = -1;           // where the Progress Window was last drawn
 int g_unitShown = 0x40;         // the Unit Window's own +0x394
+int g_graphScroll = 0;          // how far the Graph Window is scrolled
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
 // 0041f4c0's own window and the record behind it.  The campaign has to outlive
@@ -324,6 +325,33 @@ static int windowTop(int which) {
 static int graphHeight(int top) {
     const int left = g_viewH - top - 4;
     return left < GRAPH_MIN_H ? GRAPH_MIN_H : left;
+}
+
+// Where the Graph Window is drawn on screen, or nought when it is not up.
+// Wider than the column: the port's font is eight pixels where the original's
+// is six, so the same lines want the extra room.
+#define GRAPH_WIN_W 264
+
+static int graphRect(int *x, int *y, int *w, int *h) {
+    if (!g_windowShown[2]) return 0;
+    const int top = windowTop(2);
+    if (top < 0) return 0;
+    *w = GRAPH_WIN_W < g_viewW ? GRAPH_WIN_W : g_viewW;
+    *x = g_viewW - *w;
+    *y = UI_CHROME_H + top;
+    *h = graphHeight(top);
+    if (*y + *h > g_viewH + UI_CHROME_H) *h = g_viewH + UI_CHROME_H - *y;
+    return *h > 32;
+}
+
+// The wheel over it, which is what the original's scroll bar is for.
+static void graphScrollBy(int lines) {
+    int x, y, w, h;
+    if (!graphRect(&x, &y, &w, &h)) return;
+    const int over = panelGraphLines() - panelGraphRows(h);
+    g_graphScroll += lines;
+    if (g_graphScroll > over) g_graphScroll = over;
+    if (g_graphScroll < 0) g_graphScroll = 0;
 }
 
 // A dashed white box, which is what a rubber band looks like everywhere.
@@ -689,10 +717,8 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
                                 g_frame, g_sim.shortOfFunds, 4, at);
             g_progressY = at;
         }
-        at = windowTop(2);
-        if (at >= 0)
-            panelGraphWindow(&g_side, &g_game, 4, at, PANEL_SIDE,
-                             graphHeight(at));
+        // The Graph Window is drawn after the board and the column, over
+        // the two of them: see graphRect.
         for (int f = 0; f < 4; f++) {
             at = windowTop(COUNTRY_WINDOW + f);
             if (at >= 0)
@@ -707,6 +733,21 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         if (g_boardW < g_viewW)
             memcpy(row + g_boardW, g_sideIdx + (size_t)y * PANEL_COL,
                    (size_t)(g_viewW - g_boardW));
+    }
+
+    // The Graph Window, over the board's right-hand edge.
+    //
+    // The original's is 176 by 176 like the other two, and its seventeen
+    // lines fit in it because it writes them in a fixed-pitch font of height
+    // ten (004071c3's CreateFontA).  This port has one font, the game's own
+    // eight by sixteen, so the same sentences need about two hundred and
+    // forty pixels - so the window is that wide and hangs over the board,
+    // which is where the original's windows sit anyway.
+    {
+        int gx, gy, gw, gh;
+        if (graphRect(&gx, &gy, &gw, &gh))
+            panelGraphWindow(&g_screen, &g_game, gx, gy, gw, gh,
+                             g_graphScroll);
     }
 
     // The rectangle a left-drag gathers an army with.  The page used to draw
@@ -776,6 +817,16 @@ EMSCRIPTEN_KEEPALIVE void lm_scroll(int dx, int dy) {
     g_viewX += dx * step;
     g_viewY += dy * step;
     clampView();
+}
+
+// The wheel over the Graph Window scrolls its lines instead of the board;
+// answers non-zero when it took the wheel, so the page knows not to scroll.
+EMSCRIPTEN_KEEPALIVE int lm_graph_wheel(int px, int py, int lines) {
+    int x, y, w, h;
+    if (!graphRect(&x, &y, &w, &h)) return 0;
+    if (px < x || px >= x + w || py < y || py >= y + h) return 0;
+    graphScrollBy(lines);
+    return 1;
 }
 
 // Scroll by pixels rather than whole cells, for dragging and the wheel.

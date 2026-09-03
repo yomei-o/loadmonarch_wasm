@@ -135,4 +135,32 @@ int rsrcString(const Pe *pe, unsigned id, char *out, int size);
 int rsrcHelpPages(const Pe *pe, const char **out, int max);
 int rsrcHelpTopics(const Pe *pe, const char **out, int max);
 
+/* ------------------------------------------------------- the Graph Window */
+
+// 00404e40 writes seventeen sentences for the Graph Window with wsprintf, out
+// of six formats in .data - four numbers for each of the four countries, and
+// one line for the neutral one.  They are in neither the resources nor the
+// game's data files, and the two releases put them in different places, so
+// they are found the way the help pages are: by shape.
+//
+// The one string that carries both `%s` and `%3.2f` is the area line, and its
+// `push` is inside the routine; every other format the routine pushes is one
+// of the six.  What tells them apart is what each carries: `%3.2f` is the
+// area, no number at all is the line a fallen country gets, and the four with
+// `%d` come in this order the first time they are pushed - which is the order
+// the two loops and the tail use them in, in both releases even though the
+// Japanese build shares one push the English one repeats.
+enum {
+    RSRC_GRAPH_AREA,        // "%s Area Occupied %3.2f"        Faction +0x34
+    RSRC_GRAPH_FUNDS,       // "%s Funds %d"                   Faction +0x18
+    RSRC_GRAPH_LEADER,      // "%s Leader Strength %d"         its leader's +8
+    RSRC_GRAPH_UNITS,       // "%s Unit Totals %d"             Faction +0x10
+    RSRC_GRAPH_ALL,         // "%s Unit and Base Totals %d"    the neutral's
+    RSRC_GRAPH_DEFEATED,    // "%s Defeated"
+    RSRC_GRAPH_LINES
+};
+
+// Answers how many of the six were found - six, or none.
+int rsrcGraphLines(const Pe *pe, const char **out, int max);
+
 #endif

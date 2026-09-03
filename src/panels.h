@@ -62,8 +62,20 @@ void panelCountryWindow(Surface *out, const GameState *game, unsigned faction,
 // the rate the tax would settle at if nobody touched it.
 int panelAutoTaxRate(const GameState *game, unsigned faction);
 
-// 00404e40's eight lines a column, in its own words.
+// The Graph Window: the seventeen lines 00404e40 writes, in the release's
+// own wording, as many as the window is tall enough for, from `scroll`.  The
+// original's is 176 by 176 with a Windows scroll bar in it (00404316 makes
+// room for one and the program drives it with SetScrollInfo), so the lines
+// are longer than it is wide in both releases and it shows a few at a time.
+#define GRAPH_LINES 17
+#define GRAPH_ROW_H 16          // 00404d53 steps its lines by 0x10
+#define GRAPH_BAR_W 16
 void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
-                      int w, int h);
+                      int w, int h, int scroll);
+
+// How many of the seventeen a window that tall shows, and how many there are,
+// so the caller can bound its own scroll.
+int panelGraphRows(int h);
+int panelGraphLines(void);
 
 #endif

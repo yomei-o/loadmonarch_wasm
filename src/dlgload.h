@@ -39,4 +39,10 @@ int dlgHelpPages(void);
 const char *dlgHelpPage(int page);
 const char *dlgHelpTopic(int topic);
 
+// The Graph Window's six formats, in RSRC_GRAPH_* order, out of whichever
+// release was loaded - and an empty string for each until one is, or when the
+// font cannot draw them.  src/panels.c falls back to the English release's
+// wording, transcribed, when that happens.
+const char *dlgGraphLine(int which);
+
 #endif

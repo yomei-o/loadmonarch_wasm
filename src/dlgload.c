@@ -142,6 +142,24 @@ const char *dlgHelpTopic(int topic) {
     return topic >= 0 && topic < RSRC_HELP_TOPICS ? g_topic[topic] : "";
 }
 
+/* ---------------------------------------------------------- graph window */
+
+static char g_graph[RSRC_GRAPH_LINES][64];
+
+const char *dlgGraphLine(int which) {
+    return which >= 0 && which < RSRC_GRAPH_LINES ? g_graph[which] : "";
+}
+
+static void loadGraph(const Pe *pe) {
+    for (int i = 0; i < RSRC_GRAPH_LINES; i++) g_graph[i][0] = 0;
+    const char *line[RSRC_GRAPH_LINES];
+    if (rsrcGraphLines(pe, line, RSRC_GRAPH_LINES) < RSRC_GRAPH_LINES) return;
+    for (int i = 0; i < RSRC_GRAPH_LINES; i++)
+        if (!fontCanDraw(line[i], NULL)) return;    // all of it or none
+    for (int i = 0; i < RSRC_GRAPH_LINES; i++)
+        snprintf(g_graph[i], sizeof g_graph[i], "%s", line[i]);
+}
+
 static void loadHelp(const Pe *pe) {
     g_pages = 0;
     const char *page[RSRC_HELP_PAGES];
@@ -170,6 +188,7 @@ int dlgLoadFromHost(const Host *host) {
     static Pe pe;
     if (!peOpen(&pe, image, got)) return 0;
     loadHelp(&pe);
+    loadGraph(&pe);
 
     int done = 0;
     for (unsigned i = 0; i < DLG_LOADED_MAX; i++) {

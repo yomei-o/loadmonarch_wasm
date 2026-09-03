@@ -13,7 +13,9 @@
 // and the feel wrong.
 #include "panels.h"
 
+#include "dlgload.h"
 #include "font.h"
+#include "rsrc.h"
 #include "ui.h"
 
 #include <stdio.h>
@@ -413,10 +415,144 @@ void panelCountryWindow(Surface *out, const GameState *game, unsigned faction,
     }
 }
 
-// 00404e40's own lines, in its own words and its own order: two columns of
-// eight, a country to every pair of rows, and a total under them.
+// The seventeen lines 00404e40 writes, in the order it writes them: for each
+// of the four countries its area and then its funds, then for each of them
+// its leader's strength and then its total - both of those replaced by the
+// fallen line when the country is out - and last the neutral country's own
+// total.  The wording is the release's own (src/dlgload.c reads the six
+// formats out of .data); these are the English release's, transcribed from
+// 0x432088, 0x4320a4, 0x4320b8, 0x4320d0, 0x4320dc and 0x4320f4, for an
+// archive whose executable will not read.
+static const char *kGraphFallback[RSRC_GRAPH_LINES] = {
+    "%s Area Occupied %3.2f",
+    "%s Funds %d",
+    "%s Leader Strength %d",
+    "%s Unit Totals %d",
+    "%s Unit and Base Totals %d",
+    "%s Defeated",
+};
+
+static const char *graphFormat(int which) {
+    const char *own = dlgGraphLine(which);
+    return own && *own ? own : kGraphFallback[which];
+}
+
+// One of the seventeen.  `line` comes back empty for an index past the end.
+static void graphLine(char *line, int size, const GameState *game, int i) {
+    line[0] = 0;
+    if (i < 0 || i >= GRAPH_LINES) return;
+    if (i == GRAPH_LINES - 1) {
+        // 00404f9a: faction four's +0x10 and its name at DS:0x435b75.
+        const Faction *wild = &game->factions[4];
+        const char *name = worldCountryName(&game->world, 4);
+        snprintf(line, (size_t)size,
+                 graphFormat(wild->strength ? RSRC_GRAPH_ALL
+                                            : RSRC_GRAPH_DEFEATED),
+                 name, wild->strength);
+        return;
+    }
+    const unsigned f = (unsigned)((i % 8) / 2);
+    if (f >= PLAYABLE_FACTIONS) return;
+    const char *name = worldCountryName(&game->world, f);
+    const Faction *c = &game->factions[f];
+    if (i < 8) {
+        // 00404e61's loop: the area as a fraction, then the purse.  Neither
+        // is dropped when a country falls.
+        if ((i & 1) == 0)
+            snprintf(line, (size_t)size, graphFormat(RSRC_GRAPH_AREA),
+                     name, (double)c->area);
+        else
+            snprintf(line, (size_t)size, graphFormat(RSRC_GRAPH_FUNDS),
+                     name, c->funds);
+        return;
+    }
+    // 00404ef4's loop: the leader's own strength and the country's total, and
+    // the fallen line in place of both once +0x04 has bit 6 set.
+    if (c->flags & 0x40u) {
+        snprintf(line, (size_t)size, graphFormat(RSRC_GRAPH_DEFEATED), name);
+        return;
+    }
+    if ((i & 1) == 0) {
+        const unsigned leader = c->at0c < ENTITY_COUNT
+            ? game->entities[c->at0c].at08 : 0u;
+        snprintf(line, (size_t)size, graphFormat(RSRC_GRAPH_LEADER),
+                 name, leader);
+    } else {
+        snprintf(line, (size_t)size, graphFormat(RSRC_GRAPH_UNITS),
+                 name, c->strength);
+    }
+}
+
+int panelGraphLines(void) { return GRAPH_LINES; }
+
+int panelGraphRows(int h) {
+    const int rows = (h - 8) / GRAPH_ROW_H;
+    return rows < 1 ? 1 : rows;
+}
+
+// A rectangle of one colour, bounded to the surface.  dlg.c has its own; the
+// two do not share one because a panel is not a dialog.
+static void fillRect(Surface *out, int x, int y, int w, int h,
+                     unsigned char ink) {
+    for (int j = 0; j < h; j++) {
+        const int py = y + j;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int i = 0; i < w; i++) {
+            const int px = x + i;
+            if (px >= 0 && px < out->width) row[px] = ink;
+        }
+    }
+}
+
+// The bar down the right: a trough with a thumb in it, in the same raised and
+// sunken style dlg.c gives the game's own widgets.  The window really has a
+// Windows scroll bar - 00404316 makes room for one with GetSystemMetrics and
+// the program calls SetScrollInfo on it - so what is here is the port's own
+// drawing of one, arrows and all, rather than a reading of anything.
+static void scrollBar(Surface *out, int x, int y, int h, int scroll,
+                      int rows) {
+    const int w = GRAPH_BAR_W;
+    for (int j = 0; j < h; j++) {
+        const int py = y + j;
+        if (py < 0 || py >= out->height) continue;
+        unsigned char *row = out->pixels + (size_t)py * out->width;
+        for (int i = 0; i < w; i++) {
+            const int px = x + i;
+            if (px >= 0 && px < out->width)
+                row[px] = (unsigned char)UI_GREY_TEXT;
+        }
+    }
+    // The two arrow buttons, and a triangle in each.
+    for (int end = 0; end < 2; end++) {
+        const int by = end ? y + h - w : y;
+        fillRect(out, x, by, w, w, (unsigned char)UI_FACE);
+        fillRect(out, x, by, w, 1, (unsigned char)UI_LIGHT);
+        fillRect(out, x, by, 1, w, (unsigned char)UI_LIGHT);
+        fillRect(out, x, by + w - 1, w, 1, (unsigned char)UI_SHADOW);
+        fillRect(out, x + w - 1, by, 1, w, (unsigned char)UI_SHADOW);
+        for (int k = 0; k < 4; k++) {
+            const int ry = end ? by + 5 + k : by + 10 - k;
+            fillRect(out, x + 4 + k, ry, (4 - k) * 2, 1,
+                     (unsigned char)UI_DARK);
+        }
+    }
+    // And the thumb, as far down the trough as the scroll has gone.
+    const int span = h - 2 * w;
+    const int over = GRAPH_LINES - rows;
+    if (span < 8 || over <= 0) return;
+    int thumb = span * rows / GRAPH_LINES;
+    if (thumb < 8) thumb = 8;
+    const int at = y + w + (span - thumb) * scroll / over;
+    fillRect(out, x, at, w, thumb, (unsigned char)UI_FACE);
+    fillRect(out, x, at, w, 1, (unsigned char)UI_LIGHT);
+    fillRect(out, x, at, 1, thumb, (unsigned char)UI_LIGHT);
+    fillRect(out, x, at + thumb - 1, w, 1, (unsigned char)UI_SHADOW);
+    fillRect(out, x + w - 1, at, 1, thumb, (unsigned char)UI_SHADOW);
+}
+
 void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
-                      int w, int h) {
+                      int w, int h, int scroll) {
     // No picture of its own, so it gets the plain window a dialog with no
     // controls would have.
     for (int j = 0; j < h; j++) {
@@ -429,55 +565,22 @@ void panelGraphWindow(Surface *out, const GameState *game, int x, int y,
         }
     }
 
-    // 00404e40 writes four things per country - "%s Area Occupied: %3.2f",
-    // "%s Funds: %d", "%s Leader Strength: %d" and "%s Unit and Base Totals:
-    // %d" - into a window the player sizes and drags, so it can afford two
-    // columns of full sentences.  This one lives in a column a hundred and
-    // seventy-six across, which is twenty-two characters of the half-width
-    // font, so the same four numbers go under each name as a row instead.
-    // The leader's strength is deliberately not part of the total, as in the
-    // original.
+    const int rows = panelGraphRows(h);
+    const int over = GRAPH_LINES - rows;
+    if (scroll < 0) scroll = 0;
+    if (scroll > (over > 0 ? over : 0)) scroll = over > 0 ? over : 0;
+
+    // 00404d37 draws its lines sixteen apart and stops when the window is
+    // full, which is what a scroll bar is for.
+    const int right = x + w - (over > 0 ? GRAPH_BAR_W : 0);
     char line[80];
-    unsigned total = 0;
-    int at = y + 4;
-    fontDrawText(out, x + 6, at, (unsigned char)UI_DARK,
-                 "Area%   Funds  Units");
-    at += 16;
-    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
-        if (at + 32 > y + h) break;                 // no room for another
-        const char *name = worldCountryName(&game->world, f);
-        const Faction *c = &game->factions[f];
-        const unsigned leader = c->at0c < ENTITY_COUNT
-            ? game->entities[c->at0c].at08 : 0u;
-        if (c->flags & 0x40) {
-            snprintf(line, sizeof line, "%s Defeated", name);
-            fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
-            at += 16;
-            continue;
-        }
-        snprintf(line, sizeof line, "%s (K %u)", name, leader);
-        fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
-        snprintf(line, sizeof line, "%2d.%02d %6u %6u", (int)c->area,
-                 (int)((c->area - (int)c->area) * 100.0f), c->funds,
-                 c->strength);
-        fontDrawText(out, x + 6, at + 16, (unsigned char)UI_DARK, line);
-        at += 34;
-        total += c->strength;
+    for (int r = 0; r < rows; r++) {
+        const int i = scroll + r;
+        if (i >= GRAPH_LINES) break;
+        graphLine(line, sizeof line, game, i);
+        if (!line[0]) continue;
+        fontDrawTextClipped(out, x + 4, y + 4 + r * GRAPH_ROW_H, right,
+                            (unsigned char)UI_DARK, line);
     }
-
-    // 00404e40's seventeenth line, which the port did not have: the neutral
-    // country's own total, out of faction four's +0x10 and its name at
-    // DS:0x435b75.  "%s Unit and Base Totals %d", or "%s Defeated" when there
-    // is nothing of it left.
-    if (at + 16 <= y + h) {
-        const Faction *wild = &game->factions[4];
-        const char *name = worldCountryName(&game->world, 4);
-        if (wild->strength == 0)
-            snprintf(line, sizeof line, "%s Defeated", name);
-        else
-            snprintf(line, sizeof line, "%s %u", name, wild->strength);
-        fontDrawText(out, x + 6, at, (unsigned char)UI_DARK, line);
-    }
-    (void)total;
-
+    if (over > 0) scrollBar(out, x + w - GRAPH_BAR_W, y, h, scroll, rows);
 }

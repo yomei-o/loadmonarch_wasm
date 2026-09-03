@@ -402,6 +402,87 @@ static int stringAt(const Pe *pe, unsigned off, int least) {
     return length >= least ? length : -1;
 }
 
+
+/* ------------------------------------------------------- the Graph Window */
+
+// Does this string carry `what` in it?
+static int carries(const char *s, const char *what) {
+    const int n = (int)strlen(what);
+    for (const char *p = s; *p; p++)
+        if (strncmp(p, what, (size_t)n) == 0) return 1;
+    return 0;
+}
+
+// A .data string this format table would accept: printable, NUL terminated,
+// and with a `%s` in it for the country's name.
+static const char *formatAt(const Pe *pe, unsigned va, unsigned dva,
+                            unsigned dfo, unsigned dsize) {
+    if (va < dva || va >= dva + dsize) return NULL;
+    const unsigned off = dfo + (va - dva);
+    const int length = stringAt(pe, off, 4);
+    if (length < 4 || length > 60) return NULL;
+    const char *s = (const char *)pe->image + off;
+    return carries(s, "%s") ? s : NULL;
+}
+
+int rsrcGraphLines(const Pe *pe, const char **out, int max) {
+    unsigned dva = 0, dfo = 0, dsize = 0;
+    if (max < RSRC_GRAPH_LINES) return 0;
+    if (!dataSection(pe, &dva, &dfo, &dsize)) return 0;
+
+    // The area line: the only format with both a name and a fraction in it.
+    // The Japanese release writes it as a quoted name, so the `%s` is not at
+    // the front of the string in either release.
+    const char *area = NULL;
+    unsigned areaVa = 0;
+    for (unsigned i = 0; i < dsize; i++) {
+        const char *s = formatAt(pe, dva + i, dva, dfo, dsize);
+        if (!s || !carries(s, "%3.2f")) continue;
+        area = s;
+        areaVa = dva + i;
+        break;
+    }
+    if (!area) return 0;
+
+    // Where the routine pushes it, and then every other format it pushes.
+    // The window is drawn by one routine, so a few hundred bytes either side
+    // of that push is the whole of it.
+    unsigned site = 0;
+    for (unsigned i = 0; i + 5 <= pe->size; i++)
+        if (pe->image[i] == 0x68 && rd32(pe->image + i + 1) == areaVa) {
+            site = i;
+            break;
+        }
+    if (!site) return 0;
+
+    const unsigned from = site > 0x400u ? site - 0x400u : 0;
+    const unsigned to = site + 0x400u < pe->size ? site + 0x400u : pe->size - 5;
+    const char *number[4] = {NULL, NULL, NULL, NULL};
+    const char *defeated = NULL;
+    int numbers = 0;
+    for (unsigned i = from; i <= to; i++) {
+        if (pe->image[i] != 0x68) continue;
+        const char *s = formatAt(pe, rd32(pe->image + i + 1), dva, dfo, dsize);
+        if (!s || s == area) continue;
+        if (carries(s, "%d")) {
+            int seen = 0;
+            for (int k = 0; k < numbers; k++) if (number[k] == s) seen = 1;
+            if (!seen && numbers < 4) number[numbers++] = s;
+        } else if (!defeated) {
+            defeated = s;
+        }
+    }
+    if (numbers < 4 || !defeated) return 0;
+
+    out[RSRC_GRAPH_AREA] = area;
+    out[RSRC_GRAPH_FUNDS] = number[0];
+    out[RSRC_GRAPH_LEADER] = number[1];
+    out[RSRC_GRAPH_UNITS] = number[2];
+    out[RSRC_GRAPH_ALL] = number[3];
+    out[RSRC_GRAPH_DEFEATED] = defeated;
+    return RSRC_GRAPH_LINES;
+}
+
 int rsrcHelpPages(const Pe *pe, const char **out, int max) {
     unsigned va = 0, fo = 0, size = 0;
     if (!dataSection(pe, &va, &fo, &size)) return 0;

@@ -30,6 +30,13 @@ int fontDrawText(Surface *out, int x, int y, unsigned char ink,
 int fontDrawTextRight(Surface *out, int x, int y, unsigned char ink,
                       const char *text);
 
+// The same, but no character is drawn that would reach past `right`.  The
+// Graph Window needs it: its lines are longer than the window is wide in both
+// releases, and the window they belong to clips them rather than letting them
+// run over what is beside it.
+int fontDrawTextClipped(Surface *out, int x, int y, int right,
+                        unsigned char ink, const char *text);
+
 // The palette index the interface sheet's own digits are drawn in, so a string
 // beside them is the same colour.  Answers 0xff if the sheet is not loaded.
 unsigned char fontInk(const World *world, UiFont font);

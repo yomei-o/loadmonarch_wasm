@@ -562,6 +562,13 @@ createLordMonarch().then(function (M) {
   });
   canvas.addEventListener('wheel', function (e) {
     if (!loaded) return;
+    // Over the Graph Window the wheel is its scroll bar, not the board's.
+    var at = viewPoint(e);
+    var step = e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : 0;
+    if (M._lm_graph_wheel && M._lm_graph_wheel(at[0], at[1], step)) {
+      e.preventDefault();
+      return;
+    }
     M._lm_scroll_by(e.shiftKey ? Math.round(e.deltaY) : 0,
                     e.shiftKey ? 0 : Math.round(e.deltaY));
     e.preventDefault();
