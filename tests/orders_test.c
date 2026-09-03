@@ -10,6 +10,7 @@
 
 #include "../src/sim.h"
 #include "../src/state.h"
+#include "../src/ui.h"
 #include "../src/world.h"
 
 static int failures;
@@ -51,6 +52,15 @@ static void board(GameState *state, Sim *sim, unsigned strength) {
     state->factions[0].at08[0] = 20;
     state->factions[0].at08[1] = 20;
     state->factions[0].at1e = 0x80;
+
+    // The order menu asks the name table for what to write in its rows, and
+    // a stage's own file is what carries those; this board has no stage, so
+    // the sixteen get stand-in names.  Without them the menu comes up with
+    // nothing in it, which is not what a player sees.
+    for (unsigned o = 0; o < 16; o++)
+        snprintf(state->world.names.text[NAME_ORDER + o], NAME_TEXT + 1,
+                 "order %u", o);
+    state->world.names.loaded = 1;
 
     simInit(sim, state);
     sim->humanFaction = 0;
@@ -271,6 +281,57 @@ int main(void) {
         expect("and the unit stayed where it was",
                state.entities[1].position[0] * 100 +
                state.entities[1].position[1], 20 * 100 + 20);
+    }
+
+    // The menu the page opens on the square, and the two clicks a player
+    // makes in it: the order, and then one of its tiers.  Everything above
+    // went through simOrderSelected directly; what this adds is the path
+    // through 00423940's own menu, which is the one the page clicks - and
+    // which no test covered while the page had it on the wrong mouse button.
+    board(&state, &sim, 8000);
+    {
+        static OrderMenu menu;
+        uiOrderInit(&menu);
+        expect("the soldier is chosen", simSelect(&sim, 1, 20, 20, 1), 1);
+        simAimSelection(&sim, 22, 20);
+        // 00423940 puts the menu where the pointer is, and the page hands it
+        // the pixel that was clicked.
+        const int px = 100, py = 60;
+        expect("the menu opens on the square",
+               uiOrderOpen(&menu, &state, 22, 20, px, py, 640, 480), 1);
+        expect("with orders in it", menu.count > 0, 1);
+        unsigned order = 0;
+        int strength = -1;
+        expect("a click on an order opens its tiers rather than ordering",
+               uiOrderClick(&menu, &state, px + 8, py + 4, &order, &strength),
+               0);
+        expect("and a click on a tier answers with the order",
+               uiOrderClick(&menu, &state, menu.subX + 8, menu.subY + 4,
+                            &order, &strength), 1);
+        expect("the tier is the first", strength, 0);
+        expect("the menu is gone", menu.open, 0);
+        expect("and the soldier takes it",
+               simOrderSelected(&sim, order, strength, 22, 20) >= 1, 1);
+        printf("  the menu gave order %u at tier %d\n", order, strength);
+    }
+
+    // A click well away from it, or on its Cancel row, orders nothing.
+    board(&state, &sim, 8000);
+    {
+        static OrderMenu menu;
+        uiOrderInit(&menu);
+        simSelect(&sim, 1, 20, 20, 1);
+        uiOrderOpen(&menu, &state, 22, 20, 100, 60, 640, 480);
+        unsigned order = 0;
+        int strength = -1;
+        expect("a click well away from it dismisses it",
+               uiOrderClick(&menu, &state, 400, 400, &order, &strength), -1);
+        expect("and it is closed", menu.open, 0);
+        uiOrderOpen(&menu, &state, 22, 20, 100, 60, 640, 480);
+        const int cancel = menu.y + 2 + menu.count * UI_ITEM_H + 2;
+        expect("so does the Cancel row",
+               uiOrderClick(&menu, &state, menu.x + 8, cancel, &order,
+                            &strength), -1);
     }
 
     printf(failures ? "%d order check(s) failed\n" : "order checks ok\n",

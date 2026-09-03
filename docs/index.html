@@ -68,6 +68,7 @@
   #drop h1 { font-size: 20px; margin: 0 0 6px; color: var(--gold); letter-spacing: 1px; }
   #drop p { color: var(--muted); margin: 8px 0; }
   #drop code { color: var(--ink); }
+  #how { color: var(--muted); font-size: 12px; margin-left: 4px; }
   #note { color: var(--gold); }
 </style>
 </head>
@@ -87,6 +88,8 @@
   <label class="filebtn">zip を開く<input type="file" id="file" accept=".zip" hidden></label>
   <span class="sep"></span>
   <button id="cashBtn" disabled title="原作にはありません。試すため用">金MAX</button>
+  <!-- The game's own quick rules, third page: the left button does all of it. -->
+  <span id="how">部隊を左クリックで選ぶ → 行き先を左クリック → 出た一覧から命令を選ぶ</span>
   <span id="note"></span>
 </header>
 <main>
@@ -104,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903212414"></script>
+<script src="loadmonarch.js?v=20260903213151"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -121,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903212414';
+  var BUILD = '20260903213151';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -507,12 +510,28 @@ createLordMonarch().then(function (M) {
     canvas.setPointerCapture(e.pointerId);
   });
 
-  // The left button chooses, the right button orders:
+  // The left button does all of it, which is what the game's own quick rules
+  // say (the third page, DS7E_WIN.EXE 0x432eb4):
+  //
+  //   "First move the cursor to a unit and click the left mouse button.  An
+  //    exclamation mark (!) will appear at the top of the unit.  Choose it's
+  //    destination by moving the cursor and clicking the left mouse button.
+  //    A circle "o" shows areas where the unit can go and an "x" shows where
+  //    it cannot go.  When a circle is shown, a list of orders that can be
+  //    given will appear.  Choose the order by clicking the left mouse
+  //    button."
+  //
+  // So:
   //
   //   left drag over the map     gather every unit of yours inside it
   //   left click on a unit       choose that one
-  //   right click                the order menu on that square
+  //   left click anywhere else   aim what is chosen there, and if any of them
+  //                              can get there, the order menu on that square
   //   right drag                 scroll the map, which is 00424a10's own job
+  //
+  // The order menu used to be on the right button, which is nowhere in the
+  // game and left it unplayable: a right click that did not move opened it,
+  // and a player following the rules above never saw a menu at all.
   //
   // Both ways of choosing are deliberate, so both pick a unit up even when it
   // already carries an order - 00409e90 rather than 00409f10.  Shift adds to
@@ -536,8 +555,11 @@ createLordMonarch().then(function (M) {
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_at(p[0], p[1], 1);
-    } else if (!e.shiftKey) {
-      M._lm_clear_selection();
+    } else if (M._lm_selected() > 0) {
+      // The destination: the circle first, and the orders only where the
+      // circle is - which is what lm_aim answers.
+      if (M._lm_aim(p[0], p[1])) M._lm_menu_open(p[0], p[1]);
+      else say('そこへは行けません');
     }
     dragFrom = null;
   }
@@ -545,11 +567,7 @@ createLordMonarch().then(function (M) {
   canvas.addEventListener('pointerup', function (e) {
     if (sliding) { sliding = false; e.preventDefault(); return; }
     if (panning) {
-      // A right button that never moved is an order, not a scroll.  00423940
-      // puts the menu up where the pointer is and offers only what that
-      // square accepts - click water and the one thing on it is a bridge.
-      if (!panning.moved && M._lm_selected() > 0)
-        M._lm_menu_open(panning.from[0], panning.from[1]);
+      // The right button only drags the map, which is all 00424a10 has it do.
       panning = null;
       e.preventDefault();
       return;
