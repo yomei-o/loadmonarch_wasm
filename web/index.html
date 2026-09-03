@@ -332,6 +332,7 @@ createLordMonarch().then(function (M) {
   //   4  the next stage is on the board already
   //   5  the certificate is up, and one of the above follows it
   function afterStage(went) {
+    if (!went) return;              // the certificate, looked at on its own
     if (went === 5) {
       say('昇格しました。表彰状をクリックで閉じます。');
       return;

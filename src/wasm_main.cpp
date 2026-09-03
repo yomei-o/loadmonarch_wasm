@@ -1536,7 +1536,7 @@ EMSCRIPTEN_KEEPALIVE int lm_dialog_request(void) {
     if (g_dlg.showAwards) {
         g_dlg.showAwards = 0;
         openAwards(g_campaign.rank);
-        g_afterAwards = 1;              // nothing waiting behind it
+        g_afterAwards = 0;              // nothing waiting behind it
         return 2;
     }
     if (g_dlg.showEnding) {
@@ -1559,7 +1559,9 @@ EMSCRIPTEN_KEEPALIVE int lm_awards_click(void) {
         if (loadStage(g_stage + 1)) return 4;
         return 1;
     }
-    return what ? what : 1;
+    // Nought where nothing was waiting - the certificate opened from Load
+    // Quest Map's own Awards button rather than at the end of a stage.
+    return what;
 }
 EMSCRIPTEN_KEEPALIVE int lm_campaign_rank(void) {
     return (int)g_campaign.rank;

@@ -104,7 +104,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903183150"></script>
+<script src="loadmonarch.js?v=20260903183331"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -121,7 +121,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903183150';
+  var BUILD = '20260903183331';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -332,6 +332,7 @@ createLordMonarch().then(function (M) {
   //   4  the next stage is on the board already
   //   5  the certificate is up, and one of the above follows it
   function afterStage(went) {
+    if (!went) return;              // the certificate, looked at on its own
     if (went === 5) {
       say('昇格しました。表彰状をクリックで閉じます。');
       return;
