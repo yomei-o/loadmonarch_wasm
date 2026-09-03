@@ -594,6 +594,56 @@ void simCheckConquest(Sim *sim) {
 // The original also refuses to end while any cell still carries something in
 // +0x14 - the field the cursor is parked in - which is not understood and is
 // left out here.
+// 0041aa30 and 0041aaf0, with 0041f4c0's arithmetic over the two.
+void simStageScore(const Sim *sim, StageScore *out) {
+    const GameState *state = sim->state;
+    memset(out, 0, sizeof *out);
+
+    // The winner is the first country not knocked out, which is what
+    // 0041f4c0 walks the four for.
+    out->winner = 0;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++)
+        if ((state->factions[f].flags & 0x40) == 0) {
+            out->winner = f;
+            break;
+        }
+
+    // 0041aa30: the area half.
+    out->claimable = stateClaimableCells(state);
+    out->held = stateFactionCells(state, out->winner);
+    const int scaled = out->claimable
+        ? (int)((float)out->held * 10000.0f / (float)out->claimable) : 0;
+    out->areaPercent = (float)scaled * 0.01f;
+    // The same number as a whole per cent.  Both come off one float in the
+    // original - one scaled by a hundredth and one divided by a hundred - so
+    // the penalty is the share of the board rounded down.
+    out->penalty = (unsigned)(scaled / 100);
+
+    // 0041aaf0: the battle half.  The winner's own losses against everybody
+    // else's, saturating rather than wrapping the way the original does.
+    out->yourLosses = state->factions[out->winner].at14;
+    for (unsigned f = 0; f < PLAYABLE_FACTIONS; f++) {
+        if (f == out->winner) continue;
+        const unsigned was = out->enemyLosses;
+        out->enemyLosses += state->factions[f].at14;
+        if (out->enemyLosses < was) out->enemyLosses = 0xffffffffu;
+    }
+    out->battlePercent = out->yourLosses
+        ? (float)out->enemyLosses / (float)out->yourLosses * 100.0f
+        : 0.0f;
+
+    out->daysLeft = sim->countdown;
+    // A bonus only while there is time left, and only for killing more than
+    // you lost - a hundred per cent is even.  Five hundred days is the cap.
+    if (out->daysLeft && out->battlePercent > 100.0f) {
+        out->bonus = (unsigned)out->battlePercent;
+        if (out->bonus > 500u) out->bonus = 500u;
+    }
+
+    out->remaining = out->daysLeft
+        ? (int)out->daysLeft - (int)out->penalty + (int)out->bonus : 0;
+}
+
 int simStageOutcome(Sim *sim) {
     const GameState *state = sim->state;
     if (sim->humanFaction < PLAYABLE_FACTIONS &&
@@ -605,6 +655,11 @@ int simStageOutcome(Sim *sim) {
         const unsigned flags = state->factions[f].flags;
         if ((flags & 0x40) && (flags & 1) && (flags & 0x10)) out++;
     }
+    // 0041f4c0 asks one thing more before it calls a stage over: that no cell
+    // is wearing an overlay, which is how it waits for the last marker to
+    // finish animating.  This port cannot use that test, because its cursor
+    // follows the mouse and parks an overlay wherever the pointer is - the
+    // stage would never end while anyone was looking at the board.
     return out >= 3 ? 1 : 0;
 }
 

@@ -304,14 +304,49 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
         break;
     }
     case DLG_LOAD_QUEST_MAP: {
-        // The map name and the count are the two the port can honestly fill.
         if (r->dlg.listSel >= 0 && r->dlg.listSel < r->dlg.items[0] &&
             dlgControlRect(&r->dlg, 1039, &x, &y, &w, &h))
             fontDrawText(out, x, y, (unsigned char)UI_DARK,
                          r->dlg.item[0][r->dlg.listSel]);
-        if (dlgControlRect(&r->dlg, 1051, &x, &y, &w, &h)) {
-            char n[16];
-            snprintf(n, sizeof n, "%d", r->stageCount);
+
+        // What the stage on the board is worth so far, which is what 0041aa30
+        // and 0041aaf0 work out when it ends.  Before this the whole panel
+        // read "---"; now it reads, and the numbers move as the war does.
+        StageScore score;
+        simStageScore(r->sim, &score);
+        char n[24];
+        static const struct { int id; int which; } slot[] = {
+            {1051, 0},          // Maps
+            {1181, 1}, {1180, 2}, {1182, 3}, {1186, 4},     // Area
+            {1183, 5}, {1184, 6}, {1185, 7}, {1187, 8},     // Battle
+            {1115, 9}, {1118, 10},                          // Results
+        };
+        for (unsigned i = 0; i < sizeof slot / sizeof slot[0]; i++) {
+            if (!dlgControlRect(&r->dlg, slot[i].id, &x, &y, &w, &h)) continue;
+            switch (slot[i].which) {
+            case 0: snprintf(n, sizeof n, "%d", r->stageCount); break;
+            case 1: snprintf(n, sizeof n, "%u", score.held); break;
+            case 2: snprintf(n, sizeof n, "%u",
+                             score.claimable - score.held); break;
+            case 3: snprintf(n, sizeof n, "%d.%02d", (int)score.areaPercent,
+                             (int)((score.areaPercent -
+                                    (int)score.areaPercent) * 100.0f)); break;
+            case 4: snprintf(n, sizeof n, "%u", score.penalty); break;
+            case 5: snprintf(n, sizeof n, "%u", score.yourLosses); break;
+            case 6: snprintf(n, sizeof n, "%u", score.enemyLosses); break;
+            case 7: snprintf(n, sizeof n, "%d", (int)score.battlePercent);
+                    break;
+            case 8: snprintf(n, sizeof n, "%u", score.bonus); break;
+            case 9: snprintf(n, sizeof n, "%d", score.remaining); break;
+            default: snprintf(n, sizeof n, "%u", score.daysLeft); break;
+            }
+            // The resource fills these with "---" and the port has a number
+            // for them, so the slot is cleared before the number goes in.
+            for (int j = 0; j < 16 && y + j < out->height; j++) {
+                unsigned char *row = out->pixels + (size_t)(y + j) * out->width;
+                for (int i = 0; i < w && x + i < out->width; i++)
+                    if (x + i >= 0) row[x + i] = (unsigned char)UI_FACE;
+            }
             fontDrawText(out, x, y, (unsigned char)UI_DARK, n);
         }
         break;

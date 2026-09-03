@@ -138,6 +138,34 @@ void simConquerFaction(Sim *sim, unsigned faction);
 void simCheckConquest(Sim *sim);
 int simStageOutcome(Sim *sim);      // 0 playing, 1 the player won, 2 lost
 
+// What a finished stage was worth, which is what dialog 104's Information,
+// Area, Battle and Results groups list.  0041aa30 works out the area half and
+// 0041aaf0 the battle half; 0041f4c0 puts the two together.
+typedef struct {
+    unsigned winner;            // DAT_00436400: the first country still in
+
+    // Area: how much of the board there was to take and how much the winner
+    // holds, as a percentage to two decimals, and the same as a whole number,
+    // which is what comes off the days.
+    unsigned claimable;         // DAT_00436418
+    unsigned held;              // DAT_00436414
+    float areaPercent;          // DAT_0043641c
+    unsigned penalty;           // DAT_00436420
+
+    // Battle: what the winner lost against what everybody else lost.  Killing
+    // more than you lose is worth up to five hundred days, and only while
+    // there is time left on the clock.
+    unsigned yourLosses;        // DAT_00436424
+    unsigned enemyLosses;       // DAT_00436428
+    float battlePercent;        // DAT_0043642c
+    unsigned bonus;             // DAT_00436430, capped at 500
+
+    unsigned daysLeft;          // DAT_00436410
+    int remaining;              // DAT_00436404: daysLeft - penalty + bonus
+} StageScore;
+
+void simStageScore(const Sim *sim, StageScore *out);
+
 // 00421910.  A unit on one of its own country's settlements takes it up: the
 // cell's worth becomes the unit's, and the cell goes back to bare ground.
 int simAbsorbOwnCell(Sim *sim, unsigned slot);
