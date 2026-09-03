@@ -66,6 +66,11 @@ Notice g_notice;                // dialog 122, whichever of the two it is
 Campaign g_campaign;
 int g_endSaid;                  // the outcome this window was opened for
 int g_endRankUp;                // did the last click take the player up a class
+// DAT_004365cc.  The campaign, or one map on its own - which is the whole of
+// the difference between 0041f4c0's mode 0 and its mode 4: a single map files
+// no record and opens nothing.  A stage loaded any other way is the campaign's,
+// which is what the game starts in.
+int g_quest = 1;
 
 // What the page keeps for the dialogs: eight save slots and the three windows
 // it draws beside the board.  The slots live on the page (localStorage), so
@@ -435,7 +440,8 @@ static void endStageCheck(void) {
     simStageScore(&g_sim, &score);
     // The campaign is what the port plays: Load Single Map is a separate
     // command and the port does not have that mode yet, so `quest` is one.
-    const int mode = endStageMode(outcome, &score, &g_campaign, g_stage, 1);
+    const int mode = endStageMode(outcome, &score, &g_campaign, g_stage,
+                                  g_quest);
     int against = 0;
     if (mode != END_DEFEATED && mode != END_TIME_OVER)
         campaignRecord(&g_campaign, g_stage, &score, &against);
@@ -935,7 +941,10 @@ static int hostStageName(void *, int stage, char *out, int size) {
     snprintf(out, (size_t)size, "%s", name ? name : "");
     return 1;
 }
-static int hostLoadStage(void *, int stage) { return lm_load_stage(stage); }
+static int hostLoadStage(void *, int stage, int quest) {
+    g_quest = quest;
+    return lm_load_stage(stage);
+}
 
 static int hostGetWindow(void *, int which) {
     return which >= 0 && which < 7 ? g_windowShown[which] : 0;
@@ -1315,7 +1324,7 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
         loadStage(stage);
         return 2;
     }
-    if (mode == END_SINGLE_MAP) return 1;
+    if (mode == END_SINGLE_MAP) return 1;    // it scores nothing
 
     // 0041f6c0, which 0041f4c0 runs once the window is answered and the
     // player is the one still standing.
@@ -1334,6 +1343,8 @@ EMSCRIPTEN_KEEPALIVE int lm_end_click(void) {
     // at once.  This is the "go to the next stage" the window promises; it is
     // not the player who has to go and find it.
     if (g_campaign.reached == stage + 1) {
+        // FUN_004067c0 puts DAT_004365cc back to one on its way in.
+        g_quest = 1;
         if (loadStage(stage + 1)) return 4;
     }
     return 1;
@@ -1349,6 +1360,8 @@ EMSCRIPTEN_KEEPALIVE int lm_campaign_rank(void) {
 // 00436a00: how far the campaign has got, which is how many maps Load Quest
 // Map will open.  Zero until the first stage is cleared.
 EMSCRIPTEN_KEEPALIVE int lm_campaign_reached(void) { return g_campaign.reached; }
+// DAT_004365cc, so the page can say which of the two the player is in.
+EMSCRIPTEN_KEEPALIVE int lm_quest(void) { return g_quest; }
 // The record a stage was cleared with - 00436a0c's own number - or nought if
 // it never has been.
 EMSCRIPTEN_KEEPALIVE int lm_campaign_record(int stage) {

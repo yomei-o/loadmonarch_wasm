@@ -82,9 +82,12 @@ static int stageName(void *host, int stage, char *out, int size) {
     snprintf(out, (size_t)size, "Stage %d", stage + 1);
     return 1;
 }
-static int loadStage(void *host, int stage) {
+static int g_questWanted = -1;
+
+static int loadStage(void *host, int stage, int quest) {
     (void)host;
     g_stageLoaded = stage;
+    g_questWanted = quest;
     return 1;
 }
 static int getWindow(void *host, int w) {
@@ -194,6 +197,15 @@ int main(void) {
         pressRow(&r, 1002, 3);
         expect("Go! closed it", press(&r, 1040), 1);
         expect("and loaded that stage", g_stageLoaded, 3);
+        // DAT_004365cc: a single map is not the campaign, and 0041f4c0
+        // ends it in mode 4 - no record, and nowhere to go afterwards.
+        expect("as a single map, not the campaign", g_questWanted, 0);
+
+        dlgRunOpen(&r, DLG_LOAD_QUEST_MAP, 640, 480);
+        pressRow(&r, 1002, 2);
+        expect("the quest list loads one too", press(&r, 1040), 1);
+        expect("that stage", g_stageLoaded, 2);
+        expect("and this one is the campaign", g_questWanted, 1);
     }
 
     // 119: a country smaller than the player can be asked, a bigger one not.

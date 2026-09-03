@@ -489,7 +489,8 @@ int dlgRunClick(DlgRunner *r, int x, int y) {
     case DLG_LOAD_SINGLE_MAP:
     case DLG_LOAD_QUEST_MAP:
         if (id == 1040 && r->dlg.listSel >= 0 && r->host && r->host->loadStage)
-            r->host->loadStage(r->host->user, r->dlg.listSel);
+            r->host->loadStage(r->host->user, r->dlg.listSel,
+                               r->which == DLG_LOAD_QUEST_MAP);
         else if (id == 1189) {                  // Ending
             r->showEnding = 1;
             break;

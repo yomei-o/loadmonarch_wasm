@@ -56,7 +56,11 @@ typedef struct {
     // so it is the host that can name the stages.
     int (*stageName)(void *user, int stage, char *out, int size);
     int stages;
-    int (*loadStage)(void *user, int stage);
+    // `quest` is DAT_004365cc: one for Load Quest Map, which is the
+    // campaign, and nought for Load Single Map, which scores nothing and goes
+    // nowhere afterwards.  FUN_004067c0 puts it back to one when the campaign
+    // moves on by itself.
+    int (*loadStage)(void *user, int stage, int quest);
 
     // Whether a window is showing, and turning it on or off.  0 progress,
     // 1 unit, 2 graph.
