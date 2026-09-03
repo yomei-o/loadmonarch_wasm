@@ -106,6 +106,11 @@ void dlgEnable(Dialog *d, int id, int enabled);
 // SetDlgItemText: the caption this control shows from now on.  A null puts
 // the resource's own back.
 void dlgSetText(Dialog *d, int id, const char *text);
+
+// A paragraph laid into a rectangle the way a wrapped static gets it: broken
+// at the newlines it carries and at whatever fits, and at a character where
+// there is no space to break at.  The Help dialog's pages are drawn with it.
+void dlgWrapInto(Surface *out, const char *text, int x, int y, int w, int h);
 // And whether it is, which is what a test asks when the program is the one
 // that decides - 104's Awards button is disabled in the resource.
 int dlgEnabled(const Dialog *d, int id);

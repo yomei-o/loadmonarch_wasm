@@ -100,6 +100,18 @@ static void fillDefaultOrders(DlgRunner *r) {
                 (pending & 0x80) ? 2 : (pending & 0x40) ? 1 : 0);
 }
 
+// 00413f90 fills the Help combo with six topics of its own and then twelve
+// of the game's order names - eighteen, one a page, which is exactly how many
+// pages .data holds.
+#define HELP_TOPICS 6
+#define HELP_ORDERS 12
+
+// What the port had before it could read the game's own: four pages of its
+// own words, kept for an archive whose executable will not read.
+static const char *kHelpTopics[4] = {
+    "Game Screen", "Giving an order", "Roads and bridges", "Winning"
+};
+
 /* ------------------------------------------------------------------ open */
 
 // What a dialog is filled with when it opens: its lists, its values, and
@@ -210,14 +222,21 @@ static void dlgRunFurnish(DlgRunner *r, DlgWhich which) {
     }
     case DLG_HELP:
         // The resource leaves "Static" in 1123 - Visual Studio's own
-        // placeholder - and the program writes the page over it, which is
-        // what this is.
+        // placeholder - and 004145c0 writes the page over it.
         dlgSetText(&r->dlg, 1123, "");
         dlgClearItems(&r->dlg);
-        dlgAddItem(&r->dlg, "Game Screen");
-        dlgAddItem(&r->dlg, "Giving an order");
-        dlgAddItem(&r->dlg, "Roads and bridges");
-        dlgAddItem(&r->dlg, "Winning");
+        // 00413f90 fills the combo with six topics of its own and then twelve
+        // of the game's order names, which is eighteen - one a page.
+        if (dlgHelpPages() >= HELP_TOPICS + HELP_ORDERS) {
+            for (int i = 0; i < HELP_TOPICS; i++)
+                dlgAddItem(&r->dlg, dlgHelpTopic(i));
+            for (int i = 0; i < HELP_ORDERS; i++)
+                dlgAddItem(&r->dlg,
+                           worldOrderName(&r->sim->state->world, (unsigned)i));
+        } else {
+            // Nothing was read, so the port's own four stand.
+            for (int i = 0; i < 4; i++) dlgAddItem(&r->dlg, kHelpTopics[i]);
+        }
         dlgSetValue(&r->dlg, 1122, 0);
         dlgEnable(&r->dlg, 1120, 0);
         break;
@@ -387,8 +406,17 @@ void dlgRunDraw(Surface *out, const DlgRunner *r, const GameState *game) {
     }
     case DLG_HELP: {
         const int page = dlgValue(&r->dlg, 1122);
-        if (page >= 0 && page < 4 &&
+        const int loaded = dlgHelpPages();
+        if (page >= 0 && page < (loaded ? loaded : 4) &&
             dlgControlRect(&r->dlg, 1123, &x, &y, &w, &h)) {
+            // 004145c0 puts the page the combo has selected into the static.
+            // The game's own text is one paragraph a page with its own
+            // newlines in it, so it is wrapped to the control; the port's four
+            // are already broken into lines.
+            if (loaded) {
+                dlgWrapInto(out, dlgHelpPage(page), x, y, w, h);
+                break;
+            }
             const char *p = kHelpPages[page];
             char line[64];
             int at = 0, row = 0;

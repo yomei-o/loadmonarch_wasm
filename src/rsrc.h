@@ -112,4 +112,27 @@ int rsrcDialog(const Pe *pe, unsigned id, RsrcDialog *out);
 #define RSRC_TYPE_STRING 6
 int rsrcString(const Pe *pe, unsigned id, char *out, int size);
 
+/* ------------------------------------------------------------------- help */
+
+// The Help dialog's own text, which is not in the resources at all: it is
+// eighteen strings in .data with a table of pointers to them, and 004145c0
+// puts the one its combo has selected into the dialog's static.
+//
+// Neither the table nor the strings can be named by address, because the two
+// releases put them in different places - 0x4334d0 in the English one and
+// 0x433298 in the Japanese - so they are found instead.  What identifies the
+// table is its shape: eighteen consecutive dwords, every one pointing at a
+// string in .data of twenty characters or more.  Nothing else in .data looks
+// like that; the twenty class names next to it are far too short.
+#define RSRC_HELP_PAGES 18
+// And the six topics its combo lists before the twelve order names, which are
+// found by their own code: `push <string>` then `push 0x462` - the combo's id
+// - then the call that adds it.
+#define RSRC_HELP_TOPICS 6
+
+// Both answer how many they found, and hand back pointers into the image
+// itself, so the caller copies what it wants to keep.
+int rsrcHelpPages(const Pe *pe, const char **out, int max);
+int rsrcHelpTopics(const Pe *pe, const char **out, int max);
+
 #endif

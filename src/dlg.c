@@ -130,6 +130,11 @@ int dlgEnabled(const Dialog *d, int id) {
     return st ? st->enabled : 1;
 }
 
+void dlgWrapInto(Surface *out, const char *text, int x, int y, int w,
+                 int h) {
+    captionWrapped(out, x, y, w, h, text, (unsigned char)UI_DARK, 0);
+}
+
 void dlgSetText(Dialog *d, int id, const char *text) {
     DlgState *st = stateOf(d, id);
     if (!st) return;

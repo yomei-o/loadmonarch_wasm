@@ -89,6 +89,32 @@ int main(int argc, char **argv) {
         }
     }
 
+    /* ------------------------------------------------------------ help */
+
+    // The Help dialog's own text, which is in .data rather than in the
+    // resources: eighteen pages and the six topics its combo lists first.
+    {
+        const char *page[RSRC_HELP_PAGES + 4];
+        const char *topic[RSRC_HELP_TOPICS + 4];
+        const int pages = rsrcHelpPages(&pe, page,
+                                        (int)(sizeof page / sizeof page[0]));
+        const int topics = rsrcHelpTopics(&pe, topic,
+                                          (int)(sizeof topic / sizeof topic[0]));
+        if (pages != RSRC_HELP_PAGES) {
+            printf("FAIL  %d help pages, wanted %d\n", pages,
+                   RSRC_HELP_PAGES);
+            failures++;
+        }
+        if (topics != RSRC_HELP_TOPICS) {
+            printf("FAIL  %d help topics, wanted %d\n", topics,
+                   RSRC_HELP_TOPICS);
+            failures++;
+        }
+        if (pages > 0 && topics > 0)
+            printf("  help: %d pages, first topic \"%s\"\n", pages,
+                   topic[0]);
+    }
+
     /* -------------------------------------------------------- MENU 101 */
     static RsrcMenuBar bar;
     check(rsrcMenuBar(&pe, 101, &bar), "MENU 101 reads");

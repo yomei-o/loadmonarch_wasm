@@ -31,4 +31,12 @@ const DlgTemplate *dlgLoaded(DlgWhich which);
 // go and look: 0 where the port has no dialog of its own for it.
 unsigned dlgResourceId(DlgWhich which);
 
+// The Help dialog's own eighteen pages and the six topics its combo lists
+// before the order names, out of .data - see rsrc.h.  Empty strings until
+// dlgLoadFromHost has run, and then whatever the release says.  dlgHelpPages
+// answers how many there are.
+int dlgHelpPages(void);
+const char *dlgHelpPage(int page);
+const char *dlgHelpTopic(int topic);
+
 #endif

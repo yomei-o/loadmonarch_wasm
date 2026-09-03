@@ -12,6 +12,8 @@ Two sources, because the font is generated and the list has to be too:
 * what the two releases' MENU and DIALOG resources want, which is what
   tools/missing_glyphs.py works out
 * the stage names in MAP/NAME.TXT, which the Load Quest Map list shows
+* the Help dialog's eighteen pages, which are in .data rather than in the
+  resources - see rsrc.h
 
 So regenerating the font is:
 
@@ -78,6 +80,58 @@ def main():
                     if row_of.get(code, 0) > 0x28:
                         try:
                             want[code] = bytes(raw[i:i + 2]).decode('shift_jis')
+                        except UnicodeDecodeError:
+                            want[code] = ''
+                    i += 2
+                else:
+                    i += 1
+
+    # The Help dialog's pages, found the way src/rsrc.c finds them: the
+    # longest run of .data pointers to strings of twenty characters or more.
+    import struct
+    import zipfile
+    for archive in archives:
+        z = zipfile.ZipFile(archive)
+        d = z.read([n for n in z.namelist() if n.upper().endswith('.EXE')][0])
+        bva, bfo, size = 0x432000, 0x30400, 14848
+
+        def offset(va):
+            return bfo + (va - bva) if bva <= va < bva + size else None
+
+        def length(at):
+            end = d.find(b'\0', at)
+            return end - at if end >= 0 else -1
+
+        best, run, start = (0, 0), 0, 0
+        for f in range(bfo, bfo + size - 4, 4):
+            v = struct.unpack_from('<I', d, f)[0]
+            at = offset(v)
+            ok = False
+            if at:
+                n = length(at)
+                ok = (20 <= n < 1000 and
+                      all(c >= 0x20 or c in (9, 10, 13) for c in d[at:at + n]))
+            if ok:
+                if run == 0:
+                    start = f
+                run += 1
+                if run > best[0]:
+                    best = (run, start)
+            else:
+                run = 0
+        n, f = best
+        for k in range(n):
+            v = struct.unpack_from('<I', d, f + k * 4)[0]
+            at = offset(v)
+            page = d[at:d.find(b'\0', at)]
+            i = 0
+            while i < len(page) - 1:
+                lead = page[i]
+                if (0x81 <= lead <= 0x9f) or (0xe0 <= lead <= 0xfc):
+                    code = (lead << 8) | page[i + 1]
+                    if row_of.get(code, 0) > 0x28:
+                        try:
+                            want[code] = bytes(page[i:i + 2]).decode('shift_jis')
                         except UnicodeDecodeError:
                             want[code] = ''
                     i += 2

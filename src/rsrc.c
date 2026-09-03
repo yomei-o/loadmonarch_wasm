@@ -354,3 +354,93 @@ int rsrcString(const Pe *pe, unsigned id, char *out, int size) {
     }
     return 0;
 }
+
+/* ------------------------------------------------------------------- help */
+
+// Where .data is, which both searches walk.  Named by the section table
+// rather than by address, so a different build still finds it.
+static int dataSection(const Pe *pe, unsigned *vaOut, unsigned *foOut,
+                       unsigned *sizeOut) {
+    for (unsigned i = 0; i < pe->sections; i++) {
+        const unsigned char *e = pe->image + pe->sectionAt + i * 40u;
+        char name[9];
+        memcpy(name, e, 8);
+        name[8] = 0;
+        if (strcmp(name, ".data") != 0) continue;
+        const unsigned vsz = rd32(e + 8), rsz = rd32(e + 16);
+        *vaOut = pe->base + rd32(e + 12);
+        *foOut = rd32(e + 20);
+        *sizeOut = vsz < rsz ? vsz : rsz;
+        return 1;
+    }
+    return 0;
+}
+
+// The length of the string at this file offset, or -1 if it is not one: every
+// byte printable or a newline, and a terminator inside a thousand.
+static int stringAt(const Pe *pe, unsigned off, int least) {
+    unsigned i = off;
+    while (i < pe->size && i - off < 1000u) {
+        const unsigned char c = pe->image[i];
+        if (!c) break;
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') return -1;
+        i++;
+    }
+    if (i >= pe->size || pe->image[i]) return -1;
+    const int length = (int)(i - off);
+    return length >= least ? length : -1;
+}
+
+int rsrcHelpPages(const Pe *pe, const char **out, int max) {
+    unsigned va = 0, fo = 0, size = 0;
+    if (!dataSection(pe, &va, &fo, &size)) return 0;
+
+    unsigned bestAt = 0;
+    int best = 0, run = 0;
+    unsigned runAt = 0;
+    for (unsigned f = fo; f + 4 <= fo + size; f += 4) {
+        const unsigned v = rd32(pe->image + f);
+        int ok = 0;
+        if (v >= va && v < va + size)
+            ok = stringAt(pe, fo + (v - va), 20) > 0;
+        if (ok) {
+            if (!run) runAt = f;
+            run++;
+            if (run > best) { best = run; bestAt = runAt; }
+        } else {
+            run = 0;
+        }
+    }
+    if (best < RSRC_HELP_PAGES) return 0;
+    int n = 0;
+    for (int i = 0; i < best && n < max; i++) {
+        const unsigned v = rd32(pe->image + bestAt + (unsigned)i * 4u);
+        out[n++] = (const char *)pe->image + fo + (v - va);
+    }
+    return n;
+}
+
+int rsrcHelpTopics(const Pe *pe, const char **out, int max) {
+    unsigned va = 0, fo = 0, size = 0;
+    if (!dataSection(pe, &va, &fo, &size)) return 0;
+
+    // 0x462 is the combo's id, and every topic is added with `push <string>`
+    // somewhere just before `push 0x462`.  Two forms of it appear - with and
+    // without the `mov ecx, esi` the compiler put between them - so the search
+    // is for the push of the id and then a look back for the push of a string.
+    int n = 0;
+    for (unsigned i = 0; i + 5 <= pe->size && n < max; i++) {
+        if (pe->image[i] != 0x68) continue;                 // push imm32
+        if (rd32(pe->image + i + 1) != 0x462) continue;
+        // Back up over the two bytes of `mov ecx, esi` if they are there.
+        unsigned at = i;
+        if (at >= 2 && pe->image[at - 2] == 0x8b && pe->image[at - 1] == 0xce)
+            at -= 2;
+        if (at < 5 || pe->image[at - 5] != 0x68) continue;
+        const unsigned v = rd32(pe->image + at - 4);
+        if (v < va || v >= va + size) continue;
+        if (stringAt(pe, fo + (v - va), 3) <= 0) continue;
+        out[n++] = (const char *)pe->image + fo + (v - va);
+    }
+    return n;
+}

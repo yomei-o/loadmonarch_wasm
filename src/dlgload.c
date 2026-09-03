@@ -122,6 +122,42 @@ static int fill(Loaded *out, const RsrcDialog *from) {
     return 1;
 }
 
+
+/* ------------------------------------------------------------------- help */
+
+// Copied out of the image, because the image itself is a stack buffer that
+// goes when dlgLoadFromHost returns.
+#define HELP_PAGE_MAX 400
+static char g_page[RSRC_HELP_PAGES][HELP_PAGE_MAX];
+static char g_topic[RSRC_HELP_TOPICS][48];
+static int g_pages;
+
+int dlgHelpPages(void) { return g_pages; }
+
+const char *dlgHelpPage(int page) {
+    return page >= 0 && page < g_pages ? g_page[page] : "";
+}
+
+const char *dlgHelpTopic(int topic) {
+    return topic >= 0 && topic < RSRC_HELP_TOPICS ? g_topic[topic] : "";
+}
+
+static void loadHelp(const Pe *pe) {
+    g_pages = 0;
+    const char *page[RSRC_HELP_PAGES];
+    const char *topic[RSRC_HELP_TOPICS];
+    const int pages = rsrcHelpPages(pe, page, RSRC_HELP_PAGES);
+    const int topics = rsrcHelpTopics(pe, topic, RSRC_HELP_TOPICS);
+    if (pages < RSRC_HELP_PAGES || topics < RSRC_HELP_TOPICS) return;
+    for (int i = 0; i < pages; i++) {
+        if (!fontCanDraw(page[i], NULL)) return;    // all of it or none
+        snprintf(g_page[i], sizeof g_page[i], "%s", page[i]);
+    }
+    for (int i = 0; i < topics; i++)
+        snprintf(g_topic[i], sizeof g_topic[i], "%s", topic[i]);
+    g_pages = pages;
+}
+
 int dlgLoadFromHost(const Host *host) {
     static unsigned char image[400 * 1024];
     unsigned got = 0;
@@ -133,6 +169,7 @@ int dlgLoadFromHost(const Host *host) {
 
     static Pe pe;
     if (!peOpen(&pe, image, got)) return 0;
+    loadHelp(&pe);
 
     int done = 0;
     for (unsigned i = 0; i < DLG_LOADED_MAX; i++) {
