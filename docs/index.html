@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903224919"></script>
+<script src="loadmonarch.js?v=20260903225938"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903224919';
+  var BUILD = '20260903225938';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -757,7 +757,13 @@ createLordMonarch().then(function (M) {
       if (now - lastHost > 250) {
         lastHost = now;
         M._lm_update_areas();       // 0041b640, for the windows
-        followTheWar();             // 0040a110
+        // 0040a110 is the war's own choice of tune, and it is the war's sweep
+        // that asks it - so once the stage is over it does not ask again.
+        // The page used to ask anyway, four times a second, which put the
+        // stage's tune straight back over "Winner!" a quarter of a second
+        // after it started.
+        if (!M._lm_end_up() && !M._lm_awards_up() && !M._lm_picture_up())
+            followTheWar();         // 0040a110
         // 0041f4c0 says when a stage is over, and the module puts its own
         // window up - dialog 105, drawn in the canvas.  What is left for the
         // page is the tune: SOUND.CFG entry 2 is "Winner!" and 3 is "Game

@@ -33,6 +33,9 @@
 static void blitSheetPart(Surface *out, const World *world, int sx, int sy,
                           int w, int h, int dx, int dy, int keep);
 
+static void fillRect(Surface *out, int x, int y, int w, int h,
+                     unsigned char ink);
+
 static void blitSheet(Surface *out, const World *world, int sx, int sy,
                       int w, int h, int dx, int dy) {
     blitSheetPart(out, world, sx, sy, w, h, dx, dy, 0);
@@ -371,6 +374,9 @@ void panelCountryWindow(Surface *out, const GameState *game, unsigned faction,
                         int x, int y) {
     if (faction >= PLAYABLE_FACTIONS) return;
     const World *w = &game->world;
+    // Its bitmap is filled with 0x70 too, which is the blue in the palette
+    // and not a hole - see panelGraphDraw.
+    fillRect(out, x, y, PANEL_SIDE, PANEL_SIDE, (unsigned char)UI_TRANSPARENT);
     const TileBank *bank = worldSprites(w, 2);      // the thirty-two pixel set
     const Faction *c = &game->factions[faction];
 
@@ -608,6 +614,13 @@ static void blitIcon(Surface *out, const World *world, unsigned base,
 void panelGraphDraw(Surface *out, const GraphWindow *win,
                     const GameState *game, int x, int y) {
     const World *w = &game->world;
+
+    // 00404c30 fills the window's whole bitmap with 0x70 before it draws
+    // anything.  That is the index the sprites treat as transparent, but a
+    // window is not a sprite: it goes to the screen as it stands, and 0x70 is
+    // the blue 00405fc0 puts in the palette - so the window is blue.
+    fillRect(out, x, y, GRAPH_W, GRAPH_H, (unsigned char)UI_TRANSPARENT);
+
     const TileBank *sprites = worldSprites(w, 1);   // the sixteen-pixel set
     const unsigned frame = game->frame;
 

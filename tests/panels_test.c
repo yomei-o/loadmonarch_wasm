@@ -212,9 +212,11 @@ int main(int argc, char **argv) {
             for (int i = 17; i < 17 + 14; i++)
                 if (pixels[(size_t)j * surface.width + i] == colour) below++;
         checkf(below == 0, "%d pixels below the foot, wanted %d", below, 0);
-        // The window is transparent where nothing is drawn: the corner is
-        // untouched.
-        check(pixels[0] == 0, "the window is left transparent");
+        // 00404c30 fills the window with 0x70 before drawing, which is the
+        // blue in the palette rather than a hole.
+        checkf(pixels[0] == UI_TRANSPARENT,
+               "the window's ground is %02x, wanted %02x",
+               pixels[0], UI_TRANSPARENT);
 
         // The tooltips, in 00404d37's own order: the top strips are the four
         // countries' ground and purse, the bottom their leader and total.
