@@ -618,6 +618,8 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // The button down, anything chosen, or the order menu up: all three hold
     // the war still, which is what the original does while the player picks.
     if (g_buttonHeld || simSelectionHolds(&g_game) || g_menu.open) return;
+    // And the moment of standing still the pointer buys by moving.
+    if (simMouseHeld(&g_sim)) return;
     for (int i = 0; i < times; i++) {
         simStep(&g_sim);
         if (g_sim.events > 0) break;    // the notices go first
@@ -877,7 +879,13 @@ EMSCRIPTEN_KEEPALIVE void lm_set_cursor(int x, int y) {
         stateMoveCursor(&g_game, -1, -1);
         return;
     }
-    stateMoveCursor(&g_game, (g_viewX + x) / ts, (g_viewY + y - boardTop()) / ts);
+    const int col = (g_viewX + x) / ts;
+    const int row = (g_viewY + y - boardTop()) / ts;
+    // 00422d7c: the world stands still for a moment whenever the pointer
+    // crosses onto another square, which is how a walking unit is caught.
+    if (col != (int)g_game.cursorCol || row != (int)g_game.cursorRow)
+        simCursorMoved(&g_sim);
+    stateMoveCursor(&g_game, col, row);
 }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_col(void) { return g_game.cursorCol; }
 EMSCRIPTEN_KEEPALIVE int lm_cursor_row(void) { return g_game.cursorRow; }

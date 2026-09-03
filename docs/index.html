@@ -107,7 +107,7 @@
   </div>
 </main>
 
-<script src="loadmonarch.js?v=20260903223752"></script>
+<script src="loadmonarch.js?v=20260903224919"></script>
 <script>
 createLordMonarch().then(function (M) {
   'use strict';
@@ -124,7 +124,7 @@ createLordMonarch().then(function (M) {
   // is current.  It is not, often: GitHub Pages serves this page with
   // max-age=600 and the module's cache buster is inside the page, so a cached
   // page pins a cached module and a fresh push looks like no push at all.
-  var BUILD = '20260903223752';
+  var BUILD = '20260903224919';
   var buildTag = document.getElementById('build');
   buildTag.textContent = BUILD.slice(0, 8) + '.' + BUILD.slice(8);
 
@@ -767,7 +767,13 @@ createLordMonarch().then(function (M) {
         if (M._lm_end_up() && !said) {
           said = true;
           if (musicOn) {
-            playing = M._lm_end_mode() === 2 ? 3 : 2;
+            // 0040ffc4: the window's own table, one tune per mode.  Winning
+            // gets "Winner!", losing "Game Over", and a stage that ran out of
+            // time or had been won before gets "Days Passed" - which is what
+            // the page had wrong: it played "Winner!" for those two.
+            var endTune = [2, 6, 3, 6, 2];
+            var mode = M._lm_end_mode();
+            playing = mode >= 0 && mode < endTune.length ? endTune[mode] : 2;
             M._lm_music_play(playing, M._lm_tune_loops(playing));
           }
         }

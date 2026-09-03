@@ -461,6 +461,12 @@ void simInit(Sim *sim, GameState *state) {
     // in as few as you can, and this is what "few" is measured against.
     sim->countdown = SIM_DAY_BUDGET;
     sim->shownLeader = -1;
+    // 00407401: seven out of the box, which is six ticks of standing still
+    // every time the pointer crosses a square.
+    sim->mouseHoldRate = 7;
+    sim->mouseHold = 0;
+    sim->mouseHoldOff = 0;
+
 }
 
 void simStep(Sim *sim) {
@@ -1304,6 +1310,19 @@ int simSelectAll(Sim *sim, int force) {
             chosen++;
     }
     return chosen;
+}
+
+void simCursorMoved(Sim *sim) {
+    if (sim->mouseHoldOff) return;
+    int ticks = (10 - sim->mouseHoldRate) * 2;
+    if (ticks < 0) ticks = 0;
+    sim->mouseHold = ticks;
+}
+
+int simMouseHeld(Sim *sim) {
+    if (sim->mouseHold <= 0) return 0;
+    sim->mouseHold--;               // 00408306, a tick at a time
+    return 1;                       // 0040a5e0 does nothing this tick
 }
 
 int simSelectionHolds(const GameState *state) {

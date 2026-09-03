@@ -64,6 +64,20 @@ typedef struct {
     // asked to be shown him, so the next asking can take it off again.
     int shownLeader;
 
+    // DAT_00434528: the world stands still for a moment whenever the pointer
+    // moves onto another square.  00422d98 sets it to `(10 - DAT_004376ac) *
+    // 2` ticks, 00408306 counts it down one a tick, and 0040a5e0 - the sweep
+    // itself - does nothing at all while it stands.  It is what makes a unit
+    // catchable: they walk about, and without it the one under the pointer
+    // has gone by the time the button is down.
+    //
+    // DAT_004376ac is 7 out of the box (00407401), so six ticks; the System
+    // Setting dialog writes it (0040f257).  DAT_004376ad turns the whole
+    // thing off (0040f213).
+    int mouseHold;
+    int mouseHoldRate;
+    int mouseHoldOff;
+
     // 0041f0d0's announcements, waiting for the host to show them.
     SimEvent event[SIM_EVENTS_MAX];
     int events;
@@ -229,6 +243,13 @@ int simSelectAll(Sim *sim, int force);
 // before its order can be given, which is what made the port unplayable
 // unless the clock was stopped by hand.
 int simSelectionHolds(const GameState *state);
+
+// The pointer has moved onto another square: stand still for a moment.
+void simCursorMoved(Sim *sim);
+
+// One tick of that standing still: answers non-zero while the world is not to
+// be swept, and counts the moment down as it goes.
+int simMouseHeld(Sim *sim);
 
 void simClearSelection(GameState *state);
 // Answers how many units took the order, or SIM_ORDER_ASK when one of them
