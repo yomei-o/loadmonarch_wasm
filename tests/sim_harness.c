@@ -132,6 +132,73 @@ int main(int argc, char **argv) {
         unsigned col = 0, row = 0;
         if (strcmp(argv[a], "map") == 0) continue;
         if (strcmp(argv[a], "nohuman") == 0) continue;
+        if (strncmp(argv[a], "trace:", 6) == 0) {
+            // Follow one country tick by tick: how many settlement cells it
+            // holds, how ripe they are, and what each of its live units is
+            // doing.  Written to find out why the country the player has grows
+            // so much more slowly than the ones the machine plays.
+            const unsigned who = (unsigned)atoi(argv[a] + 6);
+            for (int t = 0; t <= 12; t++) {
+                if (t) for (int i = 0; i < 100; i++) simStep(&sim);
+                unsigned cells = 0, ripe = 0, busy = 0, top = 0;
+                for (unsigned c = 0; c < WORLD_GRID; c++)
+                    for (unsigned r = 0; r < WORLD_GRID; r++) {
+                        const WorldCell *cell =
+                            &game.world.cells[WORLD_INDEX(c, r)];
+                        if ((unsigned)(cell->terrain - 8u) != who) continue;
+                        cells++;
+                        if (cell->value > top) top = cell->value;
+                        if (cell->value >= 200) ripe++;
+                        if (cell->occupant < ENTITY_COUNT) busy++;
+                    }
+                printf("+%4d  cells %3u  ripe %2u  occupied %2u  best %3u"
+                       "  funds %5u\n",
+                       t * 100, cells, ripe, busy, top,
+                       game.factions[who].funds);
+                for (int i = 0; i < ENTITY_COUNT; i++) {
+                    const Entity *e = &game.entities[i];
+                    if (e->flags & 0x80) continue;
+                    if (e->faction != who) continue;
+                    printf("      slot %3d at %2u,%2u  order %02x  str %5u"
+                           "  route %s  flags %02x  face %u\n",
+                           i, e->position[0], e->position[1], e->at0d,
+                           e->at08, e->at18 == 0x1f0 ? "-" : "yes",
+                           e->flags, e->at0c);
+                }
+            }
+            continue;
+        }
+        if (strncmp(argv[a], "win:", 4) == 0) {
+            // The question a player asks: with the tax at nothing and the
+            // purse full, does the stage actually finish?  The country is the
+            // player's, so 00421ae0 never runs for it - its units only ever
+            // look for work nearby, which is the whole of what a player's
+            // country does by itself.
+            const unsigned who = sim.humanFaction;
+            const long limit = strtol(argv[a] + 4, NULL, 10);
+            long at = 0;
+            int outcome = 0;
+            while (at < limit && (outcome = simStageOutcome(&sim)) == 0) {
+                game.factions[who].taxRate = 0;
+                game.factions[who].funds = 0xffffu;
+                simStep(&sim);
+                at++;
+            }
+            unsigned live = 0, cells = 0;
+            for (int i = 0; i < ENTITY_COUNT; i++)
+                if (!(game.entities[i].flags & 0x80) &&
+                    game.entities[i].faction == who) live++;
+            for (unsigned c = 0; c < WORLD_GRID; c++)
+                for (unsigned r = 0; r < WORLD_GRID; r++)
+                    if ((unsigned)(game.world.cells[WORLD_INDEX(c, r)].terrain
+                                   - 8u) == who) cells++;
+            printf("win %s: outcome %d after %ld sweeps (day %u), "
+                   "%u live, %u settlements, area %.2f%%, funds %u\n",
+                   argv[2], outcome, at, sim.days, live, cells,
+                   (double)game.factions[who].area,
+                   game.factions[who].funds);
+            continue;
+        }
         if (strcmp(argv[a], "names") == 0) {
             // Every string the scenery set supplies, raw, so the bytes can be
             // collected: the five countries and the sixteen orders.

@@ -378,8 +378,12 @@ createLordMonarch().then(function (M) {
       e.preventDefault();
       return;
     }
+    // 00424a10: the right button drags the map about.  A right button that
+    // does not move is the other thing it does - it brings up the order menu
+    // on the square under it - so which of the two this is cannot be known
+    // until the button comes back up.
     if (e.button === 2 || e.button === 1) {
-      panning = { x: e.clientX, y: e.clientY };
+      panning = { x: e.clientX, y: e.clientY, from: b, moved: false };
       canvas.setPointerCapture(e.pointerId);
       e.preventDefault();
       return;
@@ -389,17 +393,23 @@ createLordMonarch().then(function (M) {
     canvas.setPointerCapture(e.pointerId);
   });
 
-  // The whole of the flow, decided when the button comes back up so a drag and
-  // a click can be told apart:
+  // The left button chooses, the right button orders:
   //
-  //   drag over the map          gather every unit of yours inside it
-  //   click one of your units    choose that one
-  //   click anywhere, chosen     the order menu comes up on that square
-  //   click bare ground, none    put a settlement down
+  //   left drag over the map     gather every unit of yours inside it
+  //   left click on a unit       choose that one
+  //   right click                the order menu on that square
+  //   right drag                 scroll the map, which is 00424a10's own job
   //
   // Both ways of choosing are deliberate, so both pick a unit up even when it
   // already carries an order - 00409e90 rather than 00409f10.  Shift adds to
   // what is already chosen.
+  //
+  // A left click on bare ground used to put a settlement down for a hundred
+  // gold, which is not in the game: 0041eb60 is a unit's own build action and
+  // it spends up to two hundred of that unit's strength, so the page was
+  // quietly feeding the player's king into the ground every time they clicked
+  // an empty square.  Building is what the order menu's own build order is
+  // for.
   function finishDrag(e) {
     var p = viewPoint(e);
     var moved = dragFrom &&
@@ -409,23 +419,27 @@ createLordMonarch().then(function (M) {
     if (moved) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_rect(dragFrom[0], dragFrom[1], p[0], p[1], 1);
-    } else if (M._lm_selected() > 0) {
-      // 00423940: the order is chosen *after* the square, from a menu that
-      // comes up where the pointer is and offers only what that square
-      // accepts.  Click water and the one thing on it is a bridge.
-      M._lm_menu_open(p[0], p[1]);
     } else if (M._lm_unit_here(p[0], p[1])) {
       if (!e.shiftKey) M._lm_clear_selection();
       M._lm_select_at(p[0], p[1], 1);
-    } else {
-      M._lm_click(p[0], p[1]);
+    } else if (!e.shiftKey) {
+      M._lm_clear_selection();
     }
     dragFrom = null;
   }
 
   canvas.addEventListener('pointerup', function (e) {
     if (sliding) { sliding = false; e.preventDefault(); return; }
-    if (panning) { panning = null; e.preventDefault(); return; }
+    if (panning) {
+      // A right button that never moved is an order, not a scroll.  00423940
+      // puts the menu up where the pointer is and offers only what that
+      // square accepts - click water and the one thing on it is a bridge.
+      if (!panning.moved && M._lm_selected() > 0)
+        M._lm_menu_open(panning.from[0], panning.from[1]);
+      panning = null;
+      e.preventDefault();
+      return;
+    }
     if (dragFrom) finishDrag(e);
   });
   canvas.addEventListener('pointercancel', function () {
@@ -448,8 +462,9 @@ createLordMonarch().then(function (M) {
     if (panning) {
       var r = canvas.getBoundingClientRect();
       var scale = canvas.width / r.width;
-      M._lm_scroll_by(Math.round((panning.x - e.clientX) * scale),
-                      Math.round((panning.y - e.clientY) * scale));
+      var dx = panning.x - e.clientX, dy = panning.y - e.clientY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panning.moved = true;
+      M._lm_scroll_by(Math.round(dx * scale), Math.round(dy * scale));
       panning.x = e.clientX;
       panning.y = e.clientY;
       return;
