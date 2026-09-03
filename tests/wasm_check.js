@@ -609,6 +609,25 @@ createLordMonarch().then((M) => {
         M._lm_end_click();
     }
 
+    // The page's own script, parsed.  Nothing here runs it - it wants a DOM -
+    // but a syntax error in it is otherwise found only by opening the page,
+    // and every one of the names it calls is checked above.
+    {
+        const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'index.html'),
+                                     'utf8');
+        const inline = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+            .map((m) => m[1]);
+        expect('the page has one inline script', inline.length, 1);
+        try {
+            // eslint-disable-next-line no-new-func
+            new Function(inline[0] || '');
+            console.log('  and it parses');
+        } catch (e) {
+            console.log(`  FAIL the page does not parse: ${e.message}`);
+            failures++;
+        }
+    }
+
     console.log(failures ? `${failures} check(s) failed`
                          : 'wasm checks ok');
     process.exit(failures ? 1 : 0);

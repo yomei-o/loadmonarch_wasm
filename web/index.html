@@ -340,9 +340,13 @@ createLordMonarch().then(function (M) {
       said = false;
       say('もう一度この面を。');
     } else if (went === 3) {
-      // FUN_00409570: the certificate, then dialog 121 - the ending.
+      // FUN_00409570: the certificate, then dialog 121 - which is
+      // END.256 at its own 512 by 384 - and then this message, in the
+      // game's own words.
       showPicture('END');
-      say('全面クリアです。おめでとうございます。');
+      say('Congratulations, you have complete all the stages. ' +
+          'システム → New で最初から、Load Quest Map で面を選び直して' +
+          'より上のクラスを狙えます。');
     } else if (went === 4) {
       said = false;
       say('第 ' + (M._lm_stage() + 1) + ' 面「' +
