@@ -293,9 +293,10 @@ int main(void) {
     // is four pixels wide and the strip answers thirty-one of them.
     {
         int v = -1;
-        expect("left of the strip is its left end",
-               panelProgressSlider(23, 24, &v) == PANEL_SLIDER_TAX && v == 0,
-               1);
+        // 0041a1b0 wants x at 0x18 or past it before it reads the strip at
+        // all; a point left of that falls through to dragging the window.
+        expect("left of the strip is not the strip",
+               panelProgressSlider(23, 24, &v), PANEL_SLIDER_NONE);
         panelProgressSlider(24, 24, &v);
         expect("nought at the left end", v, 0);
         panelProgressSlider(27, 24, &v);
@@ -312,6 +313,9 @@ int main(void) {
                panelProgressSlider(60, 90, &v), PANEL_SLIDER_NONE);
         expect("and well right of them is neither",
                panelProgressSlider(200, 24, &v), PANEL_SLIDER_NONE);
+        // 0041a3d0's button: the scales beside the number.
+        expect("the scales turn the automatic tax on and off",
+               panelProgressSlider(100, 48, &v), PANEL_SLIDER_AUTOTAX);
     }
 
     printf(failures ? "%d dialog check(s) failed\n" : "dialog checks ok\n",

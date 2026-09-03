@@ -14,20 +14,30 @@
 void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
                      int terrain, unsigned value);
 
-// The purse, the tax rate, the days gone and the days left - and the two
-// strips 0041a1b0 lets the player drag: the tax along the top and the clock
-// along the bottom, both nought to thirty.
+// The purse, the tax rate, the days gone and the days left, and the three
+// markers 00419ab0 lays on the window's strips: what the tax would be left to
+// itself, what the player has set it to, and how fast the clock is running.
+// `frame` is DAT_00435b1c, the frame counter - the clock that slides along the
+// middle strip turns as it goes, in eight steps.
 void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
                          unsigned days, unsigned daysLeft, int speed,
-                         int x, int y);
+                         unsigned frame, int x, int y);
 
-// Which of the two strips a point in the window is on, and what value it means
-// there.  0 neither, 1 the tax, 2 the clock.  The arithmetic is 0041a1b0's:
-// the strip runs from x 24 to x 148 and answers nought to thirty.
-typedef enum { PANEL_SLIDER_NONE = 0, PANEL_SLIDER_TAX, PANEL_SLIDER_SPEED }
-    PanelSlider;
+// What a point in the window is on.  0041a1b0 reads two draggable strips - the
+// tax along the top and the clock along the bottom - and 0041a3d0 reads the
+// scales beside the tax, which turn the automatic tax on and off.
+typedef enum {
+    PANEL_SLIDER_NONE = 0,
+    PANEL_SLIDER_TAX,
+    PANEL_SLIDER_SPEED,
+    PANEL_SLIDER_AUTOTAX        // the scales: a click toggles, no value
+} PanelSlider;
 
 PanelSlider panelProgressSlider(int px, int py, int *value);
+
+// 0041dc60's own sum, which is what the blue marker on the tax strip shows:
+// the rate the tax would settle at if nobody touched it.
+int panelAutoTaxRate(const GameState *game, unsigned faction);
 
 // 00404e40's eight lines a column, in its own words.
 void panelGraphWindow(Surface *out, const GameState *game, int x, int y,

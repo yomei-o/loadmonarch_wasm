@@ -36,15 +36,6 @@ static void blitSheet(Surface *out, const World *world, int sx, int sy,
     blitSheetPart(out, world, sx, sy, w, h, dx, dy, 0);
 }
 
-// One pixel off the interface sheet, for the times a fitting wants a colour
-// the sheet already has rather than one named here.
-static unsigned char sheetPixel(const World *world, int sx, int sy) {
-    const UiSheet *ui = &world->ui;
-    if (!ui->pixels || sx < 0 || sy < 0 || sx >= UI_SHEET_W || sy >= UI_SHEET_H)
-        return 0;
-    return ui->pixels[(size_t)sy * UI_SHEET_W + sx];
-}
-
 static void blitPanel(Surface *out, const World *world, int sx, int sy,
                       int w, int h, int dx, int dy) {
     blitSheetPart(out, world, sx, sy, w, h, dx, dy, 1);
@@ -111,103 +102,117 @@ void panelUnitWindow(Surface *out, const GameState *game, int x, int y,
     blitGauge(out, w, n, x + 72, y + 96);
 }
 
-/* --------------------------------------------------- 0041a1b0's two strips */
+/* ------------------------------- 0041a1b0, 0041a3d0 and 00419ab0's strips */
 
-// Both run from x 24 to x 148 and answer nought to thirty, and the reading is
-// the original's own: clamp, take a hundred and twenty-four of it, divide by
-// four, cap at thirty.
-#define SLIDER_X0 24
-#define SLIDER_SPAN 124
-#define SLIDER_MAX 30
+// Every marker in this window is an eight by sixteen sprite off the top row of
+// the interface sheet, laid on its strip with 0x70 left out, and every one of
+// them sits at x = 24 + value * 4 - which is why 0041a1b0 reads a drag back
+// with a divide by four.  There is no widget here and no bar to fill: the
+// strips are art and so are the markers.
+#define MARK_W 8
+#define MARK_H 16
+#define MARK_TAX_AUTO 96        // a blue piece: where the tax would settle
+#define MARK_TAX_HAND 104       // a gold crown: where the player has put it
+#define MARK_SPEED 112          // the clock's weight
+#define MARK_CLOCK 120          // eight frames of a turning clock
 
-// Both strips are built the same way: a well sixteen rows deep, black but for
-// a line four rows through the middle of it that runs the whole width - the
-// tax's shading from grey through orange to red, the clock's plain yellow.
-// There is no thumb anywhere on the sheet, so the line is not a scale to put a
-// marker on: it is the bar itself, drawn full and then blacked back to the
-// value.  Which is why the art as it sits is the strip at thirty.
-// The well itself is a hair wider than the range the mouse is read over: it
-// runs x 24 to 151, a hundred and twenty-eight across, where 0041a1b0's clamp
-// only reaches 124.  So the bar is drawn over the well and read over the clamp.
-#define BAR_W 128
+#define SLIDER_X0 24            // 0x18, where all three strips start
+#define SLIDER_MAX 30           // 0x1e, what 0041a1b0 caps a drag at
+#define TAX_ROW 16              // 0x10
+#define CLOCK_ROW 80            // 0x50
+#define SPEED_ROW 144           // 0x90
+#define CLOCK_SPAN 120          // 0x78, the clock's own range - pixels, not steps
 
-#define TAX_LINE 22
-#define SPEED_LINE 150
-#define LINE_H 4
+// The scales, which 0041a3d0 treats as a button: x 0x60 to 0x70, y 0x28 to
+// 0x38.
+#define SCALES_X0 96
+#define SCALES_X1 112
+#define SCALES_Y0 40
+#define SCALES_Y1 56
 
 static int clampSlider(int v) {
     return v < 0 ? 0 : v > SLIDER_MAX ? SLIDER_MAX : v;
 }
 
-// Black out the line from the value to the right-hand end of it, in whatever
-// black the well around it is drawn in - taken from the well rather than named
-// here, so it stays the sheet's own colour.
-//
-// The clock's line has the two figures standing on it, one at either end, and
-// the line runs behind them: blacking the tail out flat would cut the runner
-// off at the knees.  So that one is given the colour of its line and rubs out
-// only what is that colour.  The tax's rows have nothing on them, so it passes
-// -1 and the whole tail goes.
-static void barTail(Surface *out, const World *w, int x, int lineY, int wellY,
-                    int onlyColour, int value) {
-    // Sampled from the middle of the well, because both ends of the clock's
-    // have a figure standing in them.
-    const unsigned char black = sheetPixel(w, SLIDER_X0 + BAR_W / 2, wellY);
-    const int from = x + SLIDER_X0 +
-        (value * BAR_W + SLIDER_MAX - 1) / SLIDER_MAX;
-    const int to = x + SLIDER_X0 + BAR_W;
-    for (int j = 0; j < LINE_H; j++) {
-        const int py = lineY + j;
-        if (py < 0 || py >= out->height) continue;
-        unsigned char *row = out->pixels + (size_t)py * out->width;
-        for (int px = from; px < to; px++) {
-            if (px < 0 || px >= out->width) continue;
-            if (onlyColour >= 0 && row[px] != (unsigned char)onlyColour)
-                continue;
-            row[px] = black;
-        }
-    }
-}
-
+// 0041a1b0: clamp x into 0x18 to 0xdc, take 0x18 off it, cap the rest at 0x7c,
+// divide by four - signed, so it rounds toward zero - and cap at thirty.
 static int sliderValue(int px) {
+    if (px < SLIDER_X0) px = SLIDER_X0;
+    if (px > 0xdc) px = 0xdc;
     int at = px - SLIDER_X0;
+    if (at > 0x7c) at = 0x7c;
     if (at < 0) at = 0;
-    if (at > SLIDER_SPAN) at = SLIDER_SPAN;
     at /= 4;
     return at > SLIDER_MAX ? SLIDER_MAX : at;
 }
 
 PanelSlider panelProgressSlider(int px, int py, int *value) {
-    // 0041a1b0's hit areas are looser than the strips it draws: y 16 to 32 for
-    // the one and 144 to 160 for the other.
-    if (px < SLIDER_X0 - 8 || px > SLIDER_X0 + SLIDER_SPAN + 8)
-        return PANEL_SLIDER_NONE;
-    if (py >= 16 && py <= 32) {
+    // 0041a3d0's button comes first, because it sits inside no strip.
+    if (px >= SCALES_X0 && px < SCALES_X1 && py > SCALES_Y0 && py < SCALES_Y1)
+        return PANEL_SLIDER_AUTOTAX;
+    // 0041a1b0's own two: x from 0x18 to a little past the strip, and the two
+    // sixteen-pixel bands the strips sit in.
+    if (px < SLIDER_X0 || px > 0x93) return PANEL_SLIDER_NONE;
+    if (py >= TAX_ROW && py <= TAX_ROW + 0x10) {
         if (value) *value = sliderValue(px);
         return PANEL_SLIDER_TAX;
     }
-    if (py >= 144 && py <= 160) {
+    if (py >= SPEED_ROW && py <= SPEED_ROW + 0x10) {
         if (value) *value = sliderValue(px);
         return PANEL_SLIDER_SPEED;
     }
     return PANEL_SLIDER_NONE;
 }
 
+// 00419ab0's own sum, which is 0041dc60's: twenty per cent less a hundredth of
+// the purse, and nothing at all once the purse is past 0x1400 - or past 0xffff,
+// where it stops looking.
+int panelAutoTaxRate(const GameState *game, unsigned faction) {
+    if (faction >= FACTION_COUNT) return 0;
+    const unsigned funds = game->factions[faction].funds;
+    if (funds >= 0xffffu) return 0;
+    const unsigned high = (funds >> 8) & 0xffu;
+    return high > 0x14u ? 0 : (int)(0x14u - high);
+}
+
+// One marker, from the top of the sheet onto a strip.
+static void mark(Surface *out, const World *w, int sheetX, int dx, int dy) {
+    blitSheet(out, w, sheetX, 0, MARK_W, MARK_H, dx, dy);
+}
+
 void panelProgressWindow(Surface *out, const GameState *game, unsigned faction,
                          unsigned days, unsigned daysLeft, int speed,
-                         int x, int y) {
+                         unsigned frame, int x, int y) {
     const World *w = &game->world;
     blitPanel(out, w, 0, PROGRESS_TOP, PANEL_W, PANEL_H, x, y);
     if (faction >= FACTION_COUNT) return;
 
-    // Both bars come up full with the panel, so showing a value means blacking
-    // out what is past it.  Rounding up, so that thirty fills the line and
-    // nought leaves nothing of it.
-    barTail(out, w, x, y + TAX_LINE, PROGRESS_TOP + TAX_LINE - 4, -1,
-            clampSlider(game->factions[faction].taxRate));
-    barTail(out, w, x, y + SPEED_LINE, PROGRESS_TOP + SPEED_LINE - 4,
-            sheetPixel(w, SLIDER_X0 + BAR_W / 2, PROGRESS_TOP + SPEED_LINE),
-            clampSlider(speed));
+    // The tax strip carries two markers: where the tax would settle if nobody
+    // touched it, and where the player has put it.  Both at x = 24 + rate * 4.
+    mark(out, w, MARK_TAX_AUTO,
+         x + SLIDER_X0 + clampSlider(panelAutoTaxRate(game, faction)) * 4,
+         y + TAX_ROW);
+    mark(out, w, MARK_TAX_HAND,
+         x + SLIDER_X0 + clampSlider(game->factions[faction].taxRate) * 4,
+         y + TAX_ROW);
+
+    // And the clock strip one, the same way.
+    mark(out, w, MARK_SPEED, x + SLIDER_X0 + clampSlider(speed) * 4,
+         y + SPEED_ROW);
+
+    // The middle strip is the stage's own clock: 00419ab0 puts the marker at
+    // days left over the whole allowance, a hundred and twenty pixels across,
+    // so it starts at the right and walks left as the time goes.  It turns as
+    // it walks, eight frames off the same row of the sheet.
+    {
+        const unsigned total = days + daysLeft;
+        int at = total ? (int)((unsigned long long)daysLeft * CLOCK_SPAN /
+                               total) : CLOCK_SPAN;
+        if (at < 0) at = 0;
+        if (at > CLOCK_SPAN) at = CLOCK_SPAN;
+        mark(out, w, MARK_CLOCK + (int)(frame & 7u) * MARK_W,
+             x + SLIDER_X0 + at, y + CLOCK_ROW);
+    }
 
     renderNumber(w, UI_FONT_LARGE_WHITE, x + 80, y + 40,
                  game->factions[faction].funds, out);

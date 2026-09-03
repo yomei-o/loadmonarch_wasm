@@ -106,6 +106,7 @@ Surface g_screen;               // all of it, bars and windows included
 int g_boardW;                   // how much of the width the board gets
 int g_boardH;                   // and of the height, once the band has its
 int g_statusH;                  // how tall the band of totals is
+unsigned g_frame;               // DAT_00435b1c, what the animations count on
 
 // DATA/*.256, the title and the interludes and the ending.  The original opens
 // each in a window of its own; here it goes over the frame in the one canvas,
@@ -353,6 +354,12 @@ EMSCRIPTEN_KEEPALIVE int lm_panel_drag(int x, int y) {
     case PANEL_SLIDER_SPEED:
         g_speed = value;
         return 2;
+    // 0041a3d0: the scales beside the number are a button, and a click on them
+    // turns the automatic tax back on - which until now there was no way to do
+    // once a drag had turned it off.
+    case PANEL_SLIDER_AUTOTAX:
+        g_sim.autoTax = !g_sim.autoTax;
+        return 3;
     default:
         return 0;
     }
@@ -403,6 +410,7 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 // Draws the world and resolves the palette, handing back RGBA the canvas can
 // take straight into an ImageData.
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
+    g_frame++;                  // DAT_00435b1c, which 5927 counts up
     // A picture stands alone: the game's own window is not up behind it, so
     // there is nothing to draw under it and nothing to draw it over.
     if (g_pictureUp && g_picture.pixels) {
@@ -439,7 +447,8 @@ EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
         at = windowTop(0);
         if (at >= 0) {
             panelProgressWindow(&g_side, &g_game, g_sim.humanFaction,
-                                g_sim.days, g_sim.countdown, g_speed, 4, at);
+                                g_sim.days, g_sim.countdown, g_speed,
+                                g_frame, 4, at);
             g_progressY = at;
         }
         at = windowTop(2);
