@@ -14,6 +14,8 @@ extern "C" {
 #include "host.h"
 #include "midi.h"
 #include "picture.h"
+#include "font.h"
+#include "rsrc.h"
 #include "render.h"
 #include "sim.h"
 #include "dlgrun.h"
@@ -157,6 +159,49 @@ int stageCount() {
 
 const char *stageFile(int stage) {
     return g_stages.count ? g_stages.file[stage] : kFallbackStages[stage];
+}
+
+// MENU 101 out of whichever release has been opened.  The Japanese one writes
+// its menu in Japanese and the English one in English, and both have the same
+// items in the same places with the same commands - which tests/rsrc_test.c
+// checks against both - so the words can be taken from the resource and laid
+// over the built-in table.  Anything that does not match is left alone, and
+// then the English stands.
+static void loadMenuText(void) {
+    static unsigned char image[400 * 1024];
+    unsigned got = 0;
+    const char *exe = "DS7E_WIN.EXE";
+    if (!hostRead(&g_host, exe, image, sizeof image, &got)) {
+        exe = "DS7J_WIN.EXE";
+        if (!hostRead(&g_host, exe, image, sizeof image, &got)) return;
+    }
+    static Pe pe;
+    if (!peOpen(&pe, image, got)) return;
+    static RsrcMenuBar bar;
+    if (!rsrcMenuBar(&pe, 101, &bar)) return;
+    if (bar.menus != UI_MENU_MAX) return;
+    for (int m = 0; m < bar.menus; m++) {
+        const RsrcMenu *menu = &bar.menu[m];
+        if (uiBarMenuItems(m) != menu->items) continue;
+        int same = 1;
+        for (int i = 0; i < menu->items && same; i++) {
+            const int separator = uiBarItemText(m, i) == nullptr;
+            if (menu->item[i].separator != separator) same = 0;
+            else if (!separator &&
+                     uiBarItemCommand(m, i) != menu->item[i].command) same = 0;
+        }
+        if (!same) continue;
+        // Only what the font can actually draw.  It carries the kanji the
+        // game's own strings use, which is not all of the Japanese release's
+        // menu, and a caption of empty boxes is worse than the English one.
+        // tools/font_extra.txt lists what is missing; see make_font.py.
+        if (fontCanDraw(menu->text, nullptr)) uiBarSetMenuName(m, menu->text);
+        for (int i = 0; i < menu->items; i++) {
+            if (menu->item[i].separator) continue;
+            if (!fontCanDraw(menu->item[i].text, nullptr)) continue;
+            uiBarSetItemText(m, i, menu->item[i].text);
+        }
+    }
 }
 
 int loadStage(int stage) {
@@ -335,6 +380,7 @@ EMSCRIPTEN_KEEPALIVE int lm_open_zip(const unsigned char *data, int size) {
     uiCountryMenuInit(&g_countries);
     worldReadStages(&g_stages, &g_host);        // MAP/NAME.TXT
     worldReadTunes(&g_tunes, &g_host);          // SOUND/SOUND.CFG
+    loadMenuText();
     if (!loadStage(0)) return 0;
     layoutSurfaces();
     // The opening picture, over a stage that is laid out and waiting for Go.

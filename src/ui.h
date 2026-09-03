@@ -181,6 +181,18 @@ int uiBarMenuItems(int menu);
 const char *uiBarItemText(int menu, int item);
 unsigned uiBarItemCommand(int menu, int item);
 
+// The words the bar shows, taken from MENU 101 of whichever release has been
+// loaded rather than from the table above: the Japanese one writes its menu in
+// Japanese, and both releases have the same items in the same places with the
+// same commands - which tests/rsrc_test.c checks against both.  Shift-JIS,
+// like everything else the port draws.  A null or empty string puts the
+// built-in English back.
+void uiBarSetMenuName(int menu, const char *text);
+void uiBarSetItemText(int menu, int item, const char *text);
+// And whether anything has been set, so a host can say where its words came
+// from.
+int uiBarTextLoaded(void);
+
 /* ------------------------------------------------------------ the tool bar */
 
 // Lord Monarch puts no words up there: twenty-three 16x16 icons out of

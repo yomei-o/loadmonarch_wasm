@@ -64,13 +64,23 @@ int main(int argc, char **argv) {
     /* -------------------------------------------------------- MENU 101 */
     static RsrcMenuBar bar;
     check(rsrcMenuBar(&pe, 101, &bar), "MENU 101 reads");
+    // The Japanese release writes its menu and its dialogs in Japanese, and
+    // the port's own tables are the English release's words.  What can be
+    // held against both is the shape - the same items in the same places with
+    // the same commands - so the words are only compared where they are in
+    // the same language.
+    int english = 1;
+    for (const char *c = bar.menus ? bar.menu[0].text : ""; *c; c++)
+        if ((unsigned char)*c >= 0x80) english = 0;
+    if (!english)
+        printf("  this release is in Japanese: comparing shape, not words\n");
     printf("  MENU 101: %d drop-downs\n", bar.menus);
     check(bar.menus == UI_MENU_MAX, "the bar has as many drop-downs as the "
                                     "port draws");
     for (int m = 0; m < bar.menus && m < UI_MENU_MAX; m++) {
         const RsrcMenu *menu = &bar.menu[m];
         const char *name = uiBarMenuName(m);
-        if (strcmp(name, menu->text) != 0) {
+        if (english && strcmp(name, menu->text) != 0) {
             printf("FAIL  drop-down %d is \"%s\", not \"%s\"\n", m, name,
                    menu->text);
             failures++;
@@ -107,7 +117,7 @@ int main(int argc, char **argv) {
                        menu->text, want->text, command, want->command);
                 failures++;
             }
-            if (named && strcmp(text, want->text) != 0) {
+            if (english && named && strcmp(text, want->text) != 0) {
                 printf("FAIL  \"%s\" item %d reads \"%s\", not \"%s\"\n",
                        menu->text, i, text, want->text);
                 failures++;
@@ -134,6 +144,22 @@ int main(int argc, char **argv) {
         {126, &kDlgSoundSetting},
         {127, &kDlgLoadSingleMap},
     };
+    // The Japanese release lays its dialogs out for Japanese text - 104 is
+    // thirty-one units taller and a control short of the English one, and 126
+    // has two of its buttons somewhere else - so the port's templates, which
+    // are the English release's, can only be held against that release.  The
+    // menu is the same shape in both, which is why it is compared above
+    // whatever the language.
+    if (!english) {
+        printf("  its dialogs are laid out for Japanese and are not the "
+               "port's; not compared\n");
+        if (failures) {
+            printf("%d failure(s)\n", failures);
+            return 1;
+        }
+        printf("resource checks ok\n");
+        return 0;
+    }
     for (unsigned d = 0; d < sizeof kDialogs / sizeof kDialogs[0]; d++) {
         static RsrcDialog want;
         const DlgTemplate *tpl = kDialogs[d].tpl;
@@ -147,7 +173,7 @@ int main(int argc, char **argv) {
                    kDialogs[d].id, want.w, want.h, tpl->w, tpl->h);
             failures++;
         }
-        if (strcmp(want.caption, tpl->caption) != 0) {
+        if (english && strcmp(want.caption, tpl->caption) != 0) {
             printf("FAIL  DIALOG %u is titled \"%s\", the port \"%s\"\n",
                    kDialogs[d].id, want.caption, tpl->caption);
             failures++;
@@ -188,7 +214,7 @@ int main(int argc, char **argv) {
                 // An empty caption in the resource is one the program
                 // fills in at run time - dialog 120's version line - so the
                 // port having words there is right, not wrong.
-                if (mine && mine[0] && r->text[0] &&
+                if (english && mine && mine[0] && r->text[0] &&
                     strcmp(mine, "??") != 0 &&
                     strcmp(mine, "?2") != 0 && strcmp(mine, "?3") != 0 &&
                     strcmp(mine, "?4") != 0 && strcmp(mine, "---") != 0 &&

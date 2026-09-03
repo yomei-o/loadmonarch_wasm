@@ -1,5 +1,6 @@
 #include "rsrc.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static unsigned rd16(const unsigned char *p) {
@@ -96,9 +97,23 @@ const unsigned char *peResource(const Pe *pe, unsigned type, unsigned id,
 
 /* ------------------------------------------------------------------ menus */
 
-// A resource string is UTF-16 and terminated by a nought word.  The port's own
-// captions are the ASCII the game is written in, and the ampersand a Windows
-// menu marks its accelerator with is dropped.
+// The Shift-JIS for one UTF-16 code point, or null where the table has none.
+static const unsigned char *toSjis(unsigned code) {
+    int lo = 0, hi = kRsrcCharCount - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        if (kRsrcChars[mid].code == code) return kRsrcChars[mid].sjis;
+        if (kRsrcChars[mid].code < code) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return NULL;
+}
+
+// A resource string is UTF-16 and terminated by a nought word.  It comes back
+// as Shift-JIS, which is what the rest of the port reads: the English release
+// writes its menu in ASCII and the Japanese one writes it in Japanese, and
+// both are the same string to a font that draws Shift-JIS.  The ampersand a
+// Windows menu marks its accelerator with is dropped.
 static const unsigned char *readText(const unsigned char *p, char *out,
                                      int size) {
     int at = 0;
@@ -107,7 +122,17 @@ static const unsigned char *readText(const unsigned char *p, char *out,
         p += 2;
         if (!w) break;
         if (w == '&') continue;
-        if (at < size - 1) out[at++] = (char)(w < 0x80 ? w : '?');
+        if (w < 0x80) {
+            if (at < size - 1) out[at++] = (char)w;
+            continue;
+        }
+        const unsigned char *sjis = toSjis(w);
+        if (!sjis) {
+            if (at < size - 1) out[at++] = '?';
+            continue;
+        }
+        for (int i = 0; sjis[i] && at < size - 1; i++)
+            out[at++] = (char)sjis[i];
     }
     out[at] = 0;
     return p;

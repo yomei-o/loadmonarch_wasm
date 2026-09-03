@@ -414,10 +414,41 @@ static const BarMenu kBar[UI_MENU_MAX] = {
     }, 2},
 };
 
+// MENU 101's own words, when a release has been read for them.  The table
+// below stays as it is - it is what says which items there are and what they
+// do - and these are laid over the top of it.
+#define UI_TEXT_MAX 40
+static char g_menuName[UI_MENU_MAX][UI_TEXT_MAX];
+static char g_itemText[UI_MENU_MAX][UI_MENU_ITEMS][UI_TEXT_MAX];
+static int g_textLoaded;
+
+static void setText(char *out, const char *text) {
+    if (!text || !text[0]) { out[0] = 0; return; }
+    int i = 0;
+    for (; text[i] && i < UI_TEXT_MAX - 1; i++) out[i] = text[i];
+    out[i] = 0;
+}
+
+void uiBarSetMenuName(int menu, const char *text) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return;
+    setText(g_menuName[menu], text);
+    if (g_menuName[menu][0]) g_textLoaded = 1;
+}
+
+void uiBarSetItemText(int menu, int item, const char *text) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return;
+    if (item < 0 || item >= UI_MENU_ITEMS) return;
+    setText(g_itemText[menu][item], text);
+    if (g_itemText[menu][item][0]) g_textLoaded = 1;
+}
+
+int uiBarTextLoaded(void) { return g_textLoaded; }
+
 // See ui.h: what the table holds, so tests/rsrc_test.c can hold it against
 // the resource rather than against a transcription.
 const char *uiBarMenuName(int menu) {
     if (menu < 0 || menu >= UI_MENU_MAX) return "";
+    if (g_menuName[menu][0]) return g_menuName[menu];
     return kBar[menu].text;
 }
 
@@ -429,6 +460,9 @@ int uiBarMenuItems(int menu) {
 const char *uiBarItemText(int menu, int item) {
     if (menu < 0 || menu >= UI_MENU_MAX) return NULL;
     if (item < 0 || item >= kBar[menu].count) return NULL;
+    // A separator stays a separator whatever the release says.
+    if (!kBar[menu].item[item].text) return NULL;
+    if (g_itemText[menu][item][0]) return g_itemText[menu][item];
     return kBar[menu].item[item].text;
 }
 
@@ -453,7 +487,7 @@ static void barPlaces(int *x) {
     int at = 4;
     for (int m = 0; m < UI_MENU_MAX; m++) {
         x[m] = at;
-        at += fontTextWidth(kBar[m].text) + 12;
+        at += fontTextWidth(uiBarMenuName(m)) + 12;
     }
     x[UI_MENU_MAX] = at;
 }
@@ -468,14 +502,14 @@ static int barTitleAt(const int *x, int px, int py) {
 static int dropWidth(int menu) {
     int widest = 0;
     for (int i = 0; i < kBar[menu].count; i++) {
-        const char *t = kBar[menu].item[i].text;
+        const char *t = uiBarItemText(menu, i);
         if (!t) continue;
         const int w = fontTextWidth(t);
         if (w > widest) widest = w;
     }
-    // The four country rows are named as the menu is drawn, and a country name
-    // can be long, so the box leaves room for one.
-    if (menu == 3 && widest < 200) widest = 200;
+    // Leader Position's four rows are named as the menu is drawn, and a
+    // country name can be long, so Controls leaves room for one.
+    if (menu == 1 && widest < 200) widest = 200;
     return widest + 40;
 }
 
@@ -509,13 +543,17 @@ static int barTicked(int running, unsigned command) {
 }
 
 // 40080 to 40083 carry a country's name rather than a caption of their own.
-static const char *barLabel(const GameState *game, const BarItem *item) {
-    if (item->command >= 40080 && item->command <= 40083) {
+// Anything else is whatever the release calls it: uiBarItemText answers with
+// MENU 101's own words where they have been read, and the built-in English
+// where they have not.
+static const char *barLabel(const GameState *game, int menu, int item) {
+    const unsigned command = uiBarItemCommand(menu, item);
+    if (command >= 40080 && command <= 40083) {
         const char *name =
-            worldCountryName(&game->world, item->command - 40080);
+            worldCountryName(&game->world, command - 40080);
         return name && *name ? name : "-";
     }
-    return item->text;
+    return uiBarItemText(menu, item);
 }
 
 void uiBarDraw(Surface *out, const GameState *game, int running,
@@ -532,7 +570,7 @@ void uiBarDraw(Surface *out, const GameState *game, int running,
                  (unsigned char)UI_PICK);
         fontDrawText(out, x[m], 2,
                      (unsigned char)(lit ? UI_PICK_TEXT : UI_DARK),
-                     kBar[m].text);
+                     uiBarMenuName(m));
     }
     if (bar->open < 0) return;
 
@@ -556,7 +594,7 @@ void uiBarDraw(Surface *out, const GameState *game, int running,
         if (!item->enabled) ink = (unsigned char)UI_GREY_TEXT;
         else if (picked) ink = (unsigned char)UI_PICK_TEXT;
         fontDrawText(out, x[menu] + 16, at + 1, ink,
-                     barLabel(game, item));
+                     barLabel(game, menu, i));
         if (item->tick && barTicked(running, item->command)) {
             // A tick, drawn rather than taken from a font: two strokes.
             for (int k = 0; k < 4; k++)

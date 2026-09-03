@@ -125,8 +125,10 @@ def main():
         if 0x21 <= row <= 0x28:                  # symbols, kana, greek, cyrillic
             wanted.add(jis)
     if extra_path:
-        for line in open(extra_path):
-            line = line.strip()
+        for line in open(extra_path, encoding='utf-8'):
+            # tools/font_extra.py annotates each code with the character
+            # it is, which makes the list readable and has to be skipped.
+            line = line.split('#')[0].strip()
             if not line:
                 continue
             sjis = int(line, 16)

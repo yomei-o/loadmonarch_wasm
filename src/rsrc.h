@@ -16,6 +16,19 @@
 #define RSRC_TYPE_MENU 4
 #define RSRC_TYPE_DIALOG 5
 
+// A resource string is UTF-16 and the rest of this port speaks Shift-JIS -
+// the game's own data files are in it and src/font16.c draws it - so the two
+// have to be put together somewhere.  src/rsrc_sjis.c is that somewhere, and
+// tools/make_rsrc_text.py generates it from the characters the two releases
+// actually use, which is about two hundred and fifty.
+typedef struct {
+    unsigned short code;        // the UTF-16 code point
+    unsigned char sjis[3];      // one or two bytes, nought terminated
+} RsrcChar;
+
+extern const RsrcChar kRsrcChars[];
+extern const int kRsrcCharCount;
+
 typedef struct {
     const unsigned char *image;     // the whole file
     unsigned size;

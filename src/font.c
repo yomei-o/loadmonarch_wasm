@@ -21,6 +21,26 @@ static const unsigned char *wideGlyph(unsigned code) {
     return NULL;
 }
 
+int fontCanDraw(const char *text, unsigned *firstMissing) {
+    if (firstMissing) *firstMissing = 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p;) {
+        if (isLead(p[0]) && p[1]) {
+            const unsigned code = ((unsigned)p[0] << 8) | p[1];
+            if (!wideGlyph(code)) {
+                if (firstMissing) *firstMissing = code;
+                return 0;
+            }
+            p += 2;
+            continue;
+        }
+        // Every half-width code has a cell, though plenty of them are blank -
+        // the ones this font leaves empty are the control codes, which no
+        // caption carries.
+        p++;
+    }
+    return 1;
+}
+
 int fontTextWidth(const char *text) {
     int width = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p;) {
