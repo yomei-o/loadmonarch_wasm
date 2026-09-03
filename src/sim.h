@@ -43,6 +43,10 @@ typedef struct {
     int askGiven;               // how many had taken the order by then
     unsigned askOrder;
     int askModifier, askCol, askRow;
+
+    // DAT_004321c4: whoever is wearing the leader balloon because the player
+    // asked to be shown him, so the next asking can take it off again.
+    int shownLeader;
 } Sim;
 
 void simInit(Sim *sim, GameState *state);
@@ -113,6 +117,12 @@ unsigned simHumanActor(const Sim *sim);
 // The Orders menu's Recall Leader (40113): send this country's leader back to
 // its castle through 00421660.  Non-zero when a route came back.
 int simRecallLeader(Sim *sim, unsigned faction);
+
+// The Leader Position submenu (40080 to 40083, which 00408aa0 renames to the
+// four countries).  It puts the leader balloon over that country's king,
+// takes it off whoever had it, and answers where he is so a host can scroll
+// there - which is what 00423f90 is doing in the original.
+int simShowLeader(Sim *sim, unsigned faction, int *col, int *row);
 
 
 // 0040a110.  Which of the stage's two tunes the war calls for: 0 while the

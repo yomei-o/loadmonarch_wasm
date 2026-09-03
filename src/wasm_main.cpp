@@ -41,6 +41,9 @@ GameState g_game;
 Sim g_sim;
 OrderMenu g_menu;
 ToolBar g_tool;
+int g_showBar = 1;              // Hide Title Bar, which is really the menu bar
+int g_showTool = 1;             // Hide Tool Bar
+int g_showStatus = 1;           // Status Window, the numbers over the board
 DlgRunner g_dlg;
 DlgHost g_dlgHost;
 
@@ -205,10 +208,13 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
 EMSCRIPTEN_KEEPALIVE const unsigned *lm_frame(void) {
     renderWorld(&g_game.world, g_zoom, g_viewX, g_viewY, 1, &g_surface);
     renderUnits(&g_game, g_zoom, g_viewX, g_viewY, 1, &g_surface);
-    renderStatus(&g_game, &g_surface);
+    if (g_showStatus) renderStatus(&g_game, &g_surface);
     uiOrderDraw(&g_screen, &g_game, &g_menu);       // 00423940's own menu
-    uiToolDraw(&g_screen, &g_tool, g_running, g_zoom);  // BITMAP 102's icons
-    uiBarDraw(&g_screen, &g_game, g_running, &g_bar);   // MENU 101
+    // Hidden bars still take their room - the board is where it was, and the
+    // strip is drawn in the face grey - because a map that jumps about when a
+    // bar is hidden is worse than one that does not.
+    if (g_showTool) uiToolDraw(&g_screen, &g_tool, g_running, g_zoom);
+    if (g_showBar) uiBarDraw(&g_screen, &g_game, g_running, &g_bar);
     dlgRunDraw(&g_screen, &g_dlg, &g_game);         // and whatever dialog is up
     // The pulsing entries move with the frame, so the table is rebuilt here
     // rather than only when a stage loads.
@@ -597,17 +603,19 @@ EMSCRIPTEN_KEEPALIVE int lm_window_shown(int which) {
 // - which is how a host knows to pass it to the map instead.
 EMSCRIPTEN_KEEPALIVE int lm_bar_click(int x, int y) {
     int inside = 0;
-    unsigned command = uiBarClick(&g_bar, x, y, &inside);
-    if (!inside && !command) {
+    unsigned command = 0;
+    if (g_showBar) command = uiBarClick(&g_bar, x, y, &inside);
+    if (!inside && !command && g_showTool) {
         command = uiToolClick(&g_tool, x, y, &inside);
         if (!inside && !command) return -1;
     }
+    if (!inside && !command) return -1;
     return (int)command;
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_bar_hover(int x, int y) {
-    const int onBar = uiBarHover(&g_bar, x, y);
-    const int onTool = uiToolHover(&g_tool, x, y);
+    const int onBar = g_showBar && uiBarHover(&g_bar, x, y);
+    const int onTool = g_showTool && uiToolHover(&g_tool, x, y);
     return onBar || onTool;
 }
 
@@ -637,12 +645,50 @@ EMSCRIPTEN_KEEPALIVE int lm_command(int command) {
         return lm_select_all(0);
     case 40061:                                     // Overall Order, all
         return lm_select_all(1);
-    case 40038:                                     // Default Orders
-        g_sim.pendingOrder = 1u;
+    case 40080: case 40081: case 40082: case 40083: {
+        // Leader Position: mark that country's king and look at him.
+        int col = 0, row = 0;
+        if (!simShowLeader(&g_sim, (unsigned)(command - 40080), &col, &row))
+            return 1;                           // it has none; nothing to show
+        const TileBank *bank = worldBank(&g_game.world, g_zoom);
+        const int ts = bank->tileSize > 0 ? bank->tileSize : 16;
+        g_viewX = col * ts - g_viewW / 2;
+        g_viewY = row * ts - g_viewH / 2;
+        clampView();
         return 1;
+    }
+    case 40108:                                     // Hide Title Bar
+        g_showBar = !g_showBar;
+        return 1;
+    case 60005:                                     // Hide Tool Bar
+        g_showTool = !g_showTool;
+        return 1;
+    case 40120:                                     // Status Window
+        g_showStatus = !g_showStatus;
+        return 1;
+    case 40111:                                     // Set Windows to default
+        g_showBar = 1;
+        g_showTool = 1;
+        g_showStatus = 1;
+        g_windowShown[0] = g_windowShown[1] = g_windowShown[2] = 1;
+        return 1;
+    case 40044:                                     // Quit
+        g_running = 0;
+        return 1;
+    default:
+        break;
+    }
+    switch (command) {
+    case 40038:                                     // Default Orders
+        return 0;                                   // it has a dialog
     default:
         return 0;
     }
+}
+
+// Leader Position, for a host that wants it without going through the menu.
+EMSCRIPTEN_KEEPALIVE int lm_show_leader(int faction) {
+    return lm_command(40080 + (faction < 0 ? 0 : faction > 3 ? 3 : faction));
 }
 
 EMSCRIPTEN_KEEPALIVE int lm_last_action(void) { return g_lastAction; }

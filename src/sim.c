@@ -461,6 +461,7 @@ void simInit(Sim *sim, GameState *state) {
     // whatever the quest allows on top.  The game's readme asks you to finish
     // in as few as you can, and this is what "few" is measured against.
     sim->countdown = SIM_DAY_BUDGET;
+    sim->shownLeader = -1;
 }
 
 void simStep(Sim *sim) {
@@ -2057,6 +2058,23 @@ int simRecallLeader(Sim *sim, unsigned faction) {
         return kingGoesHome(sim, i);
     }
     return 0;
+}
+
+int simShowLeader(Sim *sim, unsigned faction, int *col, int *row) {
+    GameState *state = sim->state;
+    if (faction >= PLAYABLE_FACTIONS) return 0;
+    const unsigned slot = state->factions[faction].at0c;
+    if (slot >= ENTITY_COUNT) return 0;
+    if (state->entities[slot].flags & 0x80) return 0;
+
+    // Whoever was being pointed at loses the balloon first.
+    if (sim->shownLeader >= 0 && sim->shownLeader < ENTITY_COUNT)
+        state->entities[sim->shownLeader].at220 = 0xff;
+    state->entities[slot].at220 = 0x0c;         // the leader balloon
+    sim->shownLeader = (int)slot;
+    if (col) *col = state->entities[slot].position[0];
+    if (row) *row = state->entities[slot].position[1];
+    return 1;
 }
 
 unsigned simHumanActor(const Sim *sim) {

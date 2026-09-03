@@ -2,6 +2,7 @@
 
 #include "font.h"
 #include "toolbar.h"
+#include "world.h"
 
 #include <string.h>
 
@@ -255,7 +256,7 @@ static const BarMenu kBar[UI_MENU_MAX] = {
         {"Restart",           40110, 1, 0},
         {"New",               40114, 1, 0},
         {NULL, 0, 0, 0},
-        {"Quit",              40044, 0, 0},
+        {"Quit",              40044, 1, 0},
     }, 9},
     {"Controls", {
         {"Start",             40045, 1, 1},
@@ -265,9 +266,9 @@ static const BarMenu kBar[UI_MENU_MAX] = {
         {"Medium",            40049, 1, 1},
         {"Large",             40050, 1, 1},
         {NULL, 0, 0, 0},
-        {"Alliance Setting",  40012, 0, 0},
-        {"System Setting",    40033, 0, 0},
-        {"Sound Setting",     40116, 0, 0},
+        {"Alliance Setting",  40012, 1, 0},
+        {"System Setting",    40033, 1, 0},
+        {"Sound Setting",     40116, 1, 0},
     }, 10},
     {"Display", {
         {"Unit Window",       60001, 1, 1},
@@ -275,8 +276,9 @@ static const BarMenu kBar[UI_MENU_MAX] = {
         {"Graph Window",      60003, 1, 1},
         {NULL, 0, 0, 0},
         {"Hide Tool Bar",     60005, 1, 1},
-        {"Hide Title Bar",    40108, 0, 0},
-        {"Float Tool Bar",    40109, 0, 0},
+        {"Hide Title Bar",    40108, 1, 1},
+        {"Float Tool Bar",    40109, 0, 0},   // a docked bar has nowhere
+                                      // to float to in a canvas
         {NULL, 0, 0, 0},
         {"Set Windows to default", 40111, 1, 0},
     }, 9},
@@ -285,10 +287,18 @@ static const BarMenu kBar[UI_MENU_MAX] = {
         {"Overall Order(Override all)",  40061, 1, 0},
         {NULL, 0, 0, 0},
         {"Recall Leader",     40113, 1, 0},
-        {"Leader Position",   40119, 0, 0},
+        {NULL, 0, 0, 0},
+        // Leader Position is a submenu of the four countries in the original -
+        // 00408aa0 renames 40080 to 40083 with their names as a stage loads -
+        // and one level of dropdown is what this bar has, so they sit here
+        // with their names filled in at draw time.
+        {"",                  40080, 1, 0},
+        {"",                  40081, 1, 0},
+        {"",                  40082, 1, 0},
+        {"",                  40083, 1, 0},
         {NULL, 0, 0, 0},
         {"Default Orders",    40038, 1, 0},
-    }, 7},
+    }, 11},
     {"Help", {
         {"Quick Rules",       40037, 1, 0},
         {"Version",           40055, 1, 0},
@@ -330,6 +340,9 @@ static int dropWidth(int menu) {
         const int w = fontTextWidth(t);
         if (w > widest) widest = w;
     }
+    // The four country rows are named as the menu is drawn, and a country name
+    // can be long, so the box leaves room for one.
+    if (menu == 3 && widest < 200) widest = 200;
     return widest + 40;
 }
 
@@ -362,9 +375,18 @@ static int barTicked(int running, unsigned command) {
     }
 }
 
+// 40080 to 40083 carry a country's name rather than a caption of their own.
+static const char *barLabel(const GameState *game, const BarItem *item) {
+    if (item->command >= 40080 && item->command <= 40083) {
+        const char *name =
+            worldCountryName(&game->world, item->command - 40080);
+        return name && *name ? name : "-";
+    }
+    return item->text;
+}
+
 void uiBarDraw(Surface *out, const GameState *game, int running,
                const MenuBar *bar) {
-    (void)game;
     int x[UI_MENU_MAX + 1];
     barPlaces(x);
 
@@ -400,7 +422,8 @@ void uiBarDraw(Surface *out, const GameState *game, int running,
         unsigned char ink = (unsigned char)UI_DARK;
         if (!item->enabled) ink = (unsigned char)UI_GREY_TEXT;
         else if (picked) ink = (unsigned char)UI_PICK_TEXT;
-        fontDrawText(out, x[menu] + 16, at + 1, ink, item->text);
+        fontDrawText(out, x[menu] + 16, at + 1, ink,
+                     barLabel(game, item));
         if (item->tick && barTicked(running, item->command)) {
             // A tick, drawn rather than taken from a font: two strokes.
             for (int k = 0; k < 4; k++)
