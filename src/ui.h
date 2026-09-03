@@ -137,7 +137,10 @@ int uiCountryMenuClick(CountryMenu *menu, int x, int y);
 // own sixteen colours, which are the standard VGA ones.
 #define UI_TOOL_BASE 0xd0u
 #define UI_MENU_MAX 5
-#define UI_MENU_ITEMS 12
+// Controls is the longest: Start, Pause, the four countries of Leader
+// Position, the three of Resize Map, Alliance, the two Customize items
+// and four separators.
+#define UI_MENU_ITEMS 16
 
 typedef struct {
     const char *text;           // NULL for a separator
@@ -168,6 +171,15 @@ void uiBarDraw(Surface *out, const GameState *game, int running,
 int uiBarHover(MenuBar *bar, int x, int y);
 unsigned uiBarClick(MenuBar *bar, int x, int y, int *inside);
 int uiBarOpen(const MenuBar *bar);
+
+// The bar's own table, for a test that reads MENU 101 out of the executable
+// and compares.  `text` is null where the item is a separator, and empty for
+// the four Leader Position entries, whose captions are country names filled
+// in as they are drawn.
+const char *uiBarMenuName(int menu);
+int uiBarMenuItems(int menu);
+const char *uiBarItemText(int menu, int item);
+unsigned uiBarItemCommand(int menu, int item);
 
 /* ------------------------------------------------------------ the tool bar */
 

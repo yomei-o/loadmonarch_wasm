@@ -51,6 +51,49 @@ static void caption(Surface *out, int x, int y, int w, int h,
     fontDrawText(out, tx, ty < y ? y : ty, ink, text);
 }
 
+// A static that carries more than one line of it.  Windows wraps a static's
+// text inside its rectangle and breaks on the newlines the resource has;
+// drawing only the first line lost the second half of what dialog 119 says
+// about alliances, and the whole of the rules dialog 123 shows.
+static void captionWrapped(Surface *out, int x, int y, int w, int h,
+                           const char *text, unsigned char ink, int centred) {
+    if (!text || !*text) return;
+    const int line = 16;
+    int at = y;
+    const char *p = text;
+    while (*p && at + line <= y + h + line) {
+        // As many words as fit, stopping at a newline.
+        const char *end = p;
+        const char *lastFit = NULL;
+        for (;;) {
+            const char *next = end;
+            while (*next && *next != ' ' && *next != '\n') next++;
+            char buffer[128];
+            const size_t take = (size_t)(next - p);
+            if (take >= sizeof buffer) break;
+            memcpy(buffer, p, take);
+            buffer[take] = 0;
+            if (fontTextWidth(buffer) > w && lastFit) break;
+            lastFit = next;
+            if (*next == 0 || *next == '\n') { end = next; break; }
+            end = next + 1;
+            if (*next == 0) break;
+        }
+        const char *stop = lastFit ? lastFit : end;
+        char buffer[128];
+        size_t take = (size_t)(stop - p);
+        if (take >= sizeof buffer) take = sizeof buffer - 1;
+        memcpy(buffer, p, take);
+        buffer[take] = 0;
+        const int tw = fontTextWidth(buffer);
+        fontDrawText(out, centred ? x + (w - tw) / 2 : x, at, ink, buffer);
+        at += line;
+        p = stop;
+        while (*p == ' ') p++;
+        if (*p == '\n') p++;
+    }
+}
+
 /* ------------------------------------------------------------- the state */
 
 static DlgState *stateOf(Dialog *d, int id) {
@@ -279,10 +322,15 @@ void dlgDraw(Surface *out, const Dialog *d) {
             }
             break;
         case DC_TEXT:
-            caption(out, cx, cy, cw, ch, c->text, ink, 0);
+            // One line gets the vertical centring a Windows static gives it;
+            // anything taller than two rows is wrapped text and is drawn from
+            // the top, which is where Windows puts it.
+            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, c->text, ink, 0);
+            else caption(out, cx, cy, cw, ch, c->text, ink, 0);
             break;
         case DC_TEXTC:
-            caption(out, cx, cy, cw, ch, c->text, ink, 1);
+            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, c->text, ink, 1);
+            else caption(out, cx, cy, cw, ch, c->text, ink, 1);
             break;
         case DC_FRAME:
             fillRect(out, cx, cy, cw, ch, (unsigned char)UI_DARK);
@@ -322,6 +370,23 @@ void dlgDraw(Surface *out, const Dialog *d) {
                                / 100;
             fillRect(out, at, cy, 10, ch, (unsigned char)UI_FACE);
             bevelUp(out, at, cy, 10, ch);
+            break;
+        }
+        case DC_SPIN: {
+            // Two little buttons stacked, each with a three-pixel triangle -
+            // which is what an up-down control is.  The port has nothing for
+            // it to change: 112's is the CD track, and there is no CD.
+            const int half = ch / 2;
+            for (int part = 0; part < 2; part++) {
+                const int by = cy + part * half;
+                fillRect(out, cx, by, cw, half, (unsigned char)UI_FACE);
+                bevelUp(out, cx, by, cw, half);
+                const int mx = cx + cw / 2, my = by + half / 2;
+                for (int k = 0; k < 3; k++) {
+                    const int row = part ? my + 1 - k : my - 1 + k;
+                    fillRect(out, mx - k, row, k * 2 + 1, 1, ink);
+                }
+            }
             break;
         }
         case DC_ICON:

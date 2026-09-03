@@ -350,63 +350,93 @@ int uiCountryMenuClick(CountryMenu *menu, int x, int y) {
 // enabled = 0 draws greyed: the command is in the original and this port has
 // nothing to do for it yet.
 static const BarMenu kBar[UI_MENU_MAX] = {
+    // Load Map is a submenu of two, with a separator of its own on the end -
+    // flattened here, which is where its Quest and Single entries come from.
     {"System", {
         {"Load",              40051, 1, 0},
         {"Save",              40021, 1, 0},
-        {"Load Quest Map",    40020, 1, 0},
-        {"Load Single Map",   40117, 1, 0},
+        {"Quest Map",         40020, 1, 0},
+        {"Single Map",        40117, 1, 0},
         {NULL, 0, 0, 0},
         {"Restart",           40110, 1, 0},
+        {NULL, 0, 0, 0},
         {"New",               40114, 1, 0},
         {NULL, 0, 0, 0},
         {"Quit",              40044, 1, 0},
-    }, 9},
+    }, 10},
+    // Leader Position belongs here, not under Orders: it is Controls' third
+    // item, a submenu of the four countries.  00408aa0 renames 40080 to 40083
+    // with their names as a stage loads, so the captions are filled in at
+    // draw time.  Resize Map is the submenu after it, and it too carries a
+    // trailing separator of its own.
     {"Controls", {
         {"Start",             40045, 1, 1},
         {"Pause",             40030, 1, 1},
+        {NULL, 0, 0, 0},
+        {"",                  40080, 1, 0},
+        {"",                  40081, 1, 0},
+        {"",                  40082, 1, 0},
+        {"",                  40083, 1, 0},
         {NULL, 0, 0, 0},
         {"Small",             40048, 1, 1},
         {"Medium",            40049, 1, 1},
         {"Large",             40050, 1, 1},
         {NULL, 0, 0, 0},
-        {"Alliance Setting",  40012, 1, 0},
-        {"System Setting",    40033, 1, 0},
-        {"Sound Setting",     40116, 1, 0},
-    }, 10},
+        {"Alliance",          40012, 1, 0},
+        {NULL, 0, 0, 0},
+        {"Customize System",  40033, 1, 0},
+        {"Customize Sounds",  40116, 1, 0},
+    }, 16},
     {"Display", {
+        {"Hide Title Bar",    40108, 1, 1},
+        {"Hide Tool Bar",     60005, 1, 1},
+        {NULL, 0, 0, 0},
+        {"Float Tool Bar",    40109, 0, 0},   // a docked bar has nowhere
+                                      // to float to in a canvas
+        {NULL, 0, 0, 0},
         {"Unit Window",       60001, 1, 1},
         {"Progress Window",   60002, 1, 1},
         {"Graph Window",      60003, 1, 1},
         {NULL, 0, 0, 0},
-        {"Hide Tool Bar",     60005, 1, 1},
-        {"Hide Title Bar",    40108, 1, 1},
-        {"Float Tool Bar",    40109, 0, 0},   // a docked bar has nowhere
-                                      // to float to in a canvas
-        {NULL, 0, 0, 0},
         {"Set Windows to default", 40111, 1, 0},
-    }, 9},
+    }, 10},
     {"Orders", {
         {"Overall Order(For new units)", 40062, 1, 0},
         {"Overall Order(Override all)",  40061, 1, 0},
         {NULL, 0, 0, 0},
         {"Recall Leader",     40113, 1, 0},
         {NULL, 0, 0, 0},
-        // Leader Position is a submenu of the four countries in the original -
-        // 00408aa0 renames 40080 to 40083 with their names as a stage loads -
-        // and one level of dropdown is what this bar has, so they sit here
-        // with their names filled in at draw time.
-        {"",                  40080, 1, 0},
-        {"",                  40081, 1, 0},
-        {"",                  40082, 1, 0},
-        {"",                  40083, 1, 0},
-        {NULL, 0, 0, 0},
         {"Default Orders",    40038, 1, 0},
-    }, 11},
+    }, 6},
     {"Help", {
-        {"Quick Rules",       40037, 1, 0},
+        {"Help",              40037, 1, 0},
         {"Version",           40055, 1, 0},
     }, 2},
 };
+
+// See ui.h: what the table holds, so tests/rsrc_test.c can hold it against
+// the resource rather than against a transcription.
+const char *uiBarMenuName(int menu) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return "";
+    return kBar[menu].text;
+}
+
+int uiBarMenuItems(int menu) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return 0;
+    return kBar[menu].count;
+}
+
+const char *uiBarItemText(int menu, int item) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return NULL;
+    if (item < 0 || item >= kBar[menu].count) return NULL;
+    return kBar[menu].item[item].text;
+}
+
+unsigned uiBarItemCommand(int menu, int item) {
+    if (menu < 0 || menu >= UI_MENU_MAX) return 0;
+    if (item < 0 || item >= kBar[menu].count) return 0;
+    return kBar[menu].item[item].command;
+}
 
 void uiBarInit(MenuBar *bar) {
     memset(bar, 0, sizeof *bar);

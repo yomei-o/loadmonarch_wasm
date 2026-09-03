@@ -32,6 +32,7 @@ typedef enum {
     DC_COMBO,                   // a drop-down list
     DC_EDIT,                    // a single-line edit field
     DC_SLIDER,                  // msctls_trackbar32
+    DC_SPIN,                    // msctls_updown32, the pair of little arrows
     DC_ICON                     // where the program's icon goes
 } DlgControlKind;
 

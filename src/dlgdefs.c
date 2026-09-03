@@ -138,7 +138,9 @@ static const DlgControl kAlliance[] = {
     {DC_FRAME,  1093, 195,100,  25, 25, ""},
     {DC_PUSH,   1097, 230,100,  25, 15, "Set"},
     {DC_TEXT,  65535,  10,105, 105, 60,
-     "Click on the country you wish to make an alliance with."},
+     "Click on the country you wish to make an alliance with.\n\n"
+     "You can't make an alliance with countries that have more bases "
+     "than you."},
     {DC_TEXT,   1083, 125,135,  80, 10, ""},
     {DC_PUSH,   1082, 125,155,  45, 15, "OK"},
     {DC_PUSH,   1074, 215,155,  45, 15, "Reset"},
@@ -250,6 +252,9 @@ static const DlgControl kCustomSounds[] = {
     {DC_RADIO,  1130,  10, 65,  30, 10, "CD"},
     {DC_EDIT,   1133,  45, 65,  24, 12, ""},
     {DC_EDIT,   1137,  70, 65, 100, 12, ""},
+    // msctls_updown32 "Spin1", beside the CD track number.  It was missed the
+    // first time through and tests/rsrc_test.c found it against the resource.
+    {DC_SPIN,   1191, 205, 60,   8, 14, ""},
 
     {DC_GROUP, 65535,   5, 85, 215, 60, "Sound Effects"},
     {DC_LIST,   1020,  10, 95, 160, 30, ""},

@@ -33,6 +33,8 @@ $CC_SH -O2 -Wall -Wextra -o tests/orders_test.exe    tests/orders_test.c $SIM
 echo "built tests/orders_test.exe"
 $CC_SH -O2 -Wall -Wextra -o tests/stress_test.exe    tests/stress_test.c $SIM
 echo "built tests/stress_test.exe"
+$CC_SH -O2 -Wall -Isrc -o tests/rsrc_test.exe       tests/rsrc_test.c src/rsrc.c $SIM
+echo "built tests/rsrc_test.exe"
 $CC_SH -O2 -Wall -Wextra -o tests/endstage_test.exe  tests/endstage_test.c $SIM
 echo "built tests/endstage_test.exe"
 $CC_SH -O2 -Wall -Isrc -o tests/endstage_shot.exe   tests/endstage_shot.c $SIM
@@ -52,3 +54,4 @@ echo "built tests/frame_dump.exe"
 ./tests/stress_test.exe
 ./tests/growth_test.exe
 ./tests/endstage_test.exe ds7e.zip
+./tests/rsrc_test.exe ds7e.zip
