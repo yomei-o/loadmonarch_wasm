@@ -55,6 +55,10 @@ static void caption(Surface *out, int x, int y, int w, int h,
 // text inside its rectangle and breaks on the newlines the resource has;
 // drawing only the first line lost the second half of what dialog 119 says
 // about alliances, and the whole of the rules dialog 123 shows.
+static int isLeadByte(unsigned char c) {
+    return (c >= 0x81 && c <= 0x9f) || (c >= 0xe0 && c <= 0xfc);
+}
+
 static void captionWrapped(Surface *out, int x, int y, int w, int h,
                            const char *text, unsigned char ink, int centred) {
     if (!text || !*text) return;
@@ -62,33 +66,36 @@ static void captionWrapped(Surface *out, int x, int y, int w, int h,
     int at = y;
     const char *p = text;
     while (*p && at + line <= y + h + line) {
-        // As many words as fit, stopping at a newline.
-        const char *end = p;
-        const char *lastFit = NULL;
-        for (;;) {
-            const char *next = end;
-            while (*next && *next != ' ' && *next != '\n') next++;
-            char buffer[128];
-            const size_t take = (size_t)(next - p);
-            if (take >= sizeof buffer) break;
-            memcpy(buffer, p, take);
-            buffer[take] = 0;
-            if (fontTextWidth(buffer) > w && lastFit) break;
-            lastFit = next;
-            if (*next == 0 || *next == '\n') { end = next; break; }
-            end = next + 1;
-            if (*next == 0) break;
+        // As many words as fit, stopping at a newline - and where there is no
+        // space to break at, as many characters as fit.  Japanese is written
+        // without spaces, so breaking only on those ran the Japanese
+        // release's alliance dialog off the side of its own window.
+        const char *stop = NULL;
+        const char *q = p;
+        char buffer[192];
+        int taken = 0;
+        while (*q && *q != '\n') {
+            const int step = isLeadByte((unsigned char)*q) && q[1] ? 2 : 1;
+            if (taken + step >= (int)sizeof buffer) break;
+            memcpy(buffer + taken, q, (size_t)step);
+            buffer[taken + step] = 0;
+            if (fontTextWidth(buffer) > w && taken > 0) break;
+            taken += step;
+            q += step;
+            // A space is where a line would rather break.
+            if (q[-1] == ' ') stop = q;
         }
-        const char *stop = lastFit ? lastFit : end;
-        char buffer[128];
-        size_t take = (size_t)(stop - p);
+        // If a word boundary was passed and the line filled up mid-word, go
+        // back to it; otherwise the break is where the width ran out.
+        if (*q && *q != '\n' && stop) q = stop;
+        size_t take = (size_t)(q - p);
         if (take >= sizeof buffer) take = sizeof buffer - 1;
         memcpy(buffer, p, take);
         buffer[take] = 0;
         const int tw = fontTextWidth(buffer);
         fontDrawText(out, centred ? x + (w - tw) / 2 : x, at, ink, buffer);
         at += line;
-        p = stop;
+        p = q;
         while (*p == ' ') p++;
         if (*p == '\n') p++;
     }
@@ -121,6 +128,16 @@ void dlgSetValue(Dialog *d, int id, int value) {
 int dlgEnabled(const Dialog *d, int id) {
     const DlgState *st = stateOfConst(d, id);
     return st ? st->enabled : 1;
+}
+
+void dlgSetText(Dialog *d, int id, const char *text) {
+    DlgState *st = stateOf(d, id);
+    if (!st) return;
+    if (!text) { st->hasText = 0; st->text[0] = 0; return; }
+    int i = 0;
+    for (; text[i] && i < DLG_ITEM_TEXT - 1; i++) st->text[i] = text[i];
+    st->text[i] = 0;
+    st->hasText = 1;
 }
 
 void dlgEnable(Dialog *d, int id, int enabled) {
@@ -272,6 +289,8 @@ void dlgDraw(Surface *out, const Dialog *d) {
         controlBox(d, c, &cx, &cy, &cw, &ch);
         const DlgState *st = stateOfConst(d, c->id);
         const int on = st ? st->enabled : 1;
+        // What the program has put there, or the resource's own caption.
+        const char *caption_ = st && st->hasText ? st->text : c->text;
         const unsigned char ink =
             (unsigned char)(on ? UI_DARK : UI_GREY_TEXT);
 
@@ -285,7 +304,7 @@ void dlgDraw(Surface *out, const Dialog *d) {
             if (c->kind == DC_DEFPUSH)
                 fillRect(out, cx - 1, cy - 1, cw + 2, 1,
                          (unsigned char)UI_DARK);
-            caption(out, cx + down, cy + down, cw, ch, c->text, ink, 1);
+            caption(out, cx + down, cy + down, cw, ch, caption_, ink, 1);
             break;
         }
         case DC_CHECK:
@@ -305,7 +324,7 @@ void dlgDraw(Surface *out, const Dialog *d) {
                     fillRect(out, cx + 4, by + 4, 5, 5, ink);
                 }
             }
-            caption(out, cx + box + 4, cy, cw, ch, c->text, ink, 0);
+            caption(out, cx + box + 4, cy, cw, ch, caption_, ink, 0);
             break;
         }
         case DC_GROUP:
@@ -320,22 +339,22 @@ void dlgDraw(Surface *out, const Dialog *d) {
                      (unsigned char)UI_SHADOW);
             fillRect(out, cx + cw - 1, cy + 6, 1, ch - 6,
                      (unsigned char)UI_LIGHT);
-            if (c->text && *c->text) {
-                const int tw = fontTextWidth(c->text);
+            if (caption_ && *caption_) {
+                const int tw = fontTextWidth(caption_);
                 fillRect(out, cx + 6, cy, tw + 6, 16, (unsigned char)UI_FACE);
-                fontDrawText(out, cx + 9, cy, ink, c->text);
+                fontDrawText(out, cx + 9, cy, ink, caption_);
             }
             break;
         case DC_TEXT:
             // One line gets the vertical centring a Windows static gives it;
             // anything taller than two rows is wrapped text and is drawn from
             // the top, which is where Windows puts it.
-            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, c->text, ink, 0);
-            else caption(out, cx, cy, cw, ch, c->text, ink, 0);
+            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, caption_, ink, 0);
+            else caption(out, cx, cy, cw, ch, caption_, ink, 0);
             break;
         case DC_TEXTC:
-            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, c->text, ink, 1);
-            else caption(out, cx, cy, cw, ch, c->text, ink, 1);
+            if (ch >= 32) captionWrapped(out, cx, cy, cw, ch, caption_, ink, 1);
+            else caption(out, cx, cy, cw, ch, caption_, ink, 1);
             break;
         case DC_FRAME:
             fillRect(out, cx, cy, cw, ch, (unsigned char)UI_DARK);

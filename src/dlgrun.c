@@ -209,6 +209,10 @@ static void dlgRunFurnish(DlgRunner *r, DlgWhich which) {
         break;
     }
     case DLG_HELP:
+        // The resource leaves "Static" in 1123 - Visual Studio's own
+        // placeholder - and the program writes the page over it, which is
+        // what this is.
+        dlgSetText(&r->dlg, 1123, "");
         dlgClearItems(&r->dlg);
         dlgAddItem(&r->dlg, "Game Screen");
         dlgAddItem(&r->dlg, "Giving an order");

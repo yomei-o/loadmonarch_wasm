@@ -60,6 +60,12 @@ typedef struct {
     int id;
     int value;                  // check state, radio choice, slider, selection
     int enabled;
+    // SetDlgItemText's own doing: a caption the program puts there instead of
+    // the resource's.  A resource is full of placeholders - dialog 123's
+    // static says "Static" and 104's numbers say "---" - and the original
+    // overwrites them as it opens the window.
+    int hasText;
+    char text[DLG_ITEM_TEXT];
 } DlgState;
 
 typedef struct {
@@ -97,6 +103,9 @@ int dlgIsOpen(const Dialog *d);
 int dlgValue(const Dialog *d, int id);
 void dlgSetValue(Dialog *d, int id, int value);
 void dlgEnable(Dialog *d, int id, int enabled);
+// SetDlgItemText: the caption this control shows from now on.  A null puts
+// the resource's own back.
+void dlgSetText(Dialog *d, int id, const char *text);
 // And whether it is, which is what a test asks when the program is the one
 // that decides - 104's Awards button is disabled in the resource.
 int dlgEnabled(const Dialog *d, int id);
