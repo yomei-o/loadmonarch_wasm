@@ -88,6 +88,19 @@ Picture g_awardPic;             // the season's interlude picture behind it
 int g_afterAwards;
 Campaign g_campaign;
 int g_endSaid;                  // the outcome this window was opened for
+
+// DAT_004365d0 and DAT_004365d4.  0041f5d0 puts -1 in one and nought in the
+// other the moment a stage is decided, and 0040a5e0 - the sweep itself -
+// looks at both before it does anything: `cmp [0x4365d0], 0; je out` and
+// `cmp [0x4365d4], -1; je out`.  So a stage that has been decided does not
+// carry on being played, whatever the run flag says; only loading a map puts
+// the world back.  Start (00408d80) clears the pause flag and nothing else,
+// so it cannot restart a stage that is over.
+//
+// The port only stopped the clock, which the player could start again - and
+// then the war ran on with every enemy gone, days and soldiers piling up and
+// no window ever coming back, because the outcome had already been said.
+int g_stageOver;
 int g_endRankUp;                // did the last click take the player up a class
 // DAT_004365cc.  The campaign, or one map on its own - which is the whole of
 // the difference between 0041f4c0's mode 0 and its mode 4: a single map files
@@ -271,6 +284,7 @@ int loadStage(int stage) {
     uiOrderClose(&g_menu);
     g_sim.events = 0;
     g_endSaid = 0;
+    g_stageOver = 0;                    // a map is what puts the world back
     return 1;
 }
 
@@ -530,6 +544,7 @@ static void endStageCheck(void) {
     if (!outcome || g_endSaid == outcome) return;
     g_endSaid = outcome;
     g_running = 0;                      // DAT_00434524 = 1
+    g_stageOver = 1;                    // 0041f5d0's two, which stop the sweep
 
     StageScore score;
     simStageScore(&g_sim, &score);
@@ -618,6 +633,8 @@ EMSCRIPTEN_KEEPALIVE void lm_step(int times) {
     // under way.  Nor does the world move behind one of the game's own modal
     // windows; those run on lm_timer.
     if (g_notice.up || g_sim.events > 0 || g_end.up || g_awards.up) return;
+    // 0041f5d0: a stage that has been decided is not played on.
+    if (g_stageOver) return;
     if (!g_running || g_pictureUp) return;
     // The button down, anything chosen, or the order menu up: all three hold
     // the war still, which is what the original does while the player picks.
