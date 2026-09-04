@@ -503,6 +503,51 @@ int main(int argc, char **argv) {
                p.actor[16].x, was);
     }
 
+    // A win whose score came out below zero - a long stage, where the penalty
+    // ate more than the days that were left - is still filed.  0041b14c only
+    // refuses a score of EXACTLY zero, which is what a stage the clock beat
+    // leaves behind, and 0041b17d compares unsigned so a negative one beats
+    // whatever record was there.
+    //
+    // This is what "it clears the stage but does not go on to the next one"
+    // was: the record was thrown away, so DAT_00436a00 never moved and the
+    // window's own advance had nothing to move to.
+    {
+        static Campaign camp;
+        StageScore poor;
+        int against = 0;
+
+        memset(&camp, 0, sizeof camp);
+        memset(&poor, 0, sizeof poor);
+        poor.daysLeft = 40;
+        poor.remaining = -120;          // days - penalty + bonus, gone under
+        check(campaignRecord(&camp, 0, &poor, &against),
+              "a win worth less than nothing is still filed");
+        checkf(camp.reached == 1, "and the campaign reached %d, wanted %d",
+               (int)camp.reached, 1);
+
+        // Exactly zero is the one the game throws away.
+        memset(&camp, 0, sizeof camp);
+        poor.remaining = 0;
+        check(!campaignRecord(&camp, 0, &poor, &against),
+              "a score of nothing is not filed");
+        checkf(camp.reached == 0, "and the campaign stays at %d, wanted %d",
+               (int)camp.reached, 0);
+
+        // 0041b17d compares the record with this run UNSIGNED, so a record
+        // that went below zero reads as an enormous one and nothing beats it
+        // again.  That is the game's own arithmetic, quirk and all.
+        memset(&camp, 0, sizeof camp);
+        poor.remaining = -120;
+        campaignRecord(&camp, 0, &poor, &against);
+        poor.remaining = 300;
+        check(!campaignRecord(&camp, 0, &poor, &against),
+              "and nothing beats a record that went below zero");
+        checkf((int)camp.remaining[0] == -120,
+               "the record is still %d, wanted %d",
+               (int)camp.remaining[0], -120);
+    }
+
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

@@ -178,9 +178,19 @@ int campaignRecord(Campaign *campaign, int stage, const StageScore *score,
                    int *against) {
     if (against) *against = 0;
     if (stage < 0 || stage >= STAGE_MAX) return 0;
-    // 0041b140 does nothing at all when DAT_00436404 is zero: a stage whose
-    // clock has run out scores nothing and is not filed.
-    if (score->remaining <= 0 || score->daysLeft == 0) return 0;
+    // 0041b14c: `cmp [0x436404], 0` then `je` - it does nothing when the
+    // score is EXACTLY zero, which is what a stage whose clock ran out comes
+    // to (0041aa30 leaves DAT_00436404 at nought there).  A score that came
+    // out below zero - a long win, where the penalty ate more than the days
+    // left - is still filed, and 0041b17d compares it UNSIGNED, so it beats
+    // whatever was there.
+    //
+    // The port used to throw a negative score away as well.  That left the
+    // campaign with no record for the stage, so DAT_00436a00 never moved and
+    // the window's "on to the next stage" went nowhere: the same stage stayed
+    // on the board.  It looked like it depended on the machine because it
+    // depends on how long the stage took.
+    if (score->remaining == 0) return 0;
 
     const unsigned had = campaign->remaining[stage];
     // 0041b0e0: the difference the window shows is this run less the record.
