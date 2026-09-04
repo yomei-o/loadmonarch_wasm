@@ -196,18 +196,14 @@ createLordMonarch().then(function (M) {
       }
       note.textContent = '';
       loaded = true;
-      campaignLoad();          // whatever this browser has cleared before
-      // And the stage it left off at.  Clearing a stage only opens the next
-      // one the first time (0041f752 advances only while the campaign has
-      // reached exactly this stage), so laying out the first stage again
-      // after a reload left the player clearing a stage that was already
-      // done, over and over, with nothing coming next.
-      var reached = M._lm_campaign_reached();
-      if (reached > 0 && reached < M._lm_stage_count()) {
-        M._lm_load_stage(reached);
-        say('第 ' + (reached + 1) + ' 面「' +
-            M.UTF8ToString(M._lm_stage_title()) + '」から。');
-      }
+      // Nothing is remembered between visits.  The original keeps its
+      // record in a file of its own and writes it when the player says so;
+      // this page used to put the same thing in localStorage behind the
+      // player's back, which meant a fresh page was never a fresh campaign -
+      // the first stage came up already cleared, so clearing it opened
+      // nothing and there was no way back to the start.  The game's own Save
+      // and Load, which are the eighty slots of dialogs 106 and 107, are
+      // still there and still explicit.
 
       drop.classList.add('hide');
       document.getElementById('cashBtn').disabled = false;
@@ -317,26 +313,12 @@ createLordMonarch().then(function (M) {
     M.HEAPU8[ptr + n] = 0;
   }
 
-  // 00436a00 and its table: how far the campaign has got.  The original
-  // keeps this in a "Score v11" file of its own (FUN_004057f0); here it goes
-  // in localStorage beside the save slots, and it is what decides which maps
-  // are open.
-  var CAMPAIGN_KEY = 'lm_campaign';
-  function campaignSave() {
-    var out = [];
-    for (var i = 0; i < 32; i++) out.push(M._lm_campaign_record(i));
-    try { localStorage.setItem(CAMPAIGN_KEY, out.join(',')); } catch (e) {}
-  }
-  function campaignLoad() {
-    var raw = null;
-    try { raw = localStorage.getItem(CAMPAIGN_KEY); } catch (e) {}
-    if (!raw) return;
-    var parts = raw.split(',');
-    for (var i = 0; i < parts.length && i < 32; i++) {
-      var v = parseInt(parts[i], 10);
-      if (v > 0) M._lm_campaign_set(i, v);
-    }
-  }
+  // 00436a00 and its table - how far the campaign has got - lives in the
+  // module for as long as the page is open and nowhere else.  The original
+  // keeps it in a "Score v11" file (FUN_004057f0) that the player writes; a
+  // browser that kept it by itself could not be put back to the beginning,
+  // and a port that cannot be started from the beginning cannot be compared
+  // with the original.
 
   // What 0041f4c0's tail did, whichever window answered it: dialog 105's
   // click, or dialog 114's when there was a certificate in between.
@@ -377,7 +359,6 @@ createLordMonarch().then(function (M) {
       say('この面はもう済んでいます（開いているのは第 ' + (at + 1) +
           ' 面まで）。] で次の面へ、またはシステム → Load Quest Map から。');
     }
-    campaignSave();
   }
 
   // Whatever the dialog asked for: read a slot, write one, or drop one.
@@ -765,6 +746,18 @@ createLordMonarch().then(function (M) {
   // the port, where the Progress Window's lower strip and System Setting both
   // reach it.
   var nextTick = 0;
+  // How often the world sweeps.  0x426315 is the game's own loop:
+  //
+  //     if ([0x4344e0] == 0) { [0x4344e0] = 30 - speed; sweep(); }
+  //
+  // and 0x40a5c0 counts that number down by one each time it runs.  What runs
+  // it is not the hundred-millisecond SetTimer the windows use but the
+  // multimedia timer 00408240 asks for - timeSetEvent(0x10, 0x10, 0x40a5c0,
+  // 0, 1) - which fires every SIXTEEN milliseconds.  So a sweep every
+  // (30 - speed) sixteenths of a second: eighty at the speed of 25 the
+  // program starts with (0x4073f0), and 0041b4f0 moves the day on every other
+  // sweep.  Checked before changing it: an earlier reading of this as the
+  // window timer would have made the game six times slower than it is.
   function tickInterval() { return (30 - M._lm_speed()) * 16; }
 
   var lastHost = 0;
